@@ -40,7 +40,18 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   committed content institution-neutral and free of machine setup.
 - Standard flow otherwise: `claude/<issue>_*` branch from `dev`, PR `--base dev`.
 
+## Package layout (Clean DDD)
+
+- `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared),
+  `port/{operation}/` (output ports), `usecase/{summarygoal}/` (use-case class + its input
+  and presenter ports).
+- `infrastructure/` — adapters, Spring wiring, composition root (`UseCaseConfig`).
+- Enforced by an ArchUnit guard: `core ↛ infrastructure` and `core.model ↛ core.port`.
+
 ## Status
 
-Fresh Spring Boot skeleton (`com.github.gameclean.GameCleanApplication`). No domain,
-use cases, persistence, or UX implemented yet. Scaffolding only.
+ConstructWorld vertical in progress (issue #3, **scenes only**). Implemented: `Scene` aggregate
+with `Exit`/`SceneId` (`core/model/scene/`), the `PersistenceGatewayOutputPort` persistence port,
+the ArchUnit hexagonal guard, and a local Postgres service + schema-only read-only MCP. Not yet:
+the `ConstructWorld` use case, persistence adapter, YAML driving adapter, composition root. UX
+(JLine) is a spike only.

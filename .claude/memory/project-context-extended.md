@@ -58,3 +58,33 @@ git check-ignore .claude/settings.local.json  # must still print the path
 - Clean scan **and** `settings.local.json` still ignored ⇒ safe to commit.
 - The public repo handle (`<owner>/game-clean`) is fine — it is the repo's own
   identity, not a leak.
+
+## Recipe — local Postgres + read-only MCP (schema inspection)
+
+`docker-compose.yaml` runs a single Postgres service (`gameclean-db`, db `gameclean`,
+`postgres`/`postgres`, port 5432). On *first* container creation it executes
+`.claude/init-pg-readonly.sql`, minting a `claude_readonly` SELECT-only role.
+
+```
+docker compose up -d     # first run executes the init script (mints claude_readonly)
+docker compose down -v   # drop the volume to re-run init on the next up
+```
+
+`.mcp.json` registers a project-scoped `postgres` MCP server using the read-only role. A global
+PreToolUse hook restricts `mcp__postgres__query` to schema-only SELECTs (`information_schema` /
+`pg_catalog` / `pg_*` / `flyway_schema_history`) and blocks all DDL/DML. Use it to inspect
+Flyway migration results — never to read or mutate business data.
+
+- The init script runs **only on first init** (empty data volume); recreate the volume to re-run.
+- `claude_readonly` doesn't exist until that first init — bring the DB up before the MCP connects.
+
+## Code conventions (as established)
+
+- Domain entities/VOs: immutable, always-valid (validating constructors), **JDK-only**
+  validation (`Objects.requireNonNull` + explicit `IllegalArgumentException`) — no
+  commons-lang3. Equality by id for aggregate roots (`@EqualsAndHashCode(onlyExplicitlyIncluded
+  = true)` + `@Include` on the id), by value for VOs. `@Builder` on the validating constructor,
+  never on the class.
+- Output ports throw a **checked** `*OperationsError`, caught at the use-case checkpoint.
+- Input crosses the boundary as primitives / `*Entry` DTOs; Value Objects are constructed
+  **inside** the use case, never by adapters.
