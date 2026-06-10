@@ -35,6 +35,13 @@
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
 
+        <!-- Terminal UX (driving adapter). Aggregate bundle; spike only for now. -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline</artifactId>
+            <version>4.1.3</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
