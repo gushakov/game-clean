@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://claude_readonly:readonly@localhost:5432/gameclean"
+      ]
+    }
+  }
+}

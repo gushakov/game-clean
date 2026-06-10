@@ -1,0 +1,17 @@
+services:
+
+  db:
+    image: postgres:15.12
+    container_name: gameclean-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: gameclean
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./.claude/init-pg-readonly.sql:/docker-entrypoint-initdb.d/init-pg-readonly.sql:ro
+
+volumes:
+  postgres-data:
