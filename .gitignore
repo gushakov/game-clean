@@ -17,5 +17,7 @@ target/
 .factorypath
 .settings/
 
-### Claude Code working notes (kept local; not for the public repo) ###
-.claude/
+### Claude Code: project notes ARE versioned (design reasoning is part of the
+### showcase). Only machine-local settings stay out — they hold absolute paths,
+### the username and the local JDK location.
+.claude/settings.local.json
