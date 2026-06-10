@@ -11,5 +11,11 @@ target/
 ### VS Code ###
 .vscode/
 
+### Eclipse / Eclipse JDT.LS (jdtls) metadata ###
+.classpath
+.project
+.factorypath
+.settings/
+
 ### Claude Code working notes (kept local; not for the public repo) ###
 .claude/
