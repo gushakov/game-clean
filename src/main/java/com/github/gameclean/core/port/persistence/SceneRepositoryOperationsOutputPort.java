@@ -11,7 +11,7 @@ import com.github.gameclean.core.model.scene.Scene;
  * seed-if-empty idempotency guard, and a per-scene save. Read/query methods are deliberately
  * absent until a use case (look / move) actually needs them.
  */
-public interface PersistenceGatewayOutputPort {
+public interface SceneRepositoryOperationsOutputPort {
 
     /**
      * @return {@code true} when no scene has been persisted yet. The world-construction

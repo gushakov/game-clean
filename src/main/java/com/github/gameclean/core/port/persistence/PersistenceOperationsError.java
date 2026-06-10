@@ -1,7 +1,7 @@
 package com.github.gameclean.core.port.persistence;
 
 /**
- * Checked failure of a persistence operation, raised by {@link PersistenceGatewayOutputPort}
+ * Checked failure of a persistence operation, raised by {@link SceneRepositoryOperationsOutputPort}
  * and caught at the use-case checkpoint, which translates it into a presenter call.
  *
  * <p>Checked on purpose: a persistence failure is an expected, handleable outcome of an
