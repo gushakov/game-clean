@@ -175,6 +175,42 @@ are open questions, not decisions — revisit and refine as the model grows.
   *pushed* (driving), where primitives-inward is already settled. Lightly touches thread #2: the
   rule fixes an output port's *type vocabulary*, independent of how many ports there are.
 
+- **2026-06-12 — Explicit transaction demarcation port adopted (canon, not cargo-clean's legacy
+  shape); persistence error switched checked → unchecked to fit it.** Prepared the transaction
+  infrastructure ahead of `ConstructWorld` (its first consumer: wrap the seed writes in one
+  transaction, present via after-commit). Transactions are demarcated *explicitly* via a
+  `TransactionOperationsOutputPort` — never a blanket `@Transactional` over the interaction:
+  validation + reads run **outside**, only persistence (later: event dispatch) runs **inside**
+  `doInTransaction`, and presentation runs in `doAfterCommit` so the actor is never told "success"
+  before commit. **cargo-clean was consulted as the working example but is the *legacy* version** —
+  we deliberately departed from it on three points the current methodology rejects: (1) no
+  `doAfterCommitWithResult`/`doAfterRollbackWithResult` (the `AtomicReference` is read before the
+  callback fills it → returns null; presenter calls are `void` anyway); (2) no `rollback()` method
+  (failure is expressed by *throwing*, caught at the use case's single outermost checkpoint —
+  imperative rollback bypasses that path); (3) **no `CacheManager` coupling** — game-clean has no
+  cache layer, so the whole cache-invalidation concern is dropped; the methodology's
+  `CacheInvalidationOnRollback` callback seam is introduced only if/when a cache appears (YAGNI).
+  The port is the lean 4-method canon (`doInTransaction`, `doInTransactionWithResult`,
+  `doAfterCommit`, `doAfterRollback`) over plain `Runnable`/`Supplier`. **`doAfterRollback` is a
+  no-op outside a transaction** (nothing rolled back to react to) while `doAfterCommit` runs
+  immediately outside one — an asymmetry that follows the methodology's reasoning. **The fork that
+  had to be resolved first: our `PersistenceOperationsError` was *checked* — but Spring's
+  `TransactionTemplate` callback can't throw checked exceptions, and it rolls back only on
+  *unchecked* ones (a checked failure would commit a half-built world). Resolved by switching the
+  error to `extends RuntimeException`** (reverses the earlier "checked on purpose" convention),
+  which lets persistence actions compose as plain `Runnable`/`Supplier` and gives automatic
+  rollback-on-runtime, with the use case still handling it at its `catch` checkpoint. The
+  alternative (keep checked, have the adapter bridge it via `setRollbackOnly()` + wrap/unwrap) was
+  considered and rejected as ceremony that lets transaction convenience reverse a domain contract
+  — cleaner to align with canon. **Wiring is explicit** (`infrastructure/transaction/`): a
+  `TransactionConfig` declares two `TransactionTemplate` beans (read-write `@Primary` +
+  `@Qualifier("read-only")`) and the `SpringTransactionAdapter` as a `@Bean` — no component-scan,
+  keeping all tx wiring in one visible place. First **consumer-less port built ahead of its use
+  case**, justified because the tx port is stable cross-project reference infrastructure, not an
+  emergent domain artifact. Verified by a `@SpringBootTest` IT (real DB, no test-managed rollback)
+  asserting commit→after-commit, rollback→after-rollback (and not after-commit), result return,
+  outside-tx behavior, and rollback-discards-writes.
+
 ## UX wiring sketch (not yet implemented)
 
 - `Terminal` and `LineReader` are **singleton infrastructure beans** in a *guarded*

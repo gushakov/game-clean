@@ -43,9 +43,11 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared),
-  `port/{operation}/` (output ports), `usecase/{summarygoal}/` (use-case class + its input
-  and presenter ports).
-- `infrastructure/` — adapters, Spring wiring, composition root (`UseCaseConfig`).
+  `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`),
+  `usecase/{summarygoal}/` (use-case class + its input and presenter ports).
+- `infrastructure/` — adapters, Spring wiring, composition root (`UseCaseConfig`). Includes
+  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (YAML seed), and
+  `infrastructure/transaction/` (Spring tx adapter + config).
 - Enforced by an ArchUnit guard: `core ↛ infrastructure` and `core.model ↛ core.port`.
 
 ## Status
@@ -54,6 +56,9 @@ ConstructWorld vertical in progress (issue #3, **scenes only**). Implemented: `S
 with `Exit`/`SceneId` (`core/model/scene/`), the `SceneRepositoryOperationsOutputPort` persistence port,
 the ArchUnit hexagonal guard, a local Postgres service + schema-only read-only MCP, and a **persistence
 spike** — Flyway schema (`scene`/`exit`), Spring Data JDBC `*DbEntity`s, a MapStruct mapper, and a
-`@DataJdbcTest` round-trip IT against the real DB (`infrastructure/persistence/scene/`). Not yet:
-the `ConstructWorld` use case, the persistence port adapter (deferred until its use case), YAML driving
-adapter, composition root. UX (JLine) is a spike only.
+`@DataJdbcTest` round-trip IT against the real DB (`infrastructure/persistence/scene/`). Also implemented:
+a **YAML seed reader** (`infrastructure/world/`, SnakeYAML → `*Entry` DTOs) with a round-trip IT, and the
+**transaction demarcation port** + Spring adapter (`core/port/transaction/`, `infrastructure/transaction/`,
+unchecked errors, explicit `TransactionConfig` wiring). Not yet: the `ConstructWorld` use case (next — it
+consumes the YAML entries, the persistence port, and the tx port), the persistence port adapter (deferred
+until that use case), composition root. UX (JLine) is a spike only.
