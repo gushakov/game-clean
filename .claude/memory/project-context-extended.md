@@ -52,6 +52,55 @@ Established by the scenes persistence spike. Lives under
   Slice tests live under `infrastructure/...` so they find `@SpringBootApplication`.
 - So `mvn test` stays DB-free; `mvn verify` needs the container up.
 
+## Transactions (explicit demarcation, no blanket `@Transactional`)
+
+`core/port/transaction/TransactionOperationsOutputPort` — lean 4-method canon over plain
+`Runnable`/`Supplier`: `doInTransaction(readOnly, …)`, `doInTransactionWithResult(readOnly, …)`,
+`doAfterCommit(…)`, `doAfterRollback(…)` (+ no-readOnly `default` overloads). Usage rule: validation
+and reads run **outside** the transaction; only persistence (later, event dispatch) runs **inside**;
+present in `doAfterCommit` (never before commit). Failure is expressed by **throwing** (unchecked) —
+caught at the use case's outermost checkpoint; there is deliberately no `rollback()`.
+
+- Adapter — `infrastructure/transaction/SpringTransactionAdapter` (plain Lombok class, not
+  component-scanned), backed by Spring `TransactionTemplate` + `TransactionSynchronizationManager`.
+  `doAfterCommit` runs immediately when no tx is active; `doAfterRollback` is a **no-op** when none
+  is active. **No cache coupling** (project has no cache); the methodology's
+  `CacheInvalidationOnRollback` seam is added only when a cache appears.
+- Wiring — `infrastructure/transaction/TransactionConfig` declares both `TransactionTemplate` beans
+  (read-write `@Primary` + `@Qualifier("read-only")`) and the adapter as an explicit `@Bean`.
+- Deliberately **leaner than `cargo-clean`'s** legacy adapter: dropped its `*WithResult`
+  after-commit/rollback variants (broken `AtomicReference` timing), its `rollback()`, and its
+  `CacheManager` coupling. Rationale in design-notes 2026-06-12.
+- Tested by `TransactionOperationsIT` (`@SpringBootTest`, real DB, no test-managed rollback) — the
+  one IT that is **not** a `@DataJdbcTest` slice, because commit/rollback must be observable.
+
+## Use cases, composition root, and the startup seeder
+
+Established by the `ConstructWorld` vertical (`core/usecase/initialize/`).
+
+- **Use case shape** — input port (`{Name}InputPort`, all interactions `void`), framework-free
+  `{Name}UseCase` (`@RequiredArgsConstructor`, `@FieldDefaults(makeFinal, PRIVATE)`, ports as
+  `presenter` + `*Ops` fields), and a co-located `{Name}PresenterOutputPort extends
+  ErrorHandlingPresenterOutputPort` (base lives in `core/port/`). Input crosses as `*Entry` DTOs
+  **in the use-case package** (the input-port contract); value objects are constructed inside the use
+  case, never by adapters.
+- **Composition root** — `infrastructure/UseCaseConfig` declares each use case `@Bean
+  @Scope(PROTOTYPE)`, return-typed to the **input port interface** (impl hidden from the container),
+  assembled with explicit `new` (no Spring stereotype on core classes).
+- **Loading a prototype use case from an adapter** — inject the Spring `ApplicationContext` and call
+  `appContext.getBean(XxxInputPort.class)` at the start of each interaction (cargo-clean
+  `BookingController` idiom; rationale/trade-off in design-notes 2026-06-12). A singleton adapter
+  fetches per interaction, never holds the prototype (that would defeat the scope).
+- **Persistence adapter** — `Spring{Aggregate}RepositoryAdapter` (`@Component`): emptiness via
+  `repository.count() == 0`, writes via `JdbcAggregateTemplate.insert(mapper.toDbEntity(...))` (insert
+  — ids are assigned); infra exceptions wrapped in `PersistenceOperationsError`.
+- **Startup world seeding** — `infrastructure/world/WorldSeedRunner` (`ApplicationRunner`) reads
+  `world/scenes.yaml` via `SceneYamlReader` and fires `ConstructWorld` at boot. Guarded by
+  `@ConditionalOnProperty("game.world.construct-on-startup")`, backed by the typed
+  `WorldSeedProperties` (constructor-bound, `@DefaultValue`). `true` in `main`, `false` in
+  `src/test/resources/application.yaml` so `@SpringBootTest` slices never seed the shared DB;
+  `WorldSeedRunnerIT` re-enables it via `@SpringBootTest(properties = …)` to exercise the boot path.
+
 ## Recipe — driving the terminal app headlessly
 
 The interactive terminal app reads from a TTY; to run it without one (Claude
@@ -122,6 +171,14 @@ Flyway migration results — never to read or mutate business data.
   commons-lang3. Equality by id for aggregate roots (`@EqualsAndHashCode(onlyExplicitlyIncluded
   = true)` + `@Include` on the id), by value for VOs. `@Builder` on the validating constructor,
   never on the class.
-- Output ports throw a **checked** `*OperationsError`, caught at the use-case checkpoint.
+- Output ports throw an **unchecked** `*OperationsError` (`extends RuntimeException`), caught at the
+  use case's single outermost checkpoint. Unchecked so persistence actions compose as plain
+  `Runnable`/`Supplier` inside the transaction port and a thrown error triggers Spring's
+  rollback-on-runtime (see Transactions below; rationale in design-notes 2026-06-12).
 - Input crosses the boundary as primitives / `*Entry` DTOs; Value Objects are constructed
   **inside** the use case, never by adapters.
+- **Boundary currency (driven vs driving).** Driven (output) ports trade in **domain models** — the
+  adapter hides its own `*DbEntity`/DTO and owns the mapping (persistence is the exemplar; a future
+  untrusted-external source would interpose an Anti-Corruption Layer and still return models).
+  Driving adapters carry the primitive `*Entry` DTOs above, leaving VO construction to the use case.
+  Rationale (the always-valid model can't carry unvalidated input): design-notes, 2026-06-12.

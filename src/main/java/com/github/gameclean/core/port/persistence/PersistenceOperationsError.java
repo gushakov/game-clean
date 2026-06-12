@@ -1,13 +1,15 @@
 package com.github.gameclean.core.port.persistence;
 
 /**
- * Checked failure of a persistence operation, raised by {@link SceneRepositoryOperationsOutputPort}
- * and caught at the use-case checkpoint, which translates it into a presenter call.
+ * Unchecked failure of a persistence operation, raised by {@link SceneRepositoryOperationsOutputPort}
+ * and caught at the use-case's single outermost checkpoint, which translates it into a presenter call.
  *
- * <p>Checked on purpose: a persistence failure is an expected, handleable outcome of an
- * interaction (not a programming error), so the use case must acknowledge it explicitly.
+ * <p>Unchecked on purpose: it lets persistence actions run as plain {@code Runnable}/{@code Supplier}
+ * inside {@link com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort}, and a
+ * thrown error triggers Spring's default rollback-on-runtime — no checked-exception plumbing across
+ * the transaction boundary. The use case still handles it explicitly at its {@code catch} checkpoint.
  */
-public class PersistenceOperationsError extends Exception {
+public class PersistenceOperationsError extends RuntimeException {
 
     public PersistenceOperationsError(String message) {
         super(message);

@@ -1,0 +1,56 @@
+# Authored world seed — a small, connected scene graph.
+#
+# This is data, not schema: it flows into the world *through the domain* (the
+# future ConstructWorld use case constructs and validates the aggregates), never
+# via Flyway, which owns DDL only.
+#
+# Ids are authored short keys (the body the SceneId value object carries, e.g.
+# "scn1"); exit `target`s reference other scenes by that id. Targets may point
+# *forward* to scenes defined later in this file — resolution is order-independent
+# because exit.target_scene_id carries no foreign key, and whether every target
+# resolves is a use-case rule (two-pass validation), not a parse-time concern here.
+
+scenes:
+  - id: scn1
+    name: Old Gate
+    shortDescription: A weathered stone archway.
+    fullDescription: >
+      The gate's iron hinges have long since rusted shut against the open sky.
+      A path runs north into a courtyard; a low door breaks the east wall.
+    exits:
+      - name: north
+        target: scn2      # forward reference — scn2 is defined below
+      - name: east
+        target: scn3      # forward reference
+
+  - id: scn2
+    name: Courtyard
+    shortDescription: A grass-cracked courtyard.
+    fullDescription: >
+      Weeds push between the flagstones of what was once a drilling yard. Stone
+      stairs spiral up to a watchtower; the gate stands open to the south.
+    exits:
+      - name: south
+        target: scn1      # back-edge, closing the loop with the gate
+      - name: up
+        target: scn4      # forward reference
+
+  - id: scn3
+    name: Armoury
+    shortDescription: A plundered armoury.
+    fullDescription: >
+      Empty weapon racks line the walls and a film of dust covers the floor.
+      The only way out is back west through the gate.
+    exits:
+      - name: west
+        target: scn1      # back-edge
+
+  - id: scn4
+    name: Watchtower
+    shortDescription: A windswept watchtower.
+    fullDescription: >
+      From the parapet the whole ruined keep is laid out below. A narrow stair
+      descends back down into the courtyard.
+    exits:
+      - name: down
+        target: scn2      # back-edge

@@ -9,3 +9,9 @@ spring:
     password: postgres
   flyway:
     enabled: true
+
+# Keep the boot-time world seeder OFF for test slices: @SpringBootTest contexts share the real DB,
+# so the runner must not seed it implicitly. WorldSeedRunnerIT re-enables it via @SpringBootTest(properties=...).
+game:
+  world:
+    construct-on-startup: false

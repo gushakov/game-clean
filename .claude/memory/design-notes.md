@@ -140,6 +140,115 @@ are open questions, not decisions — revisit and refine as the model grows.
   works *because* there is no FK). Boot 4-specific gotchas hit along the way live in
   `memory/spring-boot-4-notes.md`, not here.
 
+- **2026-06-12 — Boundary currency rule: driven ports trade in domain models, driving adapters
+  carry primitive `*Entry` DTOs (the YAML-vs-persistence "asymmetry" dissolved).** The scenes spike
+  surfaced an *apparent* asymmetry between two seemingly-parallel adapters: the persistence port
+  serves/accepts domain `Scene` models (hiding `*DbEntity` inside the adapter, mapping in infra),
+  while the YAML reader returns `*Entry` DTOs of primitives with model construction deferred to the
+  use case. It dissolves once each adapter is placed on the correct side of the hexagon:
+  persistence is a **driven** (output) port; the YAML seed is a **driving** (input) adapter feeding
+  `ConstructWorld`'s input port — a peer of the terminal command adapter, *not* of the persistence
+  port. Compared like-for-like (driven↔driven, driving↔driving) the symmetry is intact. **The
+  asymmetry is moreover *required* by the always-valid model invariant, not a stylistic wart:**
+  input data *may be invalid* (human-authored YAML — blank name, dangling target, bad prefix), so it
+  needs a carrier that *can hold invalid state* to travel up to the validation gate and be rejected
+  there as a domain error; an always-valid `Scene` cannot be that carrier — its constructor throws
+  before the gate is reached — so a possibly-invalid `*Entry` DTO is *forced* on the input side.
+  Output/persistence data is *valid by provenance* (the domain wrote it), so the model is the
+  natural type and re-wrapping through the VO constructors on read is a defensive corruption check,
+  not a first-time gate. **Invalid-capable carrier inward, valid model outward.** Consequences:
+  (a) persistence is the **exemplar** of a driven port (the DDD repository's job *is* reconstitution
+  of aggregates), **not** a special case — *"driven adapters return a valid model graph and hide
+  their own DTO"* is the right default to strive for; (b) the dual rule holds on the driving side —
+  carry primitives, construct VOs in the use case, never in the adapter (reinforces the existing
+  convention); (c) keeping `*Entry` puts **all** validation at one gate — intra-aggregate (VO /
+  `Scene` constructors) *and* inter-aggregate (the two-pass exit-target resolution) — inside the use
+  case, rather than splitting it across infra and core. **Testability is the clincher:** with
+  `*Entry` on the input port you can unit-test `ConstructWorld` against a blank-named scene or a
+  dangling target and assert the domain error, because the DTO can represent that bad state; a
+  `List<Scene>`-returning seed port couldn't even *construct* the bad fixture, leaving the gate
+  untestable at the use-case level. **Honest caveat (parked):** the one place the "driven port
+  returns models" rule gets real tension is a *driven* port sourcing *untrusted external* data
+  (e.g. a future `WeatherOutputPort` over a third-party API — external like YAML, yet pulled like
+  persistence); DDD's answer there is an **Anti-Corruption Layer** in the adapter that owns the
+  foreign→domain translation and still returns models. The seed case sidesteps this by being
+  *pushed* (driving), where primitives-inward is already settled. Lightly touches thread #2: the
+  rule fixes an output port's *type vocabulary*, independent of how many ports there are.
+
+- **2026-06-12 — Explicit transaction demarcation port adopted (canon, not cargo-clean's legacy
+  shape); persistence error switched checked → unchecked to fit it.** Prepared the transaction
+  infrastructure ahead of `ConstructWorld` (its first consumer: wrap the seed writes in one
+  transaction, present via after-commit). Transactions are demarcated *explicitly* via a
+  `TransactionOperationsOutputPort` — never a blanket `@Transactional` over the interaction:
+  validation + reads run **outside**, only persistence (later: event dispatch) runs **inside**
+  `doInTransaction`, and presentation runs in `doAfterCommit` so the actor is never told "success"
+  before commit. **cargo-clean was consulted as the working example but is the *legacy* version** —
+  we deliberately departed from it on three points the current methodology rejects: (1) no
+  `doAfterCommitWithResult`/`doAfterRollbackWithResult` (the `AtomicReference` is read before the
+  callback fills it → returns null; presenter calls are `void` anyway); (2) no `rollback()` method
+  (failure is expressed by *throwing*, caught at the use case's single outermost checkpoint —
+  imperative rollback bypasses that path); (3) **no `CacheManager` coupling** — game-clean has no
+  cache layer, so the whole cache-invalidation concern is dropped; the methodology's
+  `CacheInvalidationOnRollback` callback seam is introduced only if/when a cache appears (YAGNI).
+  The port is the lean 4-method canon (`doInTransaction`, `doInTransactionWithResult`,
+  `doAfterCommit`, `doAfterRollback`) over plain `Runnable`/`Supplier`. **`doAfterRollback` is a
+  no-op outside a transaction** (nothing rolled back to react to) while `doAfterCommit` runs
+  immediately outside one — an asymmetry that follows the methodology's reasoning. **The fork that
+  had to be resolved first: our `PersistenceOperationsError` was *checked* — but Spring's
+  `TransactionTemplate` callback can't throw checked exceptions, and it rolls back only on
+  *unchecked* ones (a checked failure would commit a half-built world). Resolved by switching the
+  error to `extends RuntimeException`** (reverses the earlier "checked on purpose" convention),
+  which lets persistence actions compose as plain `Runnable`/`Supplier` and gives automatic
+  rollback-on-runtime, with the use case still handling it at its `catch` checkpoint. The
+  alternative (keep checked, have the adapter bridge it via `setRollbackOnly()` + wrap/unwrap) was
+  considered and rejected as ceremony that lets transaction convenience reverse a domain contract
+  — cleaner to align with canon. **Wiring is explicit** (`infrastructure/transaction/`): a
+  `TransactionConfig` declares two `TransactionTemplate` beans (read-write `@Primary` +
+  `@Qualifier("read-only")`) and the `SpringTransactionAdapter` as a `@Bean` — no component-scan,
+  keeping all tx wiring in one visible place. First **consumer-less port built ahead of its use
+  case**, justified because the tx port is stable cross-project reference infrastructure, not an
+  emergent domain artifact. Verified by a `@SpringBootTest` IT (real DB, no test-managed rollback)
+  asserting commit→after-commit, rollback→after-rollback (and not after-commit), result return,
+  outside-tx behavior, and rollback-discards-writes.
+
+- **2026-06-12 — ConstructWorld vertical realized (use case + persistence adapter + composition
+  root + boot-time seeder).** The interaction shape designed 2026-06-10 is now implemented and proven
+  (34 unit + 9 IT). Points worth keeping: the **two-pass build-then-resolve runs entirely outside the
+  transaction** (pure construction needs no consistency boundary); the **seed-if-empty
+  `worldIsEmpty()` guard sits *inside* the same transaction as the per-scene writes**, so the
+  idempotency decision and its effect are atomic and cannot interleave with a concurrent construction
+  — a deliberate exception to "reads run outside the tx", because it is a read-then-write guard, not a
+  load; the **dangling exit-target rule is handled by branch-and-present** (a checkpoint collects
+  unresolved targets and calls a dedicated presenter method) rather than a thrown domain-error type —
+  lighter, and the inter-aggregate rule still yields a domain *outcome*, not an FK failure;
+  **persistence failure rides the catch-all** `presentError` (carve out a specific method only when a
+  need appears). The `*Entry` DTOs **moved into `core/usecase/initialize/`** — they are the input-port
+  contract, and the dependency rule forbids the core referencing the old infrastructure location. The
+  system-actor presenter **logs** (no console). The boot-time driving adapter **`WorldSeedRunner`** (an
+  `ApplicationRunner`) fires the use case at startup, guarded by the typed
+  `game.world.construct-on-startup` property — `false` in tests so `@SpringBootTest` slices never seed
+  the shared DB (one IT re-enables it via `properties=`). The app is now **bootable**: the main profile
+  carries the local datasource; run via `java -jar`, never `spring-boot:run` (the JLine/terminal hazard
+  recorded under Open hazards).
+
+- **2026-06-12 — Driving adapters load prototype use cases via `ApplicationContext.getBean(...)`,
+  the cargo-clean idiom (not `ObjectProvider`).** Use cases are prototype-scoped (per-interaction
+  subroutines holding no conversational state; per-request presenter where a real one exists), so a
+  longer-lived driving adapter must fetch a *fresh* instance per interaction rather than hold one —
+  injecting a prototype straight into a singleton resolves it once at construction and silently
+  defeats the scope. The chosen mechanism matches the cargo-clean reference (`BookingController`):
+  inject the Spring `ApplicationContext` and call `appContext.getBean(XxxInputPort.class)` at the
+  start of each interaction. This **couples the adapter to the container API** — but *every*
+  prototype-pull mechanism does: `ObjectProvider`/`ObjectFactory` is a narrower, type-safe, mockable
+  handle yet still a container abstraction, and `@Lookup` is CGLIB method-injection magic. Since the
+  coupling is unavoidable and confined to the **infrastructure ring** (the core never sees Spring,
+  so the dependency rule is intact), consistency with the established reference idiom outweighs
+  `ObjectProvider`'s marginal testability edge. Trade-off accepted: the seam is exercised by a
+  full-boot IT (`WorldSeedRunnerIT`) rather than a unit test with a stubbed provider — fine for a
+  thin adapter. First applied in `WorldSeedRunner`, a singleton `ApplicationRunner` that pulls
+  `ConstructWorldInputPort` once at startup; the same idiom yields per-interaction freshness once a
+  repeated or interactive caller arrives.
+
 ## UX wiring sketch (not yet implemented)
 
 - `Terminal` and `LineReader` are **singleton infrastructure beans** in a *guarded*

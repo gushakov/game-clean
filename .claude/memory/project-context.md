@@ -43,17 +43,36 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared),
-  `port/{operation}/` (output ports), `usecase/{summarygoal}/` (use-case class + its input
-  and presenter ports).
-- `infrastructure/` — adapters, Spring wiring, composition root (`UseCaseConfig`).
+  `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`),
+  `usecase/{summarygoal}/` (use-case class + its input and presenter ports).
+- `infrastructure/` — adapters, Spring wiring, composition root (`UseCaseConfig`). Includes
+  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (YAML seed), and
+  `infrastructure/transaction/` (Spring tx adapter + config).
 - Enforced by an ArchUnit guard: `core ↛ infrastructure` and `core.model ↛ core.port`.
 
 ## Status
 
-ConstructWorld vertical in progress (issue #3, **scenes only**). Implemented: `Scene` aggregate
-with `Exit`/`SceneId` (`core/model/scene/`), the `SceneRepositoryOperationsOutputPort` persistence port,
-the ArchUnit hexagonal guard, a local Postgres service + schema-only read-only MCP, and a **persistence
-spike** — Flyway schema (`scene`/`exit`), Spring Data JDBC `*DbEntity`s, a MapStruct mapper, and a
-`@DataJdbcTest` round-trip IT against the real DB (`infrastructure/persistence/scene/`). Not yet:
-the `ConstructWorld` use case, the persistence port adapter (deferred until its use case), YAML driving
-adapter, composition root. UX (JLine) is a spike only.
+ConstructWorld vertical **complete** (issue #3, **scenes only**), seeded at startup end-to-end:
+
+- **Domain** — `Scene` aggregate with `Exit`/`SceneId` (`core/model/scene/`); ArchUnit hexagonal guard.
+- **Use case** — `ConstructWorld` (`core/usecase/initialize/`): input port, `ConstructWorldUseCase`,
+  presenter port, and the `*Entry` input DTOs (moved here from infrastructure — they are the input-port
+  contract). Base presenter `ErrorHandlingPresenterOutputPort` in `core/port/`. Two-pass
+  build-then-resolve outside a transaction; seed-if-empty guard + per-scene save inside one
+  `doInTransaction`; present after commit.
+- **Ports** — `SceneRepositoryOperationsOutputPort` (persistence), `TransactionOperationsOutputPort`
+  (tx); both unchecked errors.
+- **Persistence** — Flyway schema (`scene`/`exit`), Spring Data JDBC `*DbEntity`s, MapStruct mapper, and
+  `SpringSceneRepositoryAdapter` implementing the port (`infrastructure/persistence/scene/`). Local
+  Postgres service + schema-only read-only MCP.
+- **Transactions** — `SpringTransactionAdapter` + `TransactionConfig` (`infrastructure/transaction/`).
+- **Driving adapter** — `WorldSeedRunner` (`ApplicationRunner`, `infrastructure/world/`) reads
+  `world/scenes.yaml` via `SceneYamlReader` and fires the use case at startup, guarded by the typed
+  `game.world.construct-on-startup` property (`WorldSeedProperties`); loads the prototype use case via
+  `ApplicationContext.getBean` (cargo-clean idiom).
+- **Composition root** — `UseCaseConfig` (`infrastructure/`).
+- **Bootable** — `application.yaml` now carries the local datasource; run via `java -jar` (never
+  `spring-boot:run`).
+
+Tests: 34 unit (Surefire, DB-free) + 9 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
+beyond scenes (NPCs/items), the terminal/JLine driving adapter (spike only), async/event processing.
