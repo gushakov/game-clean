@@ -71,12 +71,12 @@ class WorldSeedRoundTripIT {
 
     private static Scene toScene(SceneEntry entry) {
         return Scene.builder()
-                .id(new SceneId(entry.id()))
-                .name(entry.name())
-                .shortDescription(entry.shortDescription())
-                .fullDescription(entry.fullDescription())
-                .exits(entry.exits().stream()
-                        .map(e -> new Exit(e.name(), new SceneId(e.target())))
+                .id(new SceneId(entry.getId()))
+                .name(entry.getName())
+                .shortDescription(entry.getShortDescription())
+                .fullDescription(entry.getFullDescription())
+                .exits(entry.getExits().stream()
+                        .map(e -> new Exit(e.getName(), new SceneId(e.getTarget())))
                         .toList())
                 .build();
     }

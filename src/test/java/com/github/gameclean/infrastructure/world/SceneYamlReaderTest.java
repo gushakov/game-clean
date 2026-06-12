@@ -31,14 +31,14 @@ class SceneYamlReaderTest {
     void readsAllAuthoredScenesInOrderWithTheirExits() {
         List<SceneEntry> scenes = readSeed();
 
-        assertThat(scenes).extracting(SceneEntry::id)
+        assertThat(scenes).extracting(SceneEntry::getId)
                 .containsExactly("scn1", "scn2", "scn3", "scn4");
 
         SceneEntry gate = scenes.getFirst();
-        assertThat(gate.name()).isEqualTo("Old Gate");
-        assertThat(gate.shortDescription()).isEqualTo("A weathered stone archway.");
-        assertThat(gate.fullDescription()).isNotBlank();
-        assertThat(gate.exits())
+        assertThat(gate.getName()).isEqualTo("Old Gate");
+        assertThat(gate.getShortDescription()).isEqualTo("A weathered stone archway.");
+        assertThat(gate.getFullDescription()).isNotBlank();
+        assertThat(gate.getExits())
                 .containsExactly(new ExitEntry("north", "scn2"), new ExitEntry("east", "scn3"));
     }
 
@@ -80,12 +80,12 @@ class SceneYamlReaderTest {
 
     private static Scene toScene(SceneEntry entry) {
         return Scene.builder()
-                .id(new SceneId(entry.id()))
-                .name(entry.name())
-                .shortDescription(entry.shortDescription())
-                .fullDescription(entry.fullDescription())
-                .exits(entry.exits().stream()
-                        .map(e -> new Exit(e.name(), new SceneId(e.target())))
+                .id(new SceneId(entry.getId()))
+                .name(entry.getName())
+                .shortDescription(entry.getShortDescription())
+                .fullDescription(entry.getFullDescription())
+                .exits(entry.getExits().stream()
+                        .map(e -> new Exit(e.getName(), new SceneId(e.getTarget())))
                         .toList())
                 .build();
     }
