@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.usecase.initialize.ExitEntry;
 import com.github.gameclean.core.usecase.initialize.SceneEntry;
+import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -24,7 +25,12 @@ import java.util.Objects;
  * (maps, lists, strings, numbers) and never instantiates arbitrary classes from YAML tags — the
  * recommended safe-loading mode in SnakeYAML 2.x. The explicit hand-mapping (rather than bean/
  * {@code loadAs} binding) keeps the translation visible and avoids any type-coercion machinery.
+ *
+ * <p>A {@code @Component} so the {@link WorldSeedRunner} can inject it. Tests still instantiate it
+ * directly with {@code new} to play the driving adapter's role in isolation — the two ways of
+ * obtaining one coexist harmlessly because it is stateless.
  */
+@Component
 public class SceneYamlReader {
 
     /**

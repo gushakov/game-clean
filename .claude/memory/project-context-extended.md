@@ -74,6 +74,33 @@ caught at the use case's outermost checkpoint; there is deliberately no `rollbac
 - Tested by `TransactionOperationsIT` (`@SpringBootTest`, real DB, no test-managed rollback) — the
   one IT that is **not** a `@DataJdbcTest` slice, because commit/rollback must be observable.
 
+## Use cases, composition root, and the startup seeder
+
+Established by the `ConstructWorld` vertical (`core/usecase/initialize/`).
+
+- **Use case shape** — input port (`{Name}InputPort`, all interactions `void`), framework-free
+  `{Name}UseCase` (`@RequiredArgsConstructor`, `@FieldDefaults(makeFinal, PRIVATE)`, ports as
+  `presenter` + `*Ops` fields), and a co-located `{Name}PresenterOutputPort extends
+  ErrorHandlingPresenterOutputPort` (base lives in `core/port/`). Input crosses as `*Entry` DTOs
+  **in the use-case package** (the input-port contract); value objects are constructed inside the use
+  case, never by adapters.
+- **Composition root** — `infrastructure/UseCaseConfig` declares each use case `@Bean
+  @Scope(PROTOTYPE)`, return-typed to the **input port interface** (impl hidden from the container),
+  assembled with explicit `new` (no Spring stereotype on core classes).
+- **Loading a prototype use case from an adapter** — inject the Spring `ApplicationContext` and call
+  `appContext.getBean(XxxInputPort.class)` at the start of each interaction (cargo-clean
+  `BookingController` idiom; rationale/trade-off in design-notes 2026-06-12). A singleton adapter
+  fetches per interaction, never holds the prototype (that would defeat the scope).
+- **Persistence adapter** — `Spring{Aggregate}RepositoryAdapter` (`@Component`): emptiness via
+  `repository.count() == 0`, writes via `JdbcAggregateTemplate.insert(mapper.toDbEntity(...))` (insert
+  — ids are assigned); infra exceptions wrapped in `PersistenceOperationsError`.
+- **Startup world seeding** — `infrastructure/world/WorldSeedRunner` (`ApplicationRunner`) reads
+  `world/scenes.yaml` via `SceneYamlReader` and fires `ConstructWorld` at boot. Guarded by
+  `@ConditionalOnProperty("game.world.construct-on-startup")`, backed by the typed
+  `WorldSeedProperties` (constructor-bound, `@DefaultValue`). `true` in `main`, `false` in
+  `src/test/resources/application.yaml` so `@SpringBootTest` slices never seed the shared DB;
+  `WorldSeedRunnerIT` re-enables it via `@SpringBootTest(properties = …)` to exercise the boot path.
+
 ## Recipe — driving the terminal app headlessly
 
 The interactive terminal app reads from a TTY; to run it without one (Claude

@@ -68,6 +68,23 @@ instead of Spring's own `@Nullable`. Mostly transparent, but strict null analysi
 (IntelliJ, NullAway) sees a different annotation source — relevant if the IDE
 starts flagging nullability differently.
 
+## Test mocking: `@MockBean`/`@SpyBean` removed → `@MockitoBean`/`@MockitoSpyBean` **[hit]**
+
+Boot 4 **removes** `org.springframework.boot.test.mock.mockito.@MockBean` / `@SpyBean` (deprecated
+since 3.4). The replacement is owned by **Spring Framework 7**, not Boot:
+`org.springframework.test.context.bean.override.mockito.@MockitoBean` /
+`@MockitoSpyBean`. Same role — replace a context bean with a Mockito mock/spy — different package and
+a different owning project. Hit when writing `ConstructWorldIT`: a `@MockBean` import simply doesn't
+resolve. Field-level usage is otherwise unchanged.
+
+## Config-properties / condition annotations unchanged **[hit]**
+
+`@ConfigurationProperties` + `@EnableConfigurationProperties` (`org.springframework.boot.context.properties`),
+`@DefaultValue` (`…context.properties.bind`), and `@ConditionalOnProperty`
+(`org.springframework.boot.autoconfigure.condition`) are all in their 3.x packages — they live in core
+`spring-boot` / the slimmed `spring-boot-autoconfigure`, not a relocated feature module. `ApplicationRunner`
+and `ObjectProvider` likewise unchanged. (Confirmed building `WorldSeedRunner`/`WorldSeedProperties`.)
+
 ## Unchanged / carried over from 3.x (so you don't misattribute)
 
 - `@AutoConfiguration` + `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`

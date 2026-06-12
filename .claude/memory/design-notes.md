@@ -211,6 +211,44 @@ are open questions, not decisions — revisit and refine as the model grows.
   asserting commit→after-commit, rollback→after-rollback (and not after-commit), result return,
   outside-tx behavior, and rollback-discards-writes.
 
+- **2026-06-12 — ConstructWorld vertical realized (use case + persistence adapter + composition
+  root + boot-time seeder).** The interaction shape designed 2026-06-10 is now implemented and proven
+  (34 unit + 9 IT). Points worth keeping: the **two-pass build-then-resolve runs entirely outside the
+  transaction** (pure construction needs no consistency boundary); the **seed-if-empty
+  `worldIsEmpty()` guard sits *inside* the same transaction as the per-scene writes**, so the
+  idempotency decision and its effect are atomic and cannot interleave with a concurrent construction
+  — a deliberate exception to "reads run outside the tx", because it is a read-then-write guard, not a
+  load; the **dangling exit-target rule is handled by branch-and-present** (a checkpoint collects
+  unresolved targets and calls a dedicated presenter method) rather than a thrown domain-error type —
+  lighter, and the inter-aggregate rule still yields a domain *outcome*, not an FK failure;
+  **persistence failure rides the catch-all** `presentError` (carve out a specific method only when a
+  need appears). The `*Entry` DTOs **moved into `core/usecase/initialize/`** — they are the input-port
+  contract, and the dependency rule forbids the core referencing the old infrastructure location. The
+  system-actor presenter **logs** (no console). The boot-time driving adapter **`WorldSeedRunner`** (an
+  `ApplicationRunner`) fires the use case at startup, guarded by the typed
+  `game.world.construct-on-startup` property — `false` in tests so `@SpringBootTest` slices never seed
+  the shared DB (one IT re-enables it via `properties=`). The app is now **bootable**: the main profile
+  carries the local datasource; run via `java -jar`, never `spring-boot:run` (the JLine/terminal hazard
+  recorded under Open hazards).
+
+- **2026-06-12 — Driving adapters load prototype use cases via `ApplicationContext.getBean(...)`,
+  the cargo-clean idiom (not `ObjectProvider`).** Use cases are prototype-scoped (per-interaction
+  subroutines holding no conversational state; per-request presenter where a real one exists), so a
+  longer-lived driving adapter must fetch a *fresh* instance per interaction rather than hold one —
+  injecting a prototype straight into a singleton resolves it once at construction and silently
+  defeats the scope. The chosen mechanism matches the cargo-clean reference (`BookingController`):
+  inject the Spring `ApplicationContext` and call `appContext.getBean(XxxInputPort.class)` at the
+  start of each interaction. This **couples the adapter to the container API** — but *every*
+  prototype-pull mechanism does: `ObjectProvider`/`ObjectFactory` is a narrower, type-safe, mockable
+  handle yet still a container abstraction, and `@Lookup` is CGLIB method-injection magic. Since the
+  coupling is unavoidable and confined to the **infrastructure ring** (the core never sees Spring,
+  so the dependency rule is intact), consistency with the established reference idiom outweighs
+  `ObjectProvider`'s marginal testability edge. Trade-off accepted: the seam is exercised by a
+  full-boot IT (`WorldSeedRunnerIT`) rather than a unit test with a stubbed provider — fine for a
+  thin adapter. First applied in `WorldSeedRunner`, a singleton `ApplicationRunner` that pulls
+  `ConstructWorldInputPort` once at startup; the same idiom yields per-interaction freshness once a
+  repeated or interactive caller arrives.
+
 ## UX wiring sketch (not yet implemented)
 
 - `Terminal` and `LineReader` are **singleton infrastructure beans** in a *guarded*
