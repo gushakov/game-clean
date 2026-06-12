@@ -78,6 +78,67 @@ are open questions, not decisions — revisit and refine as the model grows.
   `Terminal`/`LineReader` is the *endorsed* model, not merely tolerated. The
   "to whom is output addressed?" multi-audience question is explicitly out of
   scope for the showcase.
+- **2026-06-10 — Package & layer structure (Clean DDD applied).** Adopted the Cockburn→code
+  mapping: a *summary goal* is a sub-package under `core/usecase/`, a *user goal* is a use-case
+  **class** (not a sub-package), an *interaction* is a method. Top-level split is `core/`
+  (model, ports, use cases — framework-free) vs `infrastructure/` (adapters, Spring wiring).
+  Three homes, not one: aggregates/VOs live in `core/model/{aggregate}/` (shared by all use
+  cases — never nested under the usecase tree); output ports in `core/port/{operation}/` by
+  operation type; the presenter port co-located with its use case. First summary goal:
+  `initialize/` (will hold `ConstructWorld`). Build sequencing is **inside-out** — domain →
+  ports → use case (unit-tested with mocked ports) → persistence adapter → driving adapter →
+  composition root — so the core is provable before any database exists.
+- **2026-06-10 — Identity validation boundary: the model owns the prefix, the generator owns
+  the alphabet (the "single source of truth" conundrum, resolved).** An always-valid id Value
+  Object appears to need to validate the same character pattern the (infrastructure) id
+  generator emits — yet the dependency rule forbids the model (innermost layer) from depending
+  on ports or adapters, and two drifting copies of the pattern are unacceptable. Resolution:
+  *untangle the two concerns the pattern conflates.* The **prefix** (e.g. `scn`) is a domain
+  concern — it disambiguates which kind of identity this is — so the model owns it. The **body
+  alphabet + length** are an encoding artifact of the id-generation scheme, **not** a domain
+  invariant, so the generator owns them privately. The model therefore validates **prefix +
+  structure only** (non-empty body, single token, no whitespace) and never the charset:
+  "always-valid" constrains *domain* state, and the charset is not a domain rule. The conundrum
+  then dissolves — there is exactly one knower of the alphabet, so nothing can drift. Reinforced
+  by the decision that authored seed ids are *logical short keys* (e.g. `scn1`), distinct in
+  body from generated ids, so the model could not own a single body-format even if it wanted to.
+  Alternatives considered and parked: (a) a shared `IdFormat` value type in `core` consumed
+  *inward* by the generator — only coherent if authored ids were full generated-shape ids, which
+  they are not; (b) validating authored-id format in the YAML *driving adapter* against the
+  generator's single pattern — kept in reserve if we later want to reject malformed authored ids
+  at parse time *without the model knowing the alphabet*; (c) duplicate-plus-drift-guard-test as
+  a last-resort fallback. A reference Clean DDD project validated only structure in the model; we
+  adopt that and reframe it as the **correct boundary**, not a shortcut. Enforcement: an ArchUnit
+  rule `core.model ↛ core.port` codifies "the model depends on no other layer," making this
+  boundary structural rather than a matter of discipline.
+- **2026-06-10 — ConstructWorld interaction shape.** Actor = the **system at startup** (a driving
+  adapter fires it; the seed-if-empty idempotency guard lives *inside* the use case, so the
+  guarantee doesn't depend on which adapter calls). **Two-pass**: construct all scene aggregates,
+  then validate that every exit target resolves to a known scene — an *inter-aggregate*
+  consistency rule, which therefore lives in the use case (not on the `Scene` entity) and yields
+  a meaningful domain error rather than a foreign-key failure. Seed flows **through the domain**
+  (construction is the validity gate); Flyway owns schema/DDL only. The seed has **no console
+  presentation** — the methodology still mandates a presenter port for a system actor, so its
+  presenter *implementation logs to file*; the player "welcome" is a separate future interaction
+  with its own presentation port (keeps output-port granularity clean — thread #2). Scope held to
+  **scenes only** until an interaction consumes NPCs/items — the same emergence discipline that
+  dropped the speculative exit-visibility (`show`) field. These are early data points for thread
+  #1 (VO/aggregate emergence): `Scene`/`Exit`/`SceneId` were taken only as far as `look`/`move`
+  demand, and a speculative field plus a speculative VO (probability) were resisted.
+
+- **2026-06-12 — Persistence spike (scenes), and two sequencing/testing choices.** Built the
+  persistence round-trip harness foreshadowed in the 2026-06-10 loop-driven note: Flyway schema +
+  Spring Data JDBC `*DbEntity`s + MapStruct mapper + a `@DataJdbcTest` IT that saves and reads back
+  scenes against the *real* DB. Two decisions worth keeping: **(a) the port adapter was deliberately
+  deferred** — the spike exercises the repository + mapper round-trip directly, leaving
+  `SceneRepositoryOperationsOutputPort` unimplemented until the `ConstructWorld` use case that
+  consumes it (inside-out: the adapter follows its consumer, and the literal spike goal was the
+  schema/mapping de-risking, not the seam). **(b) Integration tests are `*IT` run by Failsafe in
+  `verify`, kept out of the Surefire `test` phase** so unit tests stay DB-free and `mvn test` needs
+  no container — the DB-dependent test only runs under `mvn verify`. The schema realized the
+  no-FK-on-`target_scene_id` decision (the IT inserts `scn1→scn2` before `scn2` exists, which only
+  works *because* there is no FK). Boot 4-specific gotchas hit along the way live in
+  `memory/spring-boot-4-notes.md`, not here.
 
 ## UX wiring sketch (not yet implemented)
 
