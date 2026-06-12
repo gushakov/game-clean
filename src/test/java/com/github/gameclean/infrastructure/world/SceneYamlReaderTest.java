@@ -3,6 +3,8 @@ package com.github.gameclean.infrastructure.world;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.usecase.initialize.ExitEntry;
+import com.github.gameclean.core.usecase.initialize.SceneEntry;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;

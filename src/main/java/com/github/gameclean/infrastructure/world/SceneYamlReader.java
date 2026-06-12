@@ -1,5 +1,7 @@
 package com.github.gameclean.infrastructure.world;
 
+import com.github.gameclean.core.usecase.initialize.ExitEntry;
+import com.github.gameclean.core.usecase.initialize.SceneEntry;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -12,7 +14,9 @@ import java.util.Objects;
 
 /**
  * Reads the authored world seed YAML into a list of {@link SceneEntry} DTOs. A deliberately dumb
- * boundary translator: it parses YAML into plain maps/lists and hand-maps them to records. It knows
+ * boundary translator: it parses YAML into plain maps/lists and hand-maps them to the {@link
+ * SceneEntry} / {@link ExitEntry} DTOs (which live in {@code core.usecase.initialize}, the
+ * {@code ConstructWorld} input-port contract). It knows
  * nothing of the domain model — no {@code Scene}, no {@code SceneId} — so the validity gate stays
  * where it belongs (the domain constructors, driven by the use case).
  *
