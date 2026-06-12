@@ -6,7 +6,7 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: gameclean
+      POSTGRES_DB: gamecleandb
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:

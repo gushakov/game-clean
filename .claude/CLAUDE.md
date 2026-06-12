@@ -43,6 +43,10 @@ are recorded in `.claude/memory/design-notes.md`.
 - **Discuss before implementing.** Do not implement features without explicit
   consent and only after the design has been examined together. Default to
   architectural discussion; treat "NO CODE" prompts as pure design conversation.
+- **Flag Spring Boot 4 differences.** The author is new to Spring Boot 4 (this
+  project runs on 4.x) and wants to learn it. Proactively call out any Boot
+  4-vs-3.x difference, gotcha, or relocation as it comes up, and record it in
+  `memory/spring-boot-4-notes.md` (append; mark `[hit]` for firsthand vs `[doc]`).
 - Sessions are spaced out — re-read the memory files at the start of each one to
   reload where we left off.
 - **Issues are plain.** Create issues with plain `gh issue create` — no assignee,
@@ -58,7 +62,9 @@ are recorded in `.claude/memory/design-notes.md`.
 
 See `.claude/memory/project-context.md` and `.claude/memory/project-context-extended.md`
 in this repository. Deep-dive narrative documents (domain context, onboarding notes,
-architectural decisions) also live under `.claude/memory/`.
+architectural decisions) also live under `.claude/memory/` — including
+`spring-boot-4-notes.md` (running log of Boot 4-vs-3.x differences, consulted when
+touching Boot config/dependencies).
 
 ## On-demand resources
 

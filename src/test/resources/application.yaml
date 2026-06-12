@@ -1,0 +1,11 @@
+# Test datasource: the real, running Dockerized Postgres (docker-compose.yaml), NOT an
+# embedded database. The slice test pins this with @AutoConfigureTestDatabase(replace = NONE).
+# Uses the superuser role because the round-trip inserts rows; the schema-only claude_readonly
+# role is for MCP inspection, never for writes.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/gamecleandb
+    username: postgres
+    password: postgres
+  flyway:
+    enabled: true

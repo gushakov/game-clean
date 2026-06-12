@@ -7,7 +7,7 @@
 -- global PreToolUse hook further restricts MCP SQL to schema-only SELECTs.
 
 CREATE ROLE claude_readonly LOGIN PASSWORD 'readonly';
-GRANT CONNECT ON DATABASE gameclean TO claude_readonly;
+GRANT CONNECT ON DATABASE gamecleandb TO claude_readonly;
 GRANT USAGE ON SCHEMA public TO claude_readonly;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO claude_readonly;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO claude_readonly;

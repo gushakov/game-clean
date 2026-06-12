@@ -126,6 +126,20 @@ are open questions, not decisions — revisit and refine as the model grows.
   #1 (VO/aggregate emergence): `Scene`/`Exit`/`SceneId` were taken only as far as `look`/`move`
   demand, and a speculative field plus a speculative VO (probability) were resisted.
 
+- **2026-06-12 — Persistence spike (scenes), and two sequencing/testing choices.** Built the
+  persistence round-trip harness foreshadowed in the 2026-06-10 loop-driven note: Flyway schema +
+  Spring Data JDBC `*DbEntity`s + MapStruct mapper + a `@DataJdbcTest` IT that saves and reads back
+  scenes against the *real* DB. Two decisions worth keeping: **(a) the port adapter was deliberately
+  deferred** — the spike exercises the repository + mapper round-trip directly, leaving
+  `SceneRepositoryOperationsOutputPort` unimplemented until the `ConstructWorld` use case that
+  consumes it (inside-out: the adapter follows its consumer, and the literal spike goal was the
+  schema/mapping de-risking, not the seam). **(b) Integration tests are `*IT` run by Failsafe in
+  `verify`, kept out of the Surefire `test` phase** so unit tests stay DB-free and `mvn test` needs
+  no container — the DB-dependent test only runs under `mvn verify`. The schema realized the
+  no-FK-on-`target_scene_id` decision (the IT inserts `scn1→scn2` before `scn2` exists, which only
+  works *because* there is no FK). Boot 4-specific gotchas hit along the way live in
+  `memory/spring-boot-4-notes.md`, not here.
+
 ## UX wiring sketch (not yet implemented)
 
 - `Terminal` and `LineReader` are **singleton infrastructure beans** in a *guarded*

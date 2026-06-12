@@ -52,6 +52,8 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 
 ConstructWorld vertical in progress (issue #3, **scenes only**). Implemented: `Scene` aggregate
 with `Exit`/`SceneId` (`core/model/scene/`), the `SceneRepositoryOperationsOutputPort` persistence port,
-the ArchUnit hexagonal guard, and a local Postgres service + schema-only read-only MCP. Not yet:
-the `ConstructWorld` use case, persistence adapter, YAML driving adapter, composition root. UX
-(JLine) is a spike only.
+the ArchUnit hexagonal guard, a local Postgres service + schema-only read-only MCP, and a **persistence
+spike** — Flyway schema (`scene`/`exit`), Spring Data JDBC `*DbEntity`s, a MapStruct mapper, and a
+`@DataJdbcTest` round-trip IT against the real DB (`infrastructure/persistence/scene/`). Not yet:
+the `ConstructWorld` use case, the persistence port adapter (deferred until its use case), YAML driving
+adapter, composition root. UX (JLine) is a spike only.
