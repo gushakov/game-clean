@@ -125,3 +125,8 @@ Flyway migration results — never to read or mutate business data.
 - Output ports throw a **checked** `*OperationsError`, caught at the use-case checkpoint.
 - Input crosses the boundary as primitives / `*Entry` DTOs; Value Objects are constructed
   **inside** the use case, never by adapters.
+- **Boundary currency (driven vs driving).** Driven (output) ports trade in **domain models** — the
+  adapter hides its own `*DbEntity`/DTO and owns the mapping (persistence is the exemplar; a future
+  untrusted-external source would interpose an Anti-Corruption Layer and still return models).
+  Driving adapters carry the primitive `*Entry` DTOs above, leaving VO construction to the use case.
+  Rationale (the always-valid model can't carry unvalidated input): design-notes, 2026-06-12.

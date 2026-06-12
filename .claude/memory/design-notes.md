@@ -140,6 +140,41 @@ are open questions, not decisions — revisit and refine as the model grows.
   works *because* there is no FK). Boot 4-specific gotchas hit along the way live in
   `memory/spring-boot-4-notes.md`, not here.
 
+- **2026-06-12 — Boundary currency rule: driven ports trade in domain models, driving adapters
+  carry primitive `*Entry` DTOs (the YAML-vs-persistence "asymmetry" dissolved).** The scenes spike
+  surfaced an *apparent* asymmetry between two seemingly-parallel adapters: the persistence port
+  serves/accepts domain `Scene` models (hiding `*DbEntity` inside the adapter, mapping in infra),
+  while the YAML reader returns `*Entry` DTOs of primitives with model construction deferred to the
+  use case. It dissolves once each adapter is placed on the correct side of the hexagon:
+  persistence is a **driven** (output) port; the YAML seed is a **driving** (input) adapter feeding
+  `ConstructWorld`'s input port — a peer of the terminal command adapter, *not* of the persistence
+  port. Compared like-for-like (driven↔driven, driving↔driving) the symmetry is intact. **The
+  asymmetry is moreover *required* by the always-valid model invariant, not a stylistic wart:**
+  input data *may be invalid* (human-authored YAML — blank name, dangling target, bad prefix), so it
+  needs a carrier that *can hold invalid state* to travel up to the validation gate and be rejected
+  there as a domain error; an always-valid `Scene` cannot be that carrier — its constructor throws
+  before the gate is reached — so a possibly-invalid `*Entry` DTO is *forced* on the input side.
+  Output/persistence data is *valid by provenance* (the domain wrote it), so the model is the
+  natural type and re-wrapping through the VO constructors on read is a defensive corruption check,
+  not a first-time gate. **Invalid-capable carrier inward, valid model outward.** Consequences:
+  (a) persistence is the **exemplar** of a driven port (the DDD repository's job *is* reconstitution
+  of aggregates), **not** a special case — *"driven adapters return a valid model graph and hide
+  their own DTO"* is the right default to strive for; (b) the dual rule holds on the driving side —
+  carry primitives, construct VOs in the use case, never in the adapter (reinforces the existing
+  convention); (c) keeping `*Entry` puts **all** validation at one gate — intra-aggregate (VO /
+  `Scene` constructors) *and* inter-aggregate (the two-pass exit-target resolution) — inside the use
+  case, rather than splitting it across infra and core. **Testability is the clincher:** with
+  `*Entry` on the input port you can unit-test `ConstructWorld` against a blank-named scene or a
+  dangling target and assert the domain error, because the DTO can represent that bad state; a
+  `List<Scene>`-returning seed port couldn't even *construct* the bad fixture, leaving the gate
+  untestable at the use-case level. **Honest caveat (parked):** the one place the "driven port
+  returns models" rule gets real tension is a *driven* port sourcing *untrusted external* data
+  (e.g. a future `WeatherOutputPort` over a third-party API — external like YAML, yet pulled like
+  persistence); DDD's answer there is an **Anti-Corruption Layer** in the adapter that owns the
+  foreign→domain translation and still returns models. The seed case sidesteps this by being
+  *pushed* (driving), where primitives-inward is already settled. Lightly touches thread #2: the
+  rule fixes an output port's *type vocabulary*, independent of how many ports there are.
+
 ## UX wiring sketch (not yet implemented)
 
 - `Terminal` and `LineReader` are **singleton infrastructure beans** in a *guarded*
