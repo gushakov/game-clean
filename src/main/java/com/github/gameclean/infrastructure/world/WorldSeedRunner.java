@@ -9,6 +9,8 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
@@ -32,10 +34,15 @@ import java.util.List;
  * <p>The use case never throws (every outcome is presented), so the only escape from {@link #run}
  * is an I/O failure reading the seed resource — which fails startup fast, the right behaviour when
  * there is no world to play in.
+ *
+ * <p>Ordered {@link Ordered#HIGHEST_PRECEDENCE} so it seeds the world <em>before</em> the blocking
+ * {@code ConsoleInputLoop} runner takes the main thread; otherwise the loop would block first and the
+ * world would never be seeded.
  */
 @Component
 @ConditionalOnProperty(prefix = "game.world", name = "construct-on-startup", havingValue = "true")
 @EnableConfigurationProperties(WorldSeedProperties.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RequiredArgsConstructor
 @Slf4j
 public class WorldSeedRunner implements ApplicationRunner {

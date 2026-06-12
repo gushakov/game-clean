@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  JLine owns the console, so application logging must not touch stdout/stderr: there is
+  deliberately NO console appender here. All logs go to a rolling file under ./logs, keeping the
+  terminal clean for the input loop and scene presenter. The startup world-seeder's logging
+  presenter lands here too, rather than scribbling over the prompt.
+
+  Self-contained on purpose (no <include> of Boot's logback defaults) so it does not depend on
+  Boot-internal resource paths. Tests override this with src/test/resources/logback-test.xml,
+  which restores console logging for the build.
+-->
+<configuration>
+    <property name="LOG_DIR" value="${LOG_DIR:-logs}"/>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/game-clean.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/game-clean.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>

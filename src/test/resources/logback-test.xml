@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Test-only logging: restores console output for the build. The main logback-spring.xml routes
+  everything to a file because JLine owns the console at runtime — but there is no JLine terminal
+  during tests, so console logging is the natural, useful default here. logback-test.xml takes
+  precedence over logback-spring.xml on the test classpath.
+-->
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
