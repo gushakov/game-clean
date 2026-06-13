@@ -13,8 +13,8 @@ spring:
     username: postgres
     password: postgres
 
-game:
-  # Where the authored world seed lives (see WorldSeedProperties / WorldSeeder).
+game:  # all game.* properties are catalogued in GameConfigurationProperties
+  # Where the authored world seed lives (consumed by WorldSeeder).
   world:
     seed-location: classpath:world/scenes.yaml
   # The interactive runtime: BootSequence seeds the world then runs the JLine console

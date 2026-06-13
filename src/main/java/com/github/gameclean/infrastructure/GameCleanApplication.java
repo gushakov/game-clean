@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 /**
  * Application entry point and Spring composition boot. It lives in {@code infrastructure} on
@@ -14,8 +15,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * happens at boot — construct the world, then open it to the player — is owned by
  * {@link BootSequence}, the single {@code ApplicationRunner} that states that order explicitly. Look
  * there for the startup choreography, not here.
+ *
+ * <p>The single {@link GameConfigurationProperties} catalog of all {@code game.*} properties is
+ * registered here, centrally, rather than from whichever feature bean happens to consume it.
  */
 @SpringBootApplication
+@EnableConfigurationProperties(GameConfigurationProperties.class)
 public class GameCleanApplication {
 
     public static void main(String[] args) {

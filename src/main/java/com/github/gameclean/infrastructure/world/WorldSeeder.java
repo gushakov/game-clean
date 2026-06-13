@@ -2,9 +2,9 @@ package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.usecase.initialize.ConstructWorldInputPort;
 import com.github.gameclean.core.usecase.initialize.SceneEntry;
+import com.github.gameclean.infrastructure.GameConfigurationProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -35,17 +35,16 @@ import java.util.List;
  * behaviour when there is no world to play in.
  */
 @Component
-@EnableConfigurationProperties(WorldSeedProperties.class)
 @RequiredArgsConstructor
 @Slf4j
 public class WorldSeeder {
 
     private final SceneYamlReader reader;
     private final ApplicationContext applicationContext;
-    private final WorldSeedProperties properties;
+    private final GameConfigurationProperties properties;
 
     public void seed() throws IOException {
-        Resource seed = properties.getSeedLocation();
+        Resource seed = properties.getWorld().getSeedLocation();
         log.info("[WorldSeed] Constructing the world from {}", seed);
         List<SceneEntry> entries;
         try (InputStream in = seed.getInputStream()) {
