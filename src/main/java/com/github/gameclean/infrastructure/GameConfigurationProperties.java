@@ -33,10 +33,13 @@ public class GameConfigurationProperties {
 
     World world;
     Terminal terminal;
+    Player player;
 
-    public GameConfigurationProperties(@DefaultValue World world, @DefaultValue Terminal terminal) {
+    public GameConfigurationProperties(@DefaultValue World world, @DefaultValue Terminal terminal,
+                                       @DefaultValue Player player) {
         this.world = world;
         this.terminal = terminal;
+        this.player = player;
     }
 
     /** {@code game.world.*} — world construction and seeding. */
@@ -67,6 +70,23 @@ public class GameConfigurationProperties {
 
         public Terminal(@DefaultValue("false") boolean enabled) {
             this.enabled = enabled;
+        }
+    }
+
+    /** {@code game.player.*} — the single player the interactive session acts as. */
+    @Getter
+    @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+    public static class Player {
+
+        /** Id of the single player (single-player game). The console supplies it to the Look use case. */
+        String id;
+
+        /** Scene the player starts in; the boot seeder creates the player there if absent. */
+        String startingSceneId;
+
+        public Player(@DefaultValue("plr1") String id, @DefaultValue("scn1") String startingSceneId) {
+            this.id = id;
+            this.startingSceneId = startingSceneId;
         }
     }
 }

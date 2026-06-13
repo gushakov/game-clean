@@ -1,7 +1,11 @@
 package com.github.gameclean.infrastructure;
 
+import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import com.github.gameclean.core.usecase.explore.LookInputPort;
+import com.github.gameclean.core.usecase.explore.LookPresenterOutputPort;
+import com.github.gameclean.core.usecase.explore.LookUseCase;
 import com.github.gameclean.core.usecase.initialize.ConstructWorldInputPort;
 import com.github.gameclean.core.usecase.initialize.ConstructWorldPresenterOutputPort;
 import com.github.gameclean.core.usecase.initialize.ConstructWorldUseCase;
@@ -31,5 +35,14 @@ public class UseCaseConfig {
             SceneRepositoryOperationsOutputPort sceneOps,
             TransactionOperationsOutputPort txOps) {
         return new ConstructWorldUseCase(presenter, sceneOps, txOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public LookInputPort lookUseCase(
+            LookPresenterOutputPort presenter,
+            PlayerRepositoryOperationsOutputPort playerOps,
+            SceneRepositoryOperationsOutputPort sceneOps) {
+        return new LookUseCase(presenter, playerOps, sceneOps);
     }
 }

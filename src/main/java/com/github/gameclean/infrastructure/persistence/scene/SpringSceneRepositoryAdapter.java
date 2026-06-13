@@ -1,12 +1,15 @@
 package com.github.gameclean.infrastructure.persistence.scene;
 
 import com.github.gameclean.core.model.scene.Scene;
+import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.stereotype.Component;
+
+import java.util.Optional;
 
 /**
  * Spring Data JDBC-backed implementation of {@link SceneRepositoryOperationsOutputPort} — the driven
@@ -50,6 +53,15 @@ public class SpringSceneRepositoryAdapter implements SceneRepositoryOperationsOu
         } catch (Exception e) {
             throw new PersistenceOperationsError(
                     "Cannot save scene %s".formatted(scene.getId().getValue()), e);
+        }
+    }
+
+    @Override
+    public Optional<Scene> findScene(SceneId id) {
+        try {
+            return repository.findById(id.getValue()).map(mapper::toDomain);
+        } catch (Exception e) {
+            throw new PersistenceOperationsError("Cannot load scene %s".formatted(id.getValue()), e);
         }
     }
 }

@@ -91,6 +91,25 @@ Interactive terminal shell **complete** (issue #6) — one process, JLine owning
   `spring-boot:run` (Maven would force a dumb terminal). **Running the app seeds the shared IT DB** —
   reset the volume before `mvn verify` (see extended context).
 
-Tests: 37 unit (Surefire, DB-free) + 9 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
-beyond scenes (NPCs/items), the `look`/`move` use cases (the console `look` is a portless spike),
-async/event processing.
+`Look` vertical + `Player` aggregate **complete** (issue #8) — the first player-facing use case:
+
+- **Domain** — `Player` aggregate (`core/model/player/`): `PlayerId` (prefix `plr`) + `currentScene`
+  (`SceneId` reference). Minimal — position only.
+- **Use case** — `Look` (`core/usecase/explore/`): input port `look(String playerId)`, `LookUseCase`,
+  co-located `LookPresenterOutputPort`. The first **read-only** use case — reads player → its scene →
+  presents, **no transaction**; branch-and-present for missing player / dangling scene.
+- **Ports** — new `PlayerRepositoryOperationsOutputPort` (`findPlayer`/`savePlayer`); `findScene(SceneId)`
+  added to `SceneRepositoryOperationsOutputPort` (retires the spike's direct repo read).
+- **Persistence** — Flyway `V2__create_player.sql` (`player`; no FK on `current_scene_id`), `PlayerDbEntity`,
+  MapStruct mapper, Spring Data repo, `SpringPlayerRepositoryAdapter` (`infrastructure/persistence/player/`).
+- **Player seeding** — `PlayerSeeder` (`infrastructure/world/`, plain singleton) creates the configured
+  player at its starting scene via the port **directly** — no use case, no tx (deliberate deviation; see
+  design-notes §4). `BootSequence` order: world → player → console.
+- **Command parsing** — `CommandParser` (tokenizer + verb registry) → `Command` intents
+  (`LookCommand`/`QuitCommand`/`UnknownCommand`) in `infrastructure/terminal/`. `ConsoleSession` is now a
+  thin controller (parse → dispatch → pull prototype `LookInputPort`); the use case drives the presenter.
+  ANTLR deferred (design-notes §9).
+- **Config** — `game.player.id` (`plr1`), `game.player.starting-scene-id` (`scn1`) in `GameConfigurationProperties`.
+
+Tests: 61 unit (Surefire, DB-free) + 11 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
+beyond scenes + player (NPCs/items), the `look <target>` / `move` use cases, async/event processing.

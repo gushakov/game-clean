@@ -119,7 +119,10 @@ structural.
 as the *current* interactions demand. `Scene`/`Exit`/`SceneId` were modelled to the
 depth `look`/`move` require and no further; a speculative exit-visibility (`show`) field
 and a speculative probability VO were both resisted. The model grows when an interaction
-forces it to, not when we imagine it might.
+forces it to, not when we imagine it might. The `Player` aggregate is the cleanest proof:
+when `look` finally forced it into existence it was minted with a *single* field — its
+current position (a `SceneId` reference) — because that is all `look` reads. No inventory,
+stats, or name appeared on speculation; they wait for the interaction that demands them.
 
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
@@ -151,7 +154,11 @@ The rule, in one line: **invalid-capable carrier inward, valid model outward.**
   DDD repository's job — not a special case. "A driven adapter returns a valid model graph
   and hides its own DTO" is the default to strive for.
 - The driving side carries primitives and constructs VOs *in the use case*, never in the
-  adapter.
+  adapter. A corollary surfaced with `look`: the carrier is a **DTO only when the input has
+  structure to carry**. `ConstructWorld` takes `SceneEntry` because a scene is a record of
+  fields; `look`'s entire input is one id, so it crosses as a bare `String playerId` and
+  *no `*Entry` type exists*. The principle is "primitives inward," not "a DTO per use case" —
+  the DTO is what you reach for when the primitives are plural and shaped.
 - All validation lands at **one gate**: intra-aggregate (VO / `Scene` constructors) and
   inter-aggregate (the two-pass exit-target resolution, §4) both inside the use case,
   rather than split across infra and core.
@@ -181,6 +188,30 @@ so it lives in the **use case**, not on the `Scene` entity, and yields a meaning
 through the domain model; Flyway owns schema/DDL only, never data. The seed-if-empty
 idempotency guard lives *inside* the use case, so the guarantee holds regardless of which
 adapter fires it.
+
+**A knowing exception: the player seed bypasses the use case.** The single player is seeded
+not through a use case but by a plain infrastructure `PlayerSeeder` that constructs the
+`Player` aggregate and writes it via the persistence port *directly* — no use case, no
+explicit transaction, with the VO construction that normally lives in a use case happening in
+the adapter instead. This is a deliberate trade-off (fewer moving parts for the first player
+round), and it is sound *only* because seeding is **boot-time, single-threaded and
+idempotent**: the existence-check-then-insert cannot race, so the atomicity a transaction
+would buy earns nothing here. The discipline that keeps this from becoming drift is a written
+**graduation trigger** — it becomes a real `CreatePlayer` use case (construction + tx inside
+the core) the moment player creation turns player-facing or concurrent. Recorded as a
+deviation precisely so the next session weighs it rather than copies it.
+
+**A read-only interaction, and a presenter that has not yet split.** `[thread #2]` `Look` is
+the first read-only use case: it reads the player, resolves the player's current scene, and
+presents — reaching its outcomes by **branch-and-present** (missing player, dangling
+current-scene reference) exactly as `ConstructWorld` does for unresolved exits, never by
+throwing. Its presenter port is **co-located** (`LookPresenterOutputPort`) and shaped around
+`presentScene(Scene)`. `move` will want that same rendering — but the sharing thread produced a
+sharp finding: what would be shared is the **narrow `presentScene` capability**, not the whole
+presenter port. Each use case keeps its *own* outcome methods (`look` its not-found cases,
+`move` its no-such-exit case); merging whole ports would pile unrelated outcomes onto one
+interface. So the extraction waits for `move` to exist and shape it — co-location now, a
+focused shared capability later, never a grab-bag presenter.
 
 **Express outcomes by presenting, not always by throwing.** A dangling exit target is
 handled by **branch-and-present** — a checkpoint collects the unresolved targets and calls a
@@ -229,6 +260,13 @@ other reads — because it is a **read-then-write guard**, not a load. Keeping t
 decision and its effect atomic is what stops two concurrent constructions from both deciding
 "empty" and double-seeding. A first, small data point for how demarcation will have to
 reason about concurrency.
+
+**The symmetric data point: a pure read takes *no* transaction at all.** `Look` reads through
+the persistence ports and presents, with no write — so it opens neither `doInTransaction` nor
+an after-commit hook. "Reads run outside the transaction" taken to its limit: when an
+interaction is *only* reads, the transaction port is not a collaborator it touches at all
+(its unit test has no tx port to stub). The after-commit presentation rule exists to avoid
+reporting success before durability; with nothing to commit, presentation is simply immediate.
 
 **A consumer-less port built ahead of its use case — justified.** The transaction port was
 built before its first consumer, which inverts the usual inside-out order. Acceptable here
@@ -349,6 +387,30 @@ transactions: the event is appended within the command's transaction, and a sepa
 — driven by the outbox relay, itself a driving adapter symmetric to the terminal — runs the
 reaction. The rule that makes it exactly-once in effect: the relay marks the row processed in
 the *same* transaction as the reaction.
+
+## 9. Command parsing as a delivery-mechanism concern
+
+**Parsing is the controller's job, not the core's.** Turning a raw input line into intent is a
+*delivery-mechanism* concern (Clean Architecture's controller), so the grammar, the tokenizer
+and the parsed `Command` types live **entirely in the driving adapter** and never cross into
+`core`. The console controller unpacks a `Command` into a use-case call carrying primitives
+inward; the use case has no idea a command syntax exists. That is what lets the parser be
+replaced — a richer grammar, a scripting transport, a network protocol — without the core
+moving. The `Command` intent object is the adapter's private representation, deliberately *not*
+a core type.
+
+**ANTLR was the obvious tool and the wrong one — for now.** A parser generator (grammar DSL,
+codegen plugin, generated-sources, a runtime jar, lexer-precedence and error-listener
+learning) is real machinery, and for a `verb [word]` language it is exactly the speculative
+complexity §2 resists — one layer out from the model. It was deferred in favour of a
+**tokenizer + command registry**: a `Map<verb, {arity, factory}>` where adding a command (or a
+synonym) is one `register(...)` line. The registry is genuinely "generic and programmable from
+the start" without the codegen, and — the load-bearing part — its parsed-intent output is
+*exactly the seam* a grammar engine would later produce. So the upgrade to ANTLR, if the
+language ever grows real grammar (multi-token noun phrases, quoting, prepositions,
+disambiguation), is a change confined to this one adapter and costs the core and the controller
+nothing. **Defer the tool, keep the seam tool-ready** — the same emergence discipline applied
+to a build decision rather than to the model.
 
 ---
 
