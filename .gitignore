@@ -2,6 +2,9 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+### Runtime logs (logback-spring.xml writes here; JLine owns the console)
+logs/
+
 ### IntelliJ IDEA ###
 .idea
 *.iws

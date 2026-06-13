@@ -11,21 +11,23 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the boot-time driving adapter against the real Dockerized Postgres: with
- * {@code game.world.construct-on-startup=true}, the {@link WorldSeedRunner} fires at context startup
- * (before any test method) and seeds the authored world through the full stack — use case, persistence
+ * Verifies the world-seeding driving adapter against the real Dockerized Postgres: {@link WorldSeeder}
+ * reads the authored seed and constructs the world through the full stack — use case, persistence
  * adapter, transaction adapter, mapper, Flyway schema. The committed seed defines four scenes.
  *
- * <p>The {@code properties} override gives this class its own cached context, so the seeder does not
- * run in {@code ConstructWorldIT} / {@code TransactionOperationsIT} (whose contexts leave the flag
- * {@code false}). No test-managed rollback under {@code @SpringBootTest}, so {@code @AfterEach} clears
- * the seeded rows — deleting a scene removes its owned exits with it.
+ * <p>The terminal runtime is left disabled (the default for tests), so {@code BootSequence} is absent
+ * and nothing seeds or blocks at startup; this test invokes {@link WorldSeeder#seed()} directly — the
+ * exact seam {@code BootSequence} calls — which keeps the seeding path covered end-to-end without a
+ * console. No test-managed rollback under {@code @SpringBootTest}, so {@code @AfterEach} clears the
+ * seeded rows — deleting a scene removes its owned exits with it.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        properties = "game.world.construct-on-startup=true")
-class WorldSeedRunnerIT {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+class WorldSeederIT {
 
     private static final List<String> SEED_IDS = List.of("scn1", "scn2", "scn3", "scn4");
+
+    @Autowired
+    private WorldSeeder worldSeeder;
 
     @Autowired
     private SceneSpringDataRepository sceneRepository;
@@ -36,7 +38,9 @@ class WorldSeedRunnerIT {
     }
 
     @Test
-    void seedsTheAuthoredWorldAtStartup() {
+    void seedsTheAuthoredWorldThroughTheFullStack() throws Exception {
+        worldSeeder.seed();
+
         assertThat(sceneRepository.count()).isEqualTo(4);
         assertThat(sceneRepository.findById("scn2")).isPresent();
     }

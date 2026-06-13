@@ -45,10 +45,14 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared),
   `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`),
   `usecase/{summarygoal}/` (use-case class + its input and presenter ports).
-- `infrastructure/` — adapters, Spring wiring, composition root (`UseCaseConfig`). Includes
-  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (YAML seed), and
-  `infrastructure/transaction/` (Spring tx adapter + config).
-- Enforced by an ArchUnit guard: `core ↛ infrastructure` and `core.model ↛ core.port`.
+- `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
+  here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
+  (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog). Sub-packages:
+  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (YAML seed + `WorldSeeder`),
+  `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine
+  `TerminalConfig` + `ConsoleSession` + `TerminalScenePresenter`).
+- Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
+  `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
 
 ## Status
 
@@ -66,13 +70,27 @@ ConstructWorld vertical **complete** (issue #3, **scenes only**), seeded at star
   `SpringSceneRepositoryAdapter` implementing the port (`infrastructure/persistence/scene/`). Local
   Postgres service + schema-only read-only MCP.
 - **Transactions** — `SpringTransactionAdapter` + `TransactionConfig` (`infrastructure/transaction/`).
-- **Driving adapter** — `WorldSeedRunner` (`ApplicationRunner`, `infrastructure/world/`) reads
-  `world/scenes.yaml` via `SceneYamlReader` and fires the use case at startup, guarded by the typed
-  `game.world.construct-on-startup` property (`WorldSeedProperties`); loads the prototype use case via
-  `ApplicationContext.getBean` (cargo-clean idiom).
+- **World seeding** — `WorldSeeder` (`infrastructure/world/`, plain singleton) reads `world/scenes.yaml`
+  via `SceneYamlReader` and fires the use case through `ApplicationContext.getBean` (cargo-clean idiom).
 - **Composition root** — `UseCaseConfig` (`infrastructure/`).
-- **Bootable** — `application.yaml` now carries the local datasource; run via `java -jar` (never
-  `spring-boot:run`).
 
-Tests: 34 unit (Surefire, DB-free) + 9 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
-beyond scenes (NPCs/items), the terminal/JLine driving adapter (spike only), async/event processing.
+Interactive terminal shell **complete** (issue #6) — one process, JLine owning the console:
+
+- **Boot orchestration** — `BootSequence` (the *sole* `ApplicationRunner`, `infrastructure/`) states the
+  startup order explicitly: `worldSeeder.seed()` then `consoleSession.start()`. Both injected as
+  singletons. Gated (with the terminal beans) by `game.terminal.enabled`.
+- **Two adapters, one terminal** — `TerminalConfig` declares shared singleton `Terminal`/`LineReader`
+  *resources*; the driving `ConsoleSession` (blocking `look`/`bye` loop; `look` loads `scn1` directly via
+  the Spring Data repo + mapper — **spike**, bypassing the clean port) and the driven
+  `TerminalScenePresenter` both inject them (`infrastructure/terminal/`).
+- **Config catalog** — all `game.*` properties bound in `GameConfigurationProperties` (nested `World`,
+  `Terminal`); enabled on `GameCleanApplication`.
+- **Logging** — `logback-spring.xml` routes logs to `./logs` (no console appender) so JLine owns the
+  terminal; banner off. `logback-test.xml` restores console logging for the build.
+- **Run** — `.claude/scripts/run-app.sh` (discovers JDK 21+, runs the fat jar); `java -jar` only, never
+  `spring-boot:run` (Maven would force a dumb terminal). **Running the app seeds the shared IT DB** —
+  reset the volume before `mvn verify` (see extended context).
+
+Tests: 37 unit (Surefire, DB-free) + 9 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
+beyond scenes (NPCs/items), the `look`/`move` use cases (the console `look` is a portless spike),
+async/event processing.

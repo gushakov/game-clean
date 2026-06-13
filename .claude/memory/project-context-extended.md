@@ -70,7 +70,7 @@ caught at the use case's outermost checkpoint; there is deliberately no `rollbac
   (read-write `@Primary` + `@Qualifier("read-only")`) and the adapter as an explicit `@Bean`.
 - Deliberately **leaner than `cargo-clean`'s** legacy adapter: dropped its `*WithResult`
   after-commit/rollback variants (broken `AtomicReference` timing), its `rollback()`, and its
-  `CacheManager` coupling. Rationale in design-notes 2026-06-12.
+  `CacheManager` coupling. Rationale in design-notes §5 (Explicit transaction demarcation).
 - Tested by `TransactionOperationsIT` (`@SpringBootTest`, real DB, no test-managed rollback) — the
   one IT that is **not** a `@DataJdbcTest` slice, because commit/rollback must be observable.
 
@@ -89,41 +89,79 @@ Established by the `ConstructWorld` vertical (`core/usecase/initialize/`).
   assembled with explicit `new` (no Spring stereotype on core classes).
 - **Loading a prototype use case from an adapter** — inject the Spring `ApplicationContext` and call
   `appContext.getBean(XxxInputPort.class)` at the start of each interaction (cargo-clean
-  `BookingController` idiom; rationale/trade-off in design-notes 2026-06-12). A singleton adapter
+  `BookingController` idiom; rationale/trade-off in design-notes §6). A singleton adapter
   fetches per interaction, never holds the prototype (that would defeat the scope).
 - **Persistence adapter** — `Spring{Aggregate}RepositoryAdapter` (`@Component`): emptiness via
   `repository.count() == 0`, writes via `JdbcAggregateTemplate.insert(mapper.toDbEntity(...))` (insert
   — ids are assigned); infra exceptions wrapped in `PersistenceOperationsError`.
-- **Startup world seeding** — `infrastructure/world/WorldSeedRunner` (`ApplicationRunner`) reads
-  `world/scenes.yaml` via `SceneYamlReader` and fires `ConstructWorld` at boot. Guarded by
-  `@ConditionalOnProperty("game.world.construct-on-startup")`, backed by the typed
-  `WorldSeedProperties` (constructor-bound, `@DefaultValue`). `true` in `main`, `false` in
-  `src/test/resources/application.yaml` so `@SpringBootTest` slices never seed the shared DB;
-  `WorldSeedRunnerIT` re-enables it via `@SpringBootTest(properties = …)` to exercise the boot path.
+- **World seeding** — `infrastructure/world/WorldSeeder` (plain singleton, *not* an `ApplicationRunner`)
+  reads `world/scenes.yaml` via `SceneYamlReader` and fires `ConstructWorld` via `seed()`. Idempotent
+  (the use case's seed-if-empty guard), so it is invoked unconditionally by `BootSequence` on every
+  interactive boot.
 
-## Recipe — driving the terminal app headlessly
+## Boot orchestration, config catalog, and the terminal shell
 
-The interactive terminal app reads from a TTY; to run it without one (Claude
-sessions, CI smoke checks), **script and *pace* stdin**:
+Established by the JLine entry-point work (issue #6).
+
+- **`BootSequence`** (`infrastructure/`, the *sole* `ApplicationRunner`) owns the startup order as one
+  readable statement: `worldSeeder.seed()` then `consoleSession.start()`. Boot-time ordering of driving
+  adapters is a composition-root concern, not an application-layer one (sequencing them from `core`
+  would reverse the hexagon — design-notes §6). The two steps are injected directly as singletons (no
+  `ObjectProvider`). Gated with the terminal beans by `game.terminal.enabled`, so test slices get no
+  runner — they never seed implicitly, block on a console, or grab a system terminal. There is no
+  longer a `construct-on-startup` flag.
+- **Two adapters, one terminal** — `TerminalConfig` declares the JLine `Terminal` + `LineReader` as
+  shared singleton *infrastructure resources* (`@Bean(destroyMethod = "close")` on the terminal), guarded
+  by `game.terminal.enabled`. The driving `ConsoleSession` (`start()` — blocking `look`/`bye` loop) and
+  the driven `TerminalScenePresenter` both inject them; sharing a *resource* (not an *adapter*) keeps the
+  two on opposite hexagon sides without a doctrine breach (design-notes §7). **Spike:** `look` loads
+  `scn1` directly via the Spring Data repo + mapper, bypassing the clean port until the real use case
+  defines a read contract.
+- **`GameConfigurationProperties`** (`infrastructure/`) — the single catalog of every `game.*` property,
+  nested static classes per group (`World.seedLocation`, `Terminal.enabled`). Constructor-bound, Lombok,
+  `@DefaultValue` (bare on nested groups). Enabled via `@EnableConfigurationProperties` on
+  `GameCleanApplication`. Caveat: `@ConditionalOnProperty` guards still read `game.terminal.enabled` raw
+  from the `Environment` (a condition can't consult a bound bean), so that key is bound here *and* named
+  in the guards.
+- **Logging** — `src/main/resources/logback-spring.xml` sends all logs to `./logs/game-clean.log` with
+  **no console appender** (JLine owns the console); `spring.main.banner-mode=off`.
+  `src/test/resources/logback-test.xml` restores console logging for the build (takes precedence on the
+  test classpath). `logs/` is git-ignored.
+- **Test seam** — `WorldSeederIT` (`@SpringBootTest`, terminal off) autowires `WorldSeeder` and calls
+  `seed()` directly to cover the seeding path without a console; `BootSequenceTest` (unit, mocked steps)
+  pins the seed-before-start order.
+
+## Recipe — running and driving the terminal app
+
+Launch in a **real terminal** with `.claude/scripts/run-app.sh` (discovers a JDK 21+ via
+`GAME_CLEAN_JAVA`, `JAVA_HOME`, an IntelliJ-managed JDK, or PATH, and runs the fat jar; it also
+`unset`s any inherited `SPRING_CONFIG_ADDITIONAL_LOCATION`, whose value some shells path-mangle into a
+non-existent dir and fail startup). Build the jar first if absent: `mvn -DskipTests package`.
+
+The app reads from a TTY; to drive it without one (Claude sessions, CI smoke checks), **script and
+*pace* stdin** into the launcher:
 
 ```
-{ printf 'cmd1\n'; sleep 5; printf 'cmd2\n'; sleep 4; printf 'bye\n'; } \
-  | <jdk21>/bin/java -cp "target/classes;<jline-jar>" <MainClass>
+{ printf 'look\n'; sleep 3; printf 'bye\n'; } | .claude/scripts/run-app.sh 2>&1 | tail -n 20
 ```
 
-(For the real app, swap the `-cp` invocation for `java -jar target/<app>.jar`.)
+- **Non-TTY ⇒ JLine dumb terminal.** ANSI styling is stripped and cursor choreography is absent, so
+  this verifies output **content and ordering**, not visual rendering. The redraw-preserves-your-input
+  nicety stays a human-at-a-real-terminal check.
+- **Pace the input** (interleaved `sleep`) to let time-based / async `printAbove` events fire.
+- **Never via Maven** — `mvn spring-boot:run` / `exec:java` make Maven own stdin/stdout ⇒ forced dumb mode.
+- Use this for **adapter smoke checks** and the wall-clock / concurrency exploration of thread `#3`; test
+  game *logic* via JUnit on the use-case layer. See the testability stance in `design-notes.md`.
 
-- **Non-TTY ⇒ JLine dumb terminal.** ANSI styling is stripped and cursor
-  choreography is absent, so this verifies output **content and ordering**, not
-  visual rendering. The redraw-preserves-your-input nicety is *not* observable
-  headless — that stays a human-at-a-real-terminal check.
-- **Pace the input** (interleaved `sleep`) to let time-based / async `printAbove`
-  events fire and be captured.
-- **Always JDK 21** (class compiled at 21) and **never via Maven** — `mvn
-  spring-boot:run` / `exec:java` make Maven own stdin/stdout ⇒ forced dumb mode.
-- Use this for **adapter smoke checks** and the wall-clock / concurrency
-  exploration of thread `#3`; test game *logic* via JUnit on the use-case layer.
-  See the testability stance in `design-notes.md`.
+> **Gotcha — running the app pollutes the IT database.** `run-app.sh` seeds `scn1`–`scn4` into the
+> *same* Dockerized Postgres the `*IT`s use, and the seed **commits** (it is not test-rolled-back). A
+> subsequent `mvn verify` then collides — e.g. `SceneRoundTripIT` hits a duplicate `scn1`,
+> `ConstructWorldIT`'s "seeds then skips" no longer starts empty. **Reset the volume before verifying:**
+> `docker compose down -v && docker compose up -d`.
+
+> **Note — exit order is not stable.** `look` prints exits in whatever order Spring Data JDBC returns the
+> `@MappedCollection` (no `ORDER BY`), so it varies across re-seeds. Cosmetic for the spike; sort when
+> `look` becomes a real use case.
 
 ## Recipe — leak-scan `.claude/` before publishing
 
@@ -174,11 +212,11 @@ Flyway migration results — never to read or mutate business data.
 - Output ports throw an **unchecked** `*OperationsError` (`extends RuntimeException`), caught at the
   use case's single outermost checkpoint. Unchecked so persistence actions compose as plain
   `Runnable`/`Supplier` inside the transaction port and a thrown error triggers Spring's
-  rollback-on-runtime (see Transactions below; rationale in design-notes 2026-06-12).
+  rollback-on-runtime (see Transactions below; rationale in design-notes §5).
 - Input crosses the boundary as primitives / `*Entry` DTOs; Value Objects are constructed
   **inside** the use case, never by adapters.
 - **Boundary currency (driven vs driving).** Driven (output) ports trade in **domain models** — the
   adapter hides its own `*DbEntity`/DTO and owns the mapping (persistence is the exemplar; a future
   untrusted-external source would interpose an Anti-Corruption Layer and still return models).
   Driving adapters carry the primitive `*Entry` DTOs above, leaving VO construction to the use case.
-  Rationale (the always-valid model can't carry unvalidated input): design-notes, 2026-06-12.
+  Rationale (the always-valid model can't carry unvalidated input): design-notes §3 (boundary currency).
