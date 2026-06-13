@@ -9,25 +9,22 @@ import lombok.extern.slf4j.Slf4j;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.UserInterruptException;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
 /**
- * Primary (driving) adapter: a blocking read loop on the main thread that drives the application
- * from the console. It injects the shared {@link LineReader} from {@link TerminalConfig} and, once a
- * command is read, hands the result to the driven {@link TerminalScenePresenter} — the two adapters
- * meeting over one shared terminal.
+ * Primary (driving) adapter: the interactive player session — a blocking read loop on the main thread
+ * that drives the application from the console. It injects the shared {@link LineReader} from
+ * {@link TerminalConfig} and, once a command is read, hands the result to the driven
+ * {@link TerminalScenePresenter} — the two adapters meeting over one shared terminal.
  *
- * <p>It runs as an {@link ApplicationRunner} ordered <em>after</em> {@code WorldSeedRunner}: this loop
- * blocks until {@code bye}, so were it to run first the seeder would never execute and {@code look}
- * would find an empty world. Once it returns, {@code SpringApplication.run} completes and — this being
- * a non-web application — the JVM exits.
+ * <p>{@link #start()} blocks until {@code bye}. It is invoked by
+ * {@link com.github.gameclean.infrastructure.BootSequence} <em>after</em> the world has been seeded —
+ * a player cannot act in a world that does not yet exist. This is a plain singleton, not an
+ * {@code ApplicationRunner}: the boot order is stated explicitly in {@code BootSequence}, not implied
+ * by an {@code @Order} on a runner.
  *
  * <p><strong>Spike scope.</strong> There is no {@code look} use case yet, so this driving adapter
  * loads the entry scene <em>directly</em> through the infrastructure {@link SceneSpringDataRepository}
@@ -39,10 +36,9 @@ import java.util.Optional;
  */
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
-@Order(Ordered.LOWEST_PRECEDENCE)
 @RequiredArgsConstructor
 @Slf4j
-public class ConsoleInputLoop implements ApplicationRunner {
+public class ConsoleSession {
 
     /** Spike shortcut: {@code look} always loads the seed's entry scene (Old Gate). */
     private static final String ENTRY_SCENE_ID = "scn1";
@@ -52,8 +48,7 @@ public class ConsoleInputLoop implements ApplicationRunner {
     private final SceneDbEntityMapper mapper;
     private final TerminalScenePresenter scenePresenter;
 
-    @Override
-    public void run(ApplicationArguments args) {
+    public void start() {
         printLine("Welcome to game-clean. Commands: 'look', 'bye'.");
         while (true) {
             String command;

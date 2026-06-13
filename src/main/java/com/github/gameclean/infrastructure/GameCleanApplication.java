@@ -1,0 +1,25 @@
+package com.github.gameclean.infrastructure;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * Application entry point and Spring composition boot. It lives in {@code infrastructure} on
+ * purpose: {@code @SpringBootApplication} roots component scanning at its own package, so placing
+ * it here confines the scan (and all autoconfiguration) to the infrastructure ring. The framework
+ * never scans {@code core} — the clean core stays framework-free, as the hexagonal boundary
+ * requires.
+ *
+ * <p>{@code main} only refreshes the context; it does <em>not</em> contain the startup logic. What
+ * happens at boot — construct the world, then open it to the player — is owned by
+ * {@link BootSequence}, the single {@code ApplicationRunner} that states that order explicitly. Look
+ * there for the startup choreography, not here.
+ */
+@SpringBootApplication
+public class GameCleanApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(GameCleanApplication.class, args);
+    }
+
+}

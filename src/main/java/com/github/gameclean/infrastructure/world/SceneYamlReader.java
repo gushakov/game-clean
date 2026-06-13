@@ -26,7 +26,7 @@ import java.util.Objects;
  * recommended safe-loading mode in SnakeYAML 2.x. The explicit hand-mapping (rather than bean/
  * {@code loadAs} binding) keeps the translation visible and avoids any type-coercion machinery.
  *
- * <p>A {@code @Component} so the {@link WorldSeedRunner} can inject it. Tests still instantiate it
+ * <p>A {@code @Component} so the {@link WorldSeeder} can inject it. Tests still instantiate it
  * directly with {@code new} to play the driving adapter's role in isolation — the two ways of
  * obtaining one coexist harmlessly because it is stateless.
  */
