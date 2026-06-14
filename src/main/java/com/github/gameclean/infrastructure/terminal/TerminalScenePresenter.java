@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 /**
  * Secondary (driven) adapter that renders the {@code Look} use case's outcomes to the shared JLine
- * terminal — the console-facing peer of the seeder's {@code LoggingConstructWorldPresenter}. It is a
+ * terminal — the console-facing peer of the seeder's {@code LoggingInitializeGamePresenter}. It is a
  * distinct bean from the input loop (opposite direction of the hexagon) but shares the same
  * {@link Terminal} resource injected from {@link TerminalConfig}.
  *

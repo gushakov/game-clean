@@ -56,29 +56,35 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 
 ## Status
 
-ConstructWorld vertical **complete** (issue #3, **scenes only**), seeded at startup end-to-end:
+Game initialization **complete** — one `InitializeGame` use case (world + player), seeded at startup end-to-end:
 
 - **Domain** — `Scene` aggregate with `Exit`/`SceneId` (`core/model/scene/`); ArchUnit hexagonal guard.
-- **Use case** — `ConstructWorld` (`core/usecase/initialize/`): input port, `ConstructWorldUseCase`,
-  presenter port, and the `*Entry` input DTOs (moved here from infrastructure — they are the input-port
-  contract). Base presenter `ErrorHandlingPresenterOutputPort` in `core/port/`. Two-pass
-  build-then-resolve outside a transaction; seed-if-empty guard + per-scene save inside one
-  `doInTransaction`; present after commit.
+- **Use case** — `InitializeGame` (`core/usecase/initialize/`): input port
+  `initialize(List<SceneEntry>, String startingSceneId)`, `InitializeGameUseCase`, co-located presenter
+  port, and the `*Entry` input DTOs (the input-port contract). Base presenter
+  `ErrorHandlingPresenterOutputPort` in `core/port/`. Two **phases** as private subfunctions: world
+  construction (two-pass build-then-resolve outside a tx; seed-if-empty + per-scene save in one
+  `doInTransaction`) then player placement (validity gate + starting-scene resolve outside a tx;
+  create-if-absent in one `doInTransaction`); present after each commit; a world that fails to construct
+  stops before any player is created.
 - **Ports** — `SceneRepositoryOperationsOutputPort` (persistence), `TransactionOperationsOutputPort`
   (tx); both unchecked errors.
 - **Persistence** — Flyway schema (`scene`/`exit`), Spring Data JDBC `*DbEntity`s, MapStruct mapper, and
   `SpringSceneRepositoryAdapter` implementing the port (`infrastructure/persistence/scene/`). Local
   Postgres service + schema-only read-only MCP.
 - **Transactions** — `SpringTransactionAdapter` + `TransactionConfig` (`infrastructure/transaction/`).
-- **World seeding** — `WorldSeeder` (`infrastructure/world/`, plain singleton) reads `world/scenes.yaml`
-  via `SceneYamlReader` and fires the use case through `ApplicationContext.getBean` (cargo-clean idiom).
+- **Game seeding** — `GameSeeder` (`infrastructure/world/`, plain singleton) reads `world/scenes.yaml`
+  via `SceneYamlReader` and the configured starting scene, and fires `InitializeGame` through
+  `ApplicationContext.getBean` (cargo-clean idiom) — replacing the former `WorldSeeder` + `PlayerSeeder`
+  pair. Presenter `LoggingInitializeGamePresenter` logs both phases.
 - **Composition root** — `UseCaseConfig` (`infrastructure/`).
 
 Interactive terminal shell **complete** (issue #6) — one process, JLine owning the console:
 
-- **Boot orchestration** — `BootSequence` (the *sole* `ApplicationRunner`, `infrastructure/`) states the
-  startup order explicitly: `worldSeeder.seed()` then `consoleSession.start()`. Both injected as
-  singletons. Gated (with the terminal beans) by `game.terminal.enabled`.
+- **Boot orchestration** — `BootSequence` (the *sole* `ApplicationRunner`, `infrastructure/`) orders two
+  driving adapters: `gameSeeder.seed()` then `consoleSession.start()`. Both injected as singletons. Gated
+  (with the terminal beans) by `game.terminal.enabled`. The world→player business sequence lives inside
+  the use case, not here (design-notes §6).
 - **Two adapters, one terminal** — `TerminalConfig` declares shared singleton `Terminal`/`LineReader`
   *resources*; the driving `ConsoleSession` (blocking `look`/`bye` loop; `look` loads `scn1` directly via
   the Spring Data repo + mapper — **spike**, bypassing the clean port) and the driven
@@ -102,14 +108,15 @@ Interactive terminal shell **complete** (issue #6) — one process, JLine owning
   added to `SceneRepositoryOperationsOutputPort` (retires the spike's direct repo read).
 - **Persistence** — Flyway `V2__create_player.sql` (`player`; no FK on `current_scene_id`), `PlayerDbEntity`,
   MapStruct mapper, Spring Data repo, `SpringPlayerRepositoryAdapter` (`infrastructure/persistence/player/`).
-- **Player seeding** — `PlayerSeeder` (`infrastructure/world/`, plain singleton) creates the configured
-  player at its starting scene via the port **directly** — no use case, no tx (deliberate deviation; see
-  design-notes §4). `BootSequence` order: world → player → console.
+- **Player placement** — folded into `InitializeGame` as its second phase (creates the configured player
+  `game.player.id` at `game.player.starting-scene-id`, once if absent, through the domain in a
+  transaction). Was briefly a separate `CreatePlayer` use case / `PlayerSeeder`; merged in issue #10 —
+  see design-notes §4/§6.
 - **Command parsing** — `CommandParser` (tokenizer + verb registry) → `Command` intents
   (`LookCommand`/`QuitCommand`/`UnknownCommand`) in `infrastructure/terminal/`. `ConsoleSession` is now a
   thin controller (parse → dispatch → pull prototype `LookInputPort`); the use case drives the presenter.
   ANTLR deferred (design-notes §9).
 - **Config** — `game.player.id` (`plr1`), `game.player.starting-scene-id` (`scn1`) in `GameConfigurationProperties`.
 
-Tests: 61 unit (Surefire, DB-free) + 11 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
+Tests: 66 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
 beyond scenes + player (NPCs/items), the `look <target>` / `move` use cases, async/event processing.

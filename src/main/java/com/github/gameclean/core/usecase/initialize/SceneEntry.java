@@ -10,10 +10,10 @@ import java.util.List;
  * DTOs" rule made concrete: a driving adapter (the YAML seed reader) produces {@code SceneEntry}
  * values; the {@link com.github.gameclean.core.model.scene.SceneId} and
  * {@link com.github.gameclean.core.model.scene.Scene} value objects are constructed <em>inside</em>
- * {@link ConstructWorldUseCase}, never by the adapter.
+ * {@link InitializeGameUseCase}, never by the adapter.
  *
  * <p>It lives here, beside the input port, because it <em>is</em> the input-port contract: it
- * describes what {@code ConstructWorld} accepts, not how any one adapter parses it. A
+ * describes what {@code InitializeGame} accepts, not how any one adapter parses it. A
  * possibly-invalid carrier is required on the input side precisely because the always-valid
  * {@code Scene} cannot represent unvalidated authored data — the validity gate is the use case.
  *

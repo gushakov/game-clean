@@ -17,7 +17,7 @@ import java.util.Objects;
  * Reads the authored world seed YAML into a list of {@link SceneEntry} DTOs. A deliberately dumb
  * boundary translator: it parses YAML into plain maps/lists and hand-maps them to the {@link
  * SceneEntry} / {@link ExitEntry} DTOs (which live in {@code core.usecase.initialize}, the
- * {@code ConstructWorld} input-port contract). It knows
+ * {@code InitializeGame} input-port contract). It knows
  * nothing of the domain model — no {@code Scene}, no {@code SceneId} — so the validity gate stays
  * where it belongs (the domain constructors, driven by the use case).
  *
@@ -26,7 +26,7 @@ import java.util.Objects;
  * recommended safe-loading mode in SnakeYAML 2.x. The explicit hand-mapping (rather than bean/
  * {@code loadAs} binding) keeps the translation visible and avoids any type-coercion machinery.
  *
- * <p>A {@code @Component} so the {@link WorldSeeder} can inject it. Tests still instantiate it
+ * <p>A {@code @Component} so the {@link GameSeeder} can inject it. Tests still instantiate it
  * directly with {@code new} to play the driving adapter's role in isolation — the two ways of
  * obtaining one coexist harmlessly because it is stateless.
  */

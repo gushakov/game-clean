@@ -22,8 +22,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *
  * <p>The entry → aggregate mapping lives <em>in the test</em>, not in the reader: constructing the
  * {@link SceneId} / {@link Exit} value objects is the use case's job (a rule we are deferring), and
- * the reader must stay free of domain types. The test therefore plays the part the future
- * {@code ConstructWorld} use case will play. DB-free, so it runs under Surefire.
+ * the reader must stay free of domain types. The test therefore plays the part the
+ * {@code InitializeGame} use case plays. DB-free, so it runs under Surefire.
  */
 class SceneYamlReaderTest {
 
@@ -66,7 +66,7 @@ class SceneYamlReaderTest {
                         new Exit("east", new SceneId("scn3")));
 
         // Every exit target resolves to an authored scene — the spike keeps the graph coherent;
-        // the dangling-target -> domain-error case belongs to ConstructWorld's two-pass validation.
+        // the dangling-target -> domain-error case belongs to InitializeGame's two-pass validation.
         assertThat(world.values()).allSatisfy(scene ->
                 scene.getExits().forEach(exit -> assertThat(world).containsKey(exit.getTarget())));
     }

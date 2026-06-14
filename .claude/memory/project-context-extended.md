@@ -78,13 +78,13 @@ caught at the use case's outermost checkpoint; there is deliberately no `rollbac
 
 ## Use cases, composition root, and the startup seeder
 
-Established by the `ConstructWorld` vertical (`core/usecase/initialize/`).
+Established by the `ConstructWorld` vertical, now the `InitializeGame` use case (`core/usecase/initialize/`).
 
 - **Use case shape** — input port (`{Name}InputPort`, all interactions `void`), framework-free
   `{Name}UseCase` (`@RequiredArgsConstructor`, `@FieldDefaults(makeFinal, PRIVATE)`, ports as
   `presenter` + `*Ops` fields), and a co-located `{Name}PresenterOutputPort extends
   ErrorHandlingPresenterOutputPort` (base lives in `core/port/`). Input crosses as `*Entry` DTOs
-  **in the use-case package** when it has structure (`ConstructWorld`/`SceneEntry`), or as a bare
+  **in the use-case package** when it has structure (`InitializeGame`/`SceneEntry`), or as a bare
   primitive when it is a single value (`Look`/`look(String playerId)` — no DTO); value objects are
   constructed inside the use case, never by adapters.
 - **Read-only use cases take no transaction.** `Look` (`core/usecase/explore/`) reads through the
@@ -102,27 +102,25 @@ Established by the `ConstructWorld` vertical (`core/usecase/initialize/`).
 - **Persistence adapter** — `Spring{Aggregate}RepositoryAdapter` (`@Component`): emptiness via
   `repository.count() == 0`, writes via `JdbcAggregateTemplate.insert(mapper.toDbEntity(...))` (insert
   — ids are assigned); infra exceptions wrapped in `PersistenceOperationsError`.
-- **World seeding** — `infrastructure/world/WorldSeeder` (plain singleton, *not* an `ApplicationRunner`)
-  reads `world/scenes.yaml` via `SceneYamlReader` and fires `ConstructWorld` via `seed()`. Idempotent
-  (the use case's seed-if-empty guard), so it is invoked unconditionally by `BootSequence` on every
-  interactive boot.
-- **Player seeding** — `infrastructure/world/PlayerSeeder` (plain singleton) creates the configured
-  player (`game.player.id` at `game.player.starting-scene-id`) if absent, via
-  `PlayerRepositoryOperationsOutputPort` **directly** — no use case, no transaction. Deliberate deviation
-  (sound only because boot-time/single-threaded/idempotent; graduation trigger documented in the class
-  javadoc and design-notes §4). Invoked by `BootSequence` between the world seed and the console.
+- **Game seeding** — `infrastructure/world/GameSeeder` (plain singleton, *not* an `ApplicationRunner`)
+  reads `world/scenes.yaml` via `SceneYamlReader` and the configured starting scene, and fires
+  `InitializeGame` via `seed()` (one `getBean` prototype pull). Idempotent (the use case's seed-if-empty
+  and create-if-absent guards), so it is invoked unconditionally by `BootSequence` on every interactive
+  boot. Replaces the former `WorldSeeder` + `PlayerSeeder` pair; the world→player order is now internal
+  to the use case (design-notes §4/§6). Presenter `LoggingInitializeGamePresenter` logs both phases to
+  file.
 
 ## Boot orchestration, config catalog, and the terminal shell
 
 Established by the JLine entry-point work (issue #6).
 
-- **`BootSequence`** (`infrastructure/`, the *sole* `ApplicationRunner`) owns the startup order as one
-  readable statement: `worldSeeder.seed()` then `consoleSession.start()`. Boot-time ordering of driving
-  adapters is a composition-root concern, not an application-layer one (sequencing them from `core`
-  would reverse the hexagon — design-notes §6). The two steps are injected directly as singletons (no
-  `ObjectProvider`). Gated with the terminal beans by `game.terminal.enabled`, so test slices get no
-  runner — they never seed implicitly, block on a console, or grab a system terminal. There is no
-  longer a `construct-on-startup` flag.
+- **`BootSequence`** (`infrastructure/`, the *sole* `ApplicationRunner`) orders two driving adapters as
+  one readable statement: `gameSeeder.seed()` then `consoleSession.start()`. Boot-time *ordering* of
+  driving adapters is a composition-root concern; *business sequencing* (the world→player precondition)
+  is not — it lives inside `InitializeGame`, not here (design-notes §6). The two steps are injected
+  directly as singletons (no `ObjectProvider`). Gated with the terminal beans by `game.terminal.enabled`,
+  so test slices get no runner — they never seed implicitly, block on a console, or grab a system
+  terminal. There is no longer a `construct-on-startup` flag.
 - **Two adapters, one terminal** — `TerminalConfig` declares the JLine `Terminal` + `LineReader` as
   shared singleton *infrastructure resources* (`@Bean(destroyMethod = "close")` on the terminal), guarded
   by `game.terminal.enabled`. The driving `ConsoleSession` and the driven `TerminalScenePresenter` both
@@ -146,9 +144,10 @@ Established by the JLine entry-point work (issue #6).
   **no console appender** (JLine owns the console); `spring.main.banner-mode=off`.
   `src/test/resources/logback-test.xml` restores console logging for the build (takes precedence on the
   test classpath). `logs/` is git-ignored.
-- **Test seam** — `WorldSeederIT` (`@SpringBootTest`, terminal off) autowires `WorldSeeder` and calls
-  `seed()` directly to cover the seeding path without a console; `BootSequenceTest` (unit, mocked steps)
-  pins the seed-before-start order.
+- **Test seam** — `GameSeederIT` (`@SpringBootTest`, terminal off) autowires `GameSeeder` and calls
+  `seed()` directly to cover the world+player seeding path without a console; `InitializeGameIT` drives
+  the use case through the composition root (mocked presenter) and asserts both phases' outcomes;
+  `BootSequenceTest` (unit, mocked steps) pins the seed-before-start order.
 
 ## Recipe — running and driving the terminal app
 

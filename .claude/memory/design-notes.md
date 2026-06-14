@@ -177,8 +177,8 @@ already settled.
 
 ## 4. Use cases as first-class interactions
 
-**Interaction shape (worked on `ConstructWorld`).** The actor is the *system at startup*.
-The use case is **two-pass**: construct all scene aggregates, then validate that every exit
+**Interaction shape (the world-construction phase).** The actor is the *system at startup*.
+World construction is **two-pass**: construct all scene aggregates, then validate that every exit
 target resolves to a known scene. That second check is an *inter-aggregate* consistency rule,
 so it lives in the **use case**, not on the `Scene` entity, and yields a meaningful domain
 *outcome* rather than a foreign-key failure (the schema deliberately carries no FK on
@@ -189,22 +189,31 @@ through the domain model; Flyway owns schema/DDL only, never data. The seed-if-e
 idempotency guard lives *inside* the use case, so the guarantee holds regardless of which
 adapter fires it.
 
-**A knowing exception: the player seed bypasses the use case.** The single player is seeded
-not through a use case but by a plain infrastructure `PlayerSeeder` that constructs the
-`Player` aggregate and writes it via the persistence port *directly* — no use case, no
-explicit transaction, with the VO construction that normally lives in a use case happening in
-the adapter instead. This is a deliberate trade-off (fewer moving parts for the first player
-round), and it is sound *only* because seeding is **boot-time, single-threaded and
-idempotent**: the existence-check-then-insert cannot race, so the atomicity a transaction
-would buy earns nothing here. The discipline that keeps this from becoming drift is a written
-**graduation trigger** — it becomes a real `CreatePlayer` use case (construction + tx inside
-the core) the moment player creation turns player-facing or concurrent. Recorded as a
-deviation precisely so the next session weighs it rather than copies it.
+**World and player are two phases of one system interaction.** `[thread #4]` Initializing a
+fresh game is a *single* system-actor goal — `InitializeGame` — not two. Constructing the
+authored world and placing the single player are *phases* of one `void` interaction, run as
+private subfunctions, because the world→player order is a **domain precondition** (a player
+needs a scene to stand in), not two independent goals that merely happen to run at boot.
+Holding the sequence inside one use case is exactly what lets the precondition be enforced
+*where its outcome is visible*: the void/unidirectional contract binds the **public**
+interaction, but a private subfunction may return and branch like ordinary code — so
+world-construction returns a plain boolean gate, player-placement runs only when the world is
+usable (freshly seeded *or* already present), and a construction failure stops the interaction
+before any player is created. This is the project's first in-use-case decomposition, and it
+takes the *lightest* form deliberately — private subfunctions, not the heavier **subcase**
+machinery (a reusable procedure with its own presenter), which waits for a genuine
+cross-use-case reuse need. The earlier shape — a separate `ConstructWorld` and `CreatePlayer`
+sequenced *by the boot orchestrator* — is the cautionary tale §6 now records: it pushed a
+domain precondition into infrastructure and acted on an outcome it had renounced the right to
+know. The player phase keeps its own self-guard (it re-checks that the starting scene
+resolves), so even a degraded world cannot yield a dangling player; the validity gate, two-pass
+exit resolution, and transaction-tight seed/create are unchanged — they simply moved into the
+phases.
 
 **A read-only interaction, and a presenter that has not yet split.** `[thread #2]` `Look` is
 the first read-only use case: it reads the player, resolves the player's current scene, and
 presents — reaching its outcomes by **branch-and-present** (missing player, dangling
-current-scene reference) exactly as `ConstructWorld` does for unresolved exits, never by
+current-scene reference) exactly as world construction does for unresolved exits, never by
 throwing. Its presenter port is **co-located** (`LookPresenterOutputPort`) and shaped around
 `presentScene(Scene)`. `move` will want that same rendering — but the sharing thread produced a
 sharp finding: what would be shared is the **narrow `presentScene` capability**, not the whole
@@ -295,37 +304,48 @@ the established reference idiom wins over `ObjectProvider`'s marginal testabilit
 seam is covered by a full-boot IT rather than a stubbed-provider unit test — fine for a thin
 adapter.
 
-**Boot-time ordering of driving adapters is a composition-root concern.** This is the
-sharpest lifecycle lesson so far. Two driving adapters must come up in a defined order —
-*construct the world, then open it to the player* — and that order is a real application
+**Boot-time ordering of driving adapters is a composition-root concern — but only *ordering*,
+not business sequencing.** This is the sharpest lifecycle lesson so far, and it took a wrong
+turn to sharpen fully. Driving adapters must come up in a defined order — bring the game into
+being, *then* hand the main thread to the console — and that order is a real application
 invariant.
 
-The tempting move is to push the sequence "up" into the application layer (a startup use
-case over ports). **That is doctrinally wrong here, and the reason is sharp:** the second
-step — the interactive loop — is a driving adapter taking the main thread. Driving adapters
-call *inward*. If the application core sequenced them, the core would be reaching *out* to
-start its own driving adapters — reversing the hexagon. The core must never know its driving
-adapters exist, let alone order them.
+The tempting move is to push the sequence "up" into the application layer (a startup use case
+over ports). **That is doctrinally wrong, and the reason is sharp:** the second step — the
+interactive loop — is a driving adapter taking the main thread. Driving adapters call *inward*.
+If the core sequenced them, it would be reaching *out* to start its own driving adapters —
+reversing the hexagon. The core must never know its driving adapters exist, let alone order
+them. So **boot-time ordering of driving adapters is a composition-root / infrastructure
+responsibility**, sitting *beside* the composition root, not inside `core`. Expressing it as
+two `@Order`-annotated `ApplicationRunner`s dissolved that responsibility into framework SPI —
+an emergent property of Spring sorting runners by magic-constant precedence, reconstructable
+only by reading two files and knowing the SPI — so we pulled it into one named runner whose
+body *is* the order.
 
-So the conclusion is the interesting part: **boot-time ordering of driving adapters is a
-composition-root / infrastructure responsibility.** It is a lifecycle concern that sits
-*beside* the composition root, not inside `core`. Expressing it as two `@Order`-annotated
-`ApplicationRunner`s dissolved that real responsibility into framework SPI — the sequence
-became an emergent property of Spring discovering all runners and sorting them by
-magic-constant precedence, reconstructable only by reading two files and knowing the SPI. We
-pulled it back into one named, readable place: a single `ApplicationRunner` whose body *is*
-the sequence (`worldSeeder.seed()` then `consoleSession.start()`). The two steps are injected
-directly as the singletons they are — no `ObjectProvider`. The order is now a unit-testable
-statement, not a sort.
+**The wrong turn, and the distinction it forced.** That runner then grew to fire *two business
+interactions* in turn — seed the world (`ConstructWorld`), then seed the player
+(`CreatePlayer`), then start the console — and that conflated two different things. Ordering
+driving adapters by **lifecycle readiness** ("the console can't take the thread until the game
+exists") is legitimately infrastructure's job. But "the player may be created only *after* the
+world was constructed" is not lifecycle readiness — it is a **domain-state precondition**
+between two business interactions, and sequencing *that* in the runner is unsound: a `void` use
+case reports its outcome to its presenter, so once the runner called the first one it had, by
+the unidirectional-flow contract, **renounced the right to know whether it succeeded** — yet it
+then made a second, outcome-dependent call on blind assumption. The tell that the dependency
+belonged in the core: it was already a domain read inside the player step (`findScene`). The
+fix re-sorts the two concerns — the world→player business sequence collapses into one
+`InitializeGame` use case (§4), where the precondition gates on a visible outcome; the runner
+reverts to pure lifecycle, `gameSeeder.seed()` (one inward, fire-and-forget call) then
+`consoleSession.start()`, both injected as singletons, no `ObjectProvider`. The §6 principle
+survives intact; it had merely been over-extended to cover business sequencing it never
+licensed.
 
-A consequence worth noting: once the orchestrator owns the order, the per-adapter enable
-flags can be simplified. The standalone "construct world on startup" flag became redundant —
-seeding is triggered only by the orchestrator (gated, with the console, by one
-`game.terminal.enabled` switch) and the seed operation is idempotent, so an extra knob earned
-nothing. **Forward fit:** when Phase 3 adds an independent clock and an outbox relay, their
-ordered start — and the *reverse-order* shutdown the design requires (`Terminal.close()` must
-run last) — belong here too, as further explicit lines rather than scattered `SmartLifecycle`
-phase numbers (which would only be `@Order` magic by another name).
+A consequence worth noting: with one idempotent seed step, the per-adapter enable flags stay
+simple — seeding is triggered only by the orchestrator, gated with the console by one
+`game.terminal.enabled` switch. **Forward fit:** when Phase 3 adds an independent clock and an
+outbox relay, their ordered start — and the *reverse-order* shutdown the design requires
+(`Terminal.close()` must run last) — belong here too, as further explicit lines rather than
+scattered `SmartLifecycle` phase numbers (which would only be `@Order` magic by another name).
 
 ## 7. The presentation layer (JLine), and one terminal for two adapters
 
@@ -387,6 +407,21 @@ transactions: the event is appended within the command's transaction, and a sepa
 — driven by the outbox relay, itself a driving adapter symmetric to the terminal — runs the
 reaction. The rule that makes it exactly-once in effect: the relay marks the row processed in
 the *same* transaction as the reaction.
+
+**Orchestration for fixed sequences, choreography for causation — and boot is the former.**
+`[thread #3]` A tempting shortcut to that end state is to chain *boot* through events too —
+have `InitializeGame` dispatch a domain event in `doAfterCommit` and let a listener-adapter
+fire the next step. We weighed it and **deferred it deliberately**, and the reasons sharpen
+*when* events earn their place. Boot is a *fixed, deterministic, precondition-ordered* sequence
+with one producer and one consumer — the worst possible fit for a notification mechanism:
+synchronous events would only re-obscure the sequence we just made explicit (the §6 lesson,
+undone); the idempotent already-seeded path emits nothing, so the chain would silently break
+(forcing a *state* event rather than a *fact* event); starting the console is lifecycle, not a
+domain reaction; and an in-memory broker is not the crash-durable outbox anyway. So the rule:
+**fixed sequences are orchestrated** (explicit, in the core or beside the composition root);
+**genuine causation — dynamic, possibly one-to-many, reactive — is choreographed with events.**
+Gameplay is where the second mechanism earns its keep (an NPC reacting to the player entering a
+scene), so the event spine is introduced at its first *causal* site, not retrofitted onto boot.
 
 ## 9. Command parsing as a delivery-mechanism concern
 
