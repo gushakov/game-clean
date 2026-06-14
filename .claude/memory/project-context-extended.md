@@ -12,13 +12,10 @@
 > - Facts only. Rationale ("why we chose X over Y") belongs in `design-notes.md`.
 > - Quick-reference one-liners belong in `project-context.md`, not here.
 
-_Use cases and driving adapters not implemented yet — those sections fill in as the
-model takes shape. The persistence section and recipes below are valid already._
-
 ## Persistence (Spring Data JDBC + MapStruct + Flyway, no ORM)
 
-Established by the scenes persistence spike. Lives under
-`infrastructure/persistence/{aggregate}/`.
+Established by the scenes persistence spike, repeated verbatim for the player aggregate. Lives under
+`infrastructure/persistence/{aggregate}/` (`scene/`, `player/`).
 
 - **DB entities** — `*DbEntity` (e.g. `SceneDbEntity`, `ExitDbEntity`): plain Lombok
   `@Data` holders, single no-arg constructor (so Spring Data JDBC + MapStruct both bind
@@ -36,10 +33,15 @@ Established by the scenes persistence spike. Lives under
   mapstruct).
 - **Writes vs reads** — writes are inserts via `JdbcAggregateTemplate.insert` (assigned String
   ids would otherwise be treated as updates); reads via the repository.
-- **Schema (Flyway)** — migrations in `src/main/resources/db/migration/` (`V1` = `scene` + `exit`).
-  A composite PK on an owned child `(scene_id, name)` enforces a domain uniqueness invariant at the
-  DB level. Cross-aggregate references (`exit.target_scene_id`) carry **no FK** — resolution is a
-  use-case rule yielding a domain error, not an FK violation.
+- **Schema (Flyway)** — migrations in `src/main/resources/db/migration/` (`V1` = `scene` + `exit`,
+  `V2` = `player`). A composite PK on an owned child `(scene_id, name)` enforces a domain uniqueness
+  invariant at the DB level. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
+  carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.
+- **Player family** (`infrastructure/persistence/player/`) — mirrors the scene family exactly:
+  `PlayerDbEntity` (`@Table("player")`, `@Column("current_scene_id")`, no owned children),
+  `PlayerDbEntityMapper` (`PlayerId`/`SceneId` ↔ String converters), `PlayerSpringDataRepository`,
+  `SpringPlayerRepositoryAdapter` implementing `PlayerRepositoryOperationsOutputPort` (`findPlayer` via
+  `findById().map(toDomain)`, `savePlayer` via `aggregateTemplate.insert`).
 
 ### Test layering — Surefire (unit) vs Failsafe (integration)
 
@@ -82,8 +84,14 @@ Established by the `ConstructWorld` vertical (`core/usecase/initialize/`).
   `{Name}UseCase` (`@RequiredArgsConstructor`, `@FieldDefaults(makeFinal, PRIVATE)`, ports as
   `presenter` + `*Ops` fields), and a co-located `{Name}PresenterOutputPort extends
   ErrorHandlingPresenterOutputPort` (base lives in `core/port/`). Input crosses as `*Entry` DTOs
-  **in the use-case package** (the input-port contract); value objects are constructed inside the use
-  case, never by adapters.
+  **in the use-case package** when it has structure (`ConstructWorld`/`SceneEntry`), or as a bare
+  primitive when it is a single value (`Look`/`look(String playerId)` — no DTO); value objects are
+  constructed inside the use case, never by adapters.
+- **Read-only use cases take no transaction.** `Look` (`core/usecase/explore/`) reads through the
+  persistence ports and presents directly — no `TransactionOperationsOutputPort` collaborator at all,
+  no after-commit hook. Outcomes (missing player, dangling current scene) are reached by
+  branch-and-present, the error catch-all by the outermost `try`. Summary-goal package `explore/`
+  (looking around; later `look <target>` / `move`).
 - **Composition root** — `infrastructure/UseCaseConfig` declares each use case `@Bean
   @Scope(PROTOTYPE)`, return-typed to the **input port interface** (impl hidden from the container),
   assembled with explicit `new` (no Spring stereotype on core classes).
@@ -98,6 +106,11 @@ Established by the `ConstructWorld` vertical (`core/usecase/initialize/`).
   reads `world/scenes.yaml` via `SceneYamlReader` and fires `ConstructWorld` via `seed()`. Idempotent
   (the use case's seed-if-empty guard), so it is invoked unconditionally by `BootSequence` on every
   interactive boot.
+- **Player seeding** — `infrastructure/world/PlayerSeeder` (plain singleton) creates the configured
+  player (`game.player.id` at `game.player.starting-scene-id`) if absent, via
+  `PlayerRepositoryOperationsOutputPort` **directly** — no use case, no transaction. Deliberate deviation
+  (sound only because boot-time/single-threaded/idempotent; graduation trigger documented in the class
+  javadoc and design-notes §4). Invoked by `BootSequence` between the world seed and the console.
 
 ## Boot orchestration, config catalog, and the terminal shell
 
@@ -112,11 +125,17 @@ Established by the JLine entry-point work (issue #6).
   longer a `construct-on-startup` flag.
 - **Two adapters, one terminal** — `TerminalConfig` declares the JLine `Terminal` + `LineReader` as
   shared singleton *infrastructure resources* (`@Bean(destroyMethod = "close")` on the terminal), guarded
-  by `game.terminal.enabled`. The driving `ConsoleSession` (`start()` — blocking `look`/`bye` loop) and
-  the driven `TerminalScenePresenter` both inject them; sharing a *resource* (not an *adapter*) keeps the
-  two on opposite hexagon sides without a doctrine breach (design-notes §7). **Spike:** `look` loads
-  `scn1` directly via the Spring Data repo + mapper, bypassing the clean port until the real use case
-  defines a read contract.
+  by `game.terminal.enabled`. The driving `ConsoleSession` and the driven `TerminalScenePresenter` both
+  inject them; sharing a *resource* (not an *adapter*) keeps the two on opposite hexagon sides without a
+  doctrine breach (design-notes §7).
+- **Command parsing + the controller seam** (issue #8, retiring the spike) — `CommandParser` (tokenizer +
+  verb registry, `infrastructure/terminal/`) turns a line into a `Command` intent
+  (`LookCommand`/`QuitCommand`/`UnknownCommand` — infrastructure-local, never crosses into core).
+  `ConsoleSession` is now a thin **controller**: read → `parse` → dispatch (`QuitCommand` breaks the loop;
+  `LookCommand` pulls a prototype `LookInputPort` via `getBean` and calls `look(game.player.id)`;
+  `UnknownCommand` echoes a hint). The `Look` use case drives `TerminalScenePresenter` (now implementing
+  `LookPresenterOutputPort`), so the console no longer touches the presenter. ANTLR deferred — rationale
+  in design-notes §9. Adding a command/synonym = one `register(...)` line in `CommandParser`.
 - **`GameConfigurationProperties`** (`infrastructure/`) — the single catalog of every `game.*` property,
   nested static classes per group (`World.seedLocation`, `Terminal.enabled`). Constructor-bound, Lombok,
   `@DefaultValue` (bare on nested groups). Enabled via `@EnableConfigurationProperties` on
@@ -159,9 +178,10 @@ The app reads from a TTY; to drive it without one (Claude sessions, CI smoke che
 > `ConstructWorldIT`'s "seeds then skips" no longer starts empty. **Reset the volume before verifying:**
 > `docker compose down -v && docker compose up -d`.
 
-> **Note — exit order is not stable.** `look` prints exits in whatever order Spring Data JDBC returns the
-> `@MappedCollection` (no `ORDER BY`), so it varies across re-seeds. Cosmetic for the spike; sort when
-> `look` becomes a real use case.
+> **Note — exit order.** Spring Data JDBC returns the `@MappedCollection` exits unordered (no `ORDER BY`).
+> `TerminalScenePresenter` therefore **sorts exit names alphabetically at render time** — exit ordering is
+> a *presentation* concern, kept out of the domain and the adapter. (Resolved the spike's
+> non-determinism; `look scn1` now shows `Exits: east, north`.)
 
 ## Recipe — leak-scan `.claude/` before publishing
 

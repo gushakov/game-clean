@@ -1,38 +1,34 @@
 package com.github.gameclean.infrastructure.terminal;
 
-import com.github.gameclean.core.model.scene.Scene;
-import com.github.gameclean.infrastructure.persistence.scene.SceneDbEntity;
-import com.github.gameclean.infrastructure.persistence.scene.SceneDbEntityMapper;
-import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
+import com.github.gameclean.core.usecase.explore.LookInputPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.UserInterruptException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
 /**
  * Primary (driving) adapter: the interactive player session — a blocking read loop on the main thread
- * that drives the application from the console. It injects the shared {@link LineReader} from
- * {@link TerminalConfig} and, once a command is read, hands the result to the driven
- * {@link TerminalScenePresenter} — the two adapters meeting over one shared terminal.
+ * that drives the application from the console. It is a thin <em>controller</em>: read a line, ask the
+ * {@link CommandParser} for the player's intent, and either control the loop ({@code bye}) or delegate
+ * to a use case. It carries no game logic — that lives in the use cases, which present their own
+ * output (the console no longer touches a presenter).
  *
  * <p>{@link #start()} blocks until {@code bye}. It is invoked by
- * {@link com.github.gameclean.infrastructure.BootSequence} <em>after</em> the world has been seeded —
- * a player cannot act in a world that does not yet exist. This is a plain singleton, not an
- * {@code ApplicationRunner}: the boot order is stated explicitly in {@code BootSequence}, not implied
- * by an {@code @Order} on a runner.
+ * {@link com.github.gameclean.infrastructure.BootSequence} <em>after</em> the world and player have
+ * been seeded. This is a plain singleton, not an {@code ApplicationRunner}: the boot order is stated
+ * explicitly in {@code BootSequence}.
  *
- * <p><strong>Spike scope.</strong> There is no {@code look} use case yet, so this driving adapter
- * loads the entry scene <em>directly</em> through the infrastructure {@link SceneSpringDataRepository}
- * and {@link SceneDbEntityMapper}, deliberately bypassing the clean {@code SceneRepositoryOperationsOutputPort}
- * (which has no read method until a use case defines that contract). When the real use case lands, the
- * loop will instead pull a prototype input port and the orchestration — load, then present — moves
- * inward. {@code look} always loads the same fixed entry scene; a real "current scene" belongs to the
- * {@code Player} aggregate, which this spike does not model.
+ * <p>For each {@code look}, a <strong>fresh prototype</strong> {@link LookInputPort} is pulled from
+ * the {@link ApplicationContext} — the cargo-clean reference idiom: a singleton adapter fetches the
+ * prototype use case per interaction rather than holding one (which would silently defeat the scope).
+ * The controller passes no actor: the acting player is ambient, resolved inside the use case, so this
+ * adapter no longer needs the configured player id.
  */
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
@@ -40,46 +36,43 @@ import java.util.Optional;
 @Slf4j
 public class ConsoleSession {
 
-    /** Spike shortcut: {@code look} always loads the seed's entry scene (Old Gate). */
-    private static final String ENTRY_SCENE_ID = "scn1";
-
     private final LineReader lineReader;
-    private final SceneSpringDataRepository sceneRepository;
-    private final SceneDbEntityMapper mapper;
-    private final TerminalScenePresenter scenePresenter;
+    private final CommandParser commandParser;
+    private final ApplicationContext applicationContext;
 
     public void start() {
         printLine("Welcome to game-clean. Commands: 'look', 'bye'.");
         while (true) {
-            String command;
+            String line;
             try {
-                command = lineReader.readLine("game> ");
+                line = lineReader.readLine("game> ");
             } catch (UserInterruptException e) { // Ctrl-C — ignore, keep playing
                 continue;
             } catch (EndOfFileException e) {      // Ctrl-D — quit
                 break;
             }
 
-            command = command == null ? "" : command.strip();
-            if ("bye".equalsIgnoreCase(command)) {
+            Optional<Command> parsed = commandParser.parse(line);
+            if (parsed.isEmpty()) {               // blank line — nothing to do
+                continue;
+            }
+            Command command = parsed.get();
+            if (command instanceof QuitCommand) {
                 printLine("Bye!");
                 break;
-            } else if ("look".equalsIgnoreCase(command)) {
-                look();
-            } else if (!command.isEmpty()) {
-                printLine("Unknown command: '%s'. Try 'look' or 'bye'.".formatted(command));
+            } else if (command instanceof LookCommand) {
+                lookAround();
+            } else if (command instanceof UnknownCommand unknown) {
+                printLine("Unknown command: '%s'. Try 'look' or 'bye'.".formatted(unknown.getInput()));
             }
         }
     }
 
-    private void look() {
-        Optional<SceneDbEntity> entity = sceneRepository.findById(ENTRY_SCENE_ID);
-        if (entity.isEmpty()) {
-            printLine("There is nothing here yet — the world has not been seeded.");
-            return;
-        }
-        Scene scene = mapper.toDomain(entity.get());
-        scenePresenter.presentScene(scene);
+    private void lookAround() {
+        // Pull a fresh prototype use case per interaction; it presents its own outcome.
+        // The acting player is ambient — the use case resolves it; the controller passes nothing.
+        LookInputPort lookUseCase = applicationContext.getBean(LookInputPort.class);
+        lookUseCase.playerLooksAround();
     }
 
     private void printLine(String text) {

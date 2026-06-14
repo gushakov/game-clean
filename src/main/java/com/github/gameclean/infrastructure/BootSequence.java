@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure;
 
 import com.github.gameclean.infrastructure.terminal.ConsoleSession;
+import com.github.gameclean.infrastructure.world.PlayerSeeder;
 import com.github.gameclean.infrastructure.world.WorldSeeder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
@@ -22,11 +23,11 @@ import org.springframework.stereotype.Component;
  * driving adapters (that would reverse the hexagon's "driving adapters call inward" rule). So the
  * orchestrator sits beside the composition root, in the infrastructure ring.
  *
- * <p>The two steps are injected directly as the singletons they are. {@link WorldSeeder} is
- * unconditional and its {@code seed()} is idempotent, so it is always available and always safe to
- * run; {@link ConsoleSession} and this orchestrator share the {@code game.terminal.enabled} guard, so
- * either both are present (the interactive application) or neither is (test slices, which therefore
- * never block on a console nor grab a system terminal).
+ * <p>The steps are injected directly as the singletons they are. {@link WorldSeeder} and
+ * {@link PlayerSeeder} are unconditional and their {@code seed()} is idempotent, so they are always
+ * available and always safe to run; {@link ConsoleSession} and this orchestrator share the
+ * {@code game.terminal.enabled} guard, so either both are present (the interactive application) or
+ * neither is (test slices, which therefore never block on a console nor grab a system terminal).
  *
  * <p>Forward fit: when Phase 3 adds an independent clock and an outbox relay, their ordered start —
  * and the reverse-order shutdown the design notes call for ({@code Terminal.close()} must run last) —
@@ -39,11 +40,13 @@ import org.springframework.stereotype.Component;
 public class BootSequence implements ApplicationRunner {
 
     private final WorldSeeder worldSeeder;
+    private final PlayerSeeder playerSeeder;
     private final ConsoleSession consoleSession;
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
         worldSeeder.seed();        // the world must exist ...
-        consoleSession.start();    // ... before the player can act in it (blocks until 'bye').
+        playerSeeder.seed();       // ... then a player to stand in it ...
+        consoleSession.start();    // ... before that player can act (blocks until 'bye').
     }
 }
