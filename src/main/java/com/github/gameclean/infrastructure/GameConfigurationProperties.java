@@ -78,7 +78,7 @@ public class GameConfigurationProperties {
     @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
     public static class Player {
 
-        /** Id of the single player (single-player game). The console supplies it to the Look use case. */
+        /** Id of the single player (single-player game). Read by {@code ConfiguredPlayerAdapter} to resolve the acting player for the use cases. */
         String id;
 
         /** Scene the player starts in; the boot seeder creates the player there if absent. */

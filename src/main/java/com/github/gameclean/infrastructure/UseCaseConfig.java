@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure;
 
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.LookPresenterOutputPort;
@@ -9,6 +10,9 @@ import com.github.gameclean.core.usecase.explore.LookUseCase;
 import com.github.gameclean.core.usecase.initialize.ConstructWorldInputPort;
 import com.github.gameclean.core.usecase.initialize.ConstructWorldPresenterOutputPort;
 import com.github.gameclean.core.usecase.initialize.ConstructWorldUseCase;
+import com.github.gameclean.core.usecase.initialize.CreatePlayerInputPort;
+import com.github.gameclean.core.usecase.initialize.CreatePlayerPresenterOutputPort;
+import com.github.gameclean.core.usecase.initialize.CreatePlayerUseCase;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,10 +43,22 @@ public class UseCaseConfig {
 
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public CreatePlayerInputPort createPlayerUseCase(
+            CreatePlayerPresenterOutputPort presenter,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            TransactionOperationsOutputPort txOps) {
+        return new CreatePlayerUseCase(presenter, playerOps, playerRepositoryOps, sceneOps, txOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public LookInputPort lookUseCase(
             LookPresenterOutputPort presenter,
-            PlayerRepositoryOperationsOutputPort playerOps,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps) {
-        return new LookUseCase(presenter, playerOps, sceneOps);
+        return new LookUseCase(presenter, playerOps, playerRepositoryOps, sceneOps);
     }
 }

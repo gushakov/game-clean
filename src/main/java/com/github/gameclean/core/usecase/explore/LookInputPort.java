@@ -1,26 +1,27 @@
 package com.github.gameclean.core.usecase.explore;
 
 /**
- * Driving (input) port for the <b>Look</b> user goal: the player observes their surroundings. A
- * driving adapter — the interactive console — invokes it to describe the scene the player currently
- * occupies.
+ * Driving (input) port for the <b>Look</b> user goal: the player looks around to observe their
+ * current surroundings. A driving adapter — the interactive console — invokes it to describe the
+ * scene the player currently occupies.
  *
- * <p>One interaction, {@link #look(String)}, whose initiating actor is the <em>player</em>. It is
- * {@code void}: every outcome (the scene description, a missing player, a dangling current-scene
- * reference, or an unexpected error) is reported through the {@link LookPresenterOutputPort}, never
- * returned.
+ * <p>One interaction, {@link #playerLooksAround()}, whose initiating actor is the <em>player</em>.
+ * Its name is the Cockburn step it implements — subject (the player) and predicate (looks around) —
+ * not a bare service verb. It takes <b>no parameter</b>: the acting player is <em>ambient</em>, pulled
+ * inside the use case from {@code PlayerOperationsOutputPort} rather than threaded across the boundary
+ * as data. The unqualified "around" is deliberate, reserving a later {@code playerLooksAt(target)} for
+ * examining a specific thing.
  *
- * <p>The player is identified by a primitive id carried across the boundary; the {@code PlayerId}
- * value object is constructed inside the use case, which is the validity gate. The id is a parameter
- * rather than ambient state because "which player" is the controller's to supply — single-player
- * today (one configured id), but the contract already admits more.
+ * <p>It is {@code void}: every outcome (the scene description, a missing player, a dangling
+ * current-scene reference, or an unexpected error) is reported through the
+ * {@link LookPresenterOutputPort}, never returned.
  */
 public interface LookInputPort {
 
     /**
-     * Describes the current scene of the identified player.
-     *
-     * @param playerId the acting player's id, as a primitive carrier (the use case validates it)
+     * Describes the acting player's current scene — the player "looks around". Takes no actor
+     * argument: the acting player is resolved inside the use case from
+     * {@code PlayerOperationsOutputPort}.
      */
-    void look(String playerId);
+    void playerLooksAround();
 }

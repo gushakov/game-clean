@@ -1,47 +1,42 @@
 package com.github.gameclean.infrastructure.world;
 
-import com.github.gameclean.core.model.player.Player;
-import com.github.gameclean.core.model.player.PlayerId;
-import com.github.gameclean.core.model.scene.SceneId;
-import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
+import com.github.gameclean.core.usecase.initialize.CreatePlayerInputPort;
 import com.github.gameclean.infrastructure.GameConfigurationProperties;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
 /**
- * Boot-time seeder for the single player — a plain singleton peer of {@link WorldSeeder}, invoked by
- * {@link com.github.gameclean.infrastructure.BootSequence} after the world exists. {@link #seed()}
- * creates the configured player at its starting scene if no player is persisted yet, and is otherwise
- * a no-op, so it is safe to run on every interactive boot.
+ * Driving (primary) adapter for the system actor at the player-creation step: it reads the configured
+ * starting scene and fires {@link CreatePlayerInputPort#createPlayer(String)} to bring the single
+ * player into existence <em>through the domain</em>. A plain singleton peer of {@link WorldSeeder},
+ * invoked by {@link com.github.gameclean.infrastructure.BootSequence} after the world exists.
  *
- * <p><strong>Deliberate deviation — seeding bypasses the use-case + transaction pattern.</strong>
- * Unlike scene seeding (which fires the {@code ConstructWorld} use case), this adapter constructs the
- * {@code Player} aggregate and writes it through the persistence port <em>directly</em>: no use case,
- * no explicit transaction demarcation. The value-object construction that normally lives inside a use
- * case happens here instead. This is a conscious trade-off (fewer moving parts for the first player
- * round) and is sound only because seeding is <em>boot-time, single-threaded and idempotent</em> —
- * the existence check then insert cannot race. It must graduate into a real {@code CreatePlayer} use
- * case the moment player creation becomes player-facing or concurrent.
+ * <p>It is deliberately symmetrical with {@link WorldSeeder}: where that adapter reads the authored
+ * world seed and delegates to {@code ConstructWorld}, this one reads {@code game.player.startingSceneId}
+ * and delegates to {@code CreatePlayer}. The idempotency guard, the value-object construction and the
+ * transaction all live inside the use case, so {@link #seed()} on an already-created player is a no-op
+ * — which is why it is safe to invoke unconditionally on every interactive boot.
+ *
+ * <p>A fresh <b>prototype</b> use case is pulled from the {@link ApplicationContext} at invocation
+ * time — the same idiom {@link WorldSeeder} uses. This couples the adapter to the container API, but
+ * the coupling is confined to the infrastructure ring; the core never sees Spring. (A singleton must
+ * fetch the prototype per interaction rather than hold one, or the prototype scope is silently
+ * defeated.)
+ *
+ * <p>The use case never throws (every outcome is presented to the log), so {@link #seed()} has no
+ * escape of its own — a configuration or persistence fault surfaces as a presented {@code CreatePlayer}
+ * outcome, not an exception out of here.
  */
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class PlayerSeeder {
 
-    private final PlayerRepositoryOperationsOutputPort playerOps;
+    private final ApplicationContext applicationContext;
     private final GameConfigurationProperties properties;
 
     public void seed() {
-        PlayerId playerId = new PlayerId(properties.getPlayer().getId());
-        if (playerOps.findPlayer(playerId).isPresent()) {
-            log.info("[PlayerSeed] Player {} already exists — skipping", playerId.getValue());
-            return;
-        }
-        SceneId startingScene = new SceneId(properties.getPlayer().getStartingSceneId());
-        Player player = Player.builder().id(playerId).currentScene(startingScene).build();
-        playerOps.savePlayer(player);
-        log.info("[PlayerSeed] Created player {} at scene {}",
-                playerId.getValue(), startingScene.getValue());
+        CreatePlayerInputPort createPlayer = applicationContext.getBean(CreatePlayerInputPort.class);
+        createPlayer.createPlayer(properties.getPlayer().getStartingSceneId());
     }
 }

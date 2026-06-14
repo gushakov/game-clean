@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,6 +25,10 @@ import static org.mockito.Mockito.*;
  * case is exercised directly through its input port (no Spring, no database). Being a read-only use
  * case, there is no transaction port to stub: the use case reads through the persistence ports and
  * presents directly.
+ *
+ * <p>The acting player is ambient: {@code playerOps.currentPlayerId()} stands in for "who is acting",
+ * and {@code playerLooksAround()} takes no argument. {@code playerRepositoryOps} is the persistence
+ * port that loads the player aggregate; the two are distinct ports, hence distinct mocks.
  */
 @ExtendWith(MockitoExtension.class)
 class LookUseCaseTest {
@@ -31,7 +36,9 @@ class LookUseCaseTest {
     @Mock
     private LookPresenterOutputPort presenter;
     @Mock
-    private PlayerRepositoryOperationsOutputPort playerOps;
+    private PlayerOperationsOutputPort playerOps;
+    @Mock
+    private PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     @Mock
     private SceneRepositoryOperationsOutputPort sceneOps;
 
@@ -41,11 +48,12 @@ class LookUseCaseTest {
     @Test
     void presentsThePlayersCurrentScene() {
         Scene oldGate = scene("scn1");
-        when(playerOps.findPlayer(new PlayerId("plr1")))
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(oldGate));
 
-        useCase.look("plr1");
+        useCase.playerLooksAround();
 
         verify(presenter).presentScene(oldGate);
         verifyNoMoreInteractions(presenter);
@@ -53,9 +61,10 @@ class LookUseCaseTest {
 
     @Test
     void presentsPlayerNotFoundWhenNoPlayerIsPersisted() {
-        when(playerOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
 
-        useCase.look("plr1");
+        useCase.playerLooksAround();
 
         verify(presenter).presentPlayerNotFound(new PlayerId("plr1"));
         verify(sceneOps, never()).findScene(any());
@@ -64,11 +73,12 @@ class LookUseCaseTest {
 
     @Test
     void presentsCurrentSceneNotFoundWhenThePlayersSceneIsMissing() {
-        when(playerOps.findPlayer(new PlayerId("plr1")))
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn9")));
         when(sceneOps.findScene(new SceneId("scn9"))).thenReturn(Optional.empty());
 
-        useCase.look("plr1");
+        useCase.playerLooksAround();
 
         verify(presenter).presentCurrentSceneNotFound(new SceneId("scn9"));
         verify(presenter, never()).presentScene(any());
@@ -77,18 +87,21 @@ class LookUseCaseTest {
     @Test
     void routesAMalformedPlayerIdToTheCatchAll() {
         // 'bogus' lacks the 'plr' prefix — PlayerId construction fails inside the use case.
-        useCase.look("bogus");
+        when(playerOps.currentPlayerId()).thenReturn("bogus");
+
+        useCase.playerLooksAround();
 
         verify(presenter).presentError(any(IllegalArgumentException.class));
-        verifyNoInteractions(playerOps, sceneOps);
+        verifyNoInteractions(playerRepositoryOps, sceneOps);
     }
 
     @Test
     void routesAPersistenceFailureToTheCatchAll() {
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
-        when(playerOps.findPlayer(new PlayerId("plr1"))).thenThrow(boom);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenThrow(boom);
 
-        useCase.look("plr1");
+        useCase.playerLooksAround();
 
         verify(presenter).presentError(boom);
         verify(presenter, never()).presentScene(any());

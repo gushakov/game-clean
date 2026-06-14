@@ -1,7 +1,6 @@
 package com.github.gameclean.infrastructure.terminal;
 
 import com.github.gameclean.core.usecase.explore.LookInputPort;
-import com.github.gameclean.infrastructure.GameConfigurationProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jline.reader.EndOfFileException;
@@ -28,8 +27,8 @@ import java.util.Optional;
  * <p>For each {@code look}, a <strong>fresh prototype</strong> {@link LookInputPort} is pulled from
  * the {@link ApplicationContext} — the cargo-clean reference idiom: a singleton adapter fetches the
  * prototype use case per interaction rather than holding one (which would silently defeat the scope).
- * The player id the controller hands inward is the single configured player ({@code game.player.id});
- * value-object construction happens inside the use case.
+ * The controller passes no actor: the acting player is ambient, resolved inside the use case, so this
+ * adapter no longer needs the configured player id.
  */
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
@@ -40,7 +39,6 @@ public class ConsoleSession {
     private final LineReader lineReader;
     private final CommandParser commandParser;
     private final ApplicationContext applicationContext;
-    private final GameConfigurationProperties properties;
 
     public void start() {
         printLine("Welcome to game-clean. Commands: 'look', 'bye'.");
@@ -63,17 +61,18 @@ public class ConsoleSession {
                 printLine("Bye!");
                 break;
             } else if (command instanceof LookCommand) {
-                look();
+                lookAround();
             } else if (command instanceof UnknownCommand unknown) {
                 printLine("Unknown command: '%s'. Try 'look' or 'bye'.".formatted(unknown.getInput()));
             }
         }
     }
 
-    private void look() {
+    private void lookAround() {
         // Pull a fresh prototype use case per interaction; it presents its own outcome.
+        // The acting player is ambient — the use case resolves it; the controller passes nothing.
         LookInputPort lookUseCase = applicationContext.getBean(LookInputPort.class);
-        lookUseCase.look(properties.getPlayer().getId());
+        lookUseCase.playerLooksAround();
     }
 
     private void printLine(String text) {

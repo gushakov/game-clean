@@ -6,6 +6,7 @@ import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -19,29 +20,35 @@ import java.util.Optional;
  * <p>This is the project's first <b>read-only</b> use case, and it shows what that costs: nothing.
  * The interaction is two reads and a presentation, with <em>no transaction at all</em> — reads run
  * outside any consistency boundary (there is nothing to commit, so there is no {@code doInTransaction}
- * and no after-commit hook). Construction of the {@link PlayerId} value object happens here, the
- * single validity gate; the controller carries only the primitive id.
+ * and no after-commit hook).
+ *
+ * <p>The acting player is <b>ambient</b>: rather than receive a player id as a parameter, the
+ * interaction asks {@code playerOps} who is acting and constructs the {@link PlayerId} value object
+ * here — the single validity gate. A malformed configured id therefore fails at this gate and routes
+ * to {@code presentError}, exactly as a bad parameter would have.
  *
  * <p>Outcomes are reached by <em>branch-and-present</em>, not by throwing: a missing player or a
  * dangling current-scene reference each calls a dedicated presenter method. The outermost checkpoint
- * routes anything unexpected (a malformed configured id, a persistence fault) to {@code presentError}.
+ * routes anything unexpected (a malformed id, a persistence fault) to {@code presentError}.
  */
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class LookUseCase implements LookInputPort {
 
     LookPresenterOutputPort presenter;
-    PlayerRepositoryOperationsOutputPort playerOps;
+    PlayerOperationsOutputPort playerOps;
+    PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     SceneRepositoryOperationsOutputPort sceneOps;
 
     @Override
-    public void look(String playerId) {
+    public void playerLooksAround() {
         try {
-            // Initiating actor: the player. Construct the id value object — the validity gate.
-            PlayerId id = new PlayerId(playerId);
+            // Initiating actor: the player — ambient, resolved here rather than passed in.
+            // Construct the id value object — the validity gate.
+            PlayerId id = new PlayerId(playerOps.currentPlayerId());
 
             // Read the player to find where it is. Read-only: outside any transaction.
-            Optional<Player> player = playerOps.findPlayer(id);
+            Optional<Player> player = playerRepositoryOps.findPlayer(id);
             if (player.isEmpty()) {
                 presenter.presentPlayerNotFound(id);
                 return;
