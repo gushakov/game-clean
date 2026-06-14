@@ -1,7 +1,7 @@
 # Authored world seed — a small, connected scene graph.
 #
 # This is data, not schema: it flows into the world *through the domain* (the
-# future ConstructWorld use case constructs and validates the aggregates), never
+# InitializeGame use case constructs and validates the aggregates), never
 # via Flyway, which owns DDL only.
 #
 # Ids are authored short keys (the body the SceneId value object carries, e.g.

@@ -14,10 +14,10 @@ spring:
     password: postgres
 
 game:  # all game.* properties are catalogued in GameConfigurationProperties
-  # Where the authored world seed lives (consumed by WorldSeeder).
+  # Where the authored world seed lives (consumed by GameSeeder, fed to the InitializeGame use case).
   world:
     seed-location: classpath:world/scenes.yaml
-  # The interactive runtime: BootSequence seeds the world then runs the JLine console
+  # The interactive runtime: BootSequence seeds the game (world + player) then runs the JLine console
   # (TerminalConfig + ConsoleSession + TerminalScenePresenter). Enabled here so the app is playable;
   # left unset in test profiles so @SpringBootTest slices never seed implicitly, block on a console,
   # or try to grab a system terminal.

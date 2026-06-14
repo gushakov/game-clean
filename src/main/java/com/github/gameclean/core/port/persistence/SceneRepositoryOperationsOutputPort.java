@@ -11,7 +11,7 @@ import java.util.Optional;
  * core is the caller, the infrastructure ring the implementor.
  *
  * <p>Scoped to what its use cases need: an emptiness check and per-scene save for
- * {@code ConstructWorld}'s seed-if-empty guard, and a lookup by id for {@code Look} (the read that
+ * {@code InitializeGame}'s seed-if-empty guard, and a lookup by id for {@code Look} (the read that
  * retired the spike's direct repository access). It trades in the domain {@link Scene} model — the
  * adapter hides its own persistence shape.
  *

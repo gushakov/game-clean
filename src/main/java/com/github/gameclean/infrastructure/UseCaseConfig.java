@@ -7,12 +7,9 @@ import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPor
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.LookPresenterOutputPort;
 import com.github.gameclean.core.usecase.explore.LookUseCase;
-import com.github.gameclean.core.usecase.initialize.ConstructWorldInputPort;
-import com.github.gameclean.core.usecase.initialize.ConstructWorldPresenterOutputPort;
-import com.github.gameclean.core.usecase.initialize.ConstructWorldUseCase;
-import com.github.gameclean.core.usecase.initialize.CreatePlayerInputPort;
-import com.github.gameclean.core.usecase.initialize.CreatePlayerPresenterOutputPort;
-import com.github.gameclean.core.usecase.initialize.CreatePlayerUseCase;
+import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
+import com.github.gameclean.core.usecase.initialize.InitializeGamePresenterOutputPort;
+import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,22 +31,13 @@ public class UseCaseConfig {
 
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-    public ConstructWorldInputPort constructWorldUseCase(
-            ConstructWorldPresenterOutputPort presenter,
-            SceneRepositoryOperationsOutputPort sceneOps,
-            TransactionOperationsOutputPort txOps) {
-        return new ConstructWorldUseCase(presenter, sceneOps, txOps);
-    }
-
-    @Bean
-    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-    public CreatePlayerInputPort createPlayerUseCase(
-            CreatePlayerPresenterOutputPort presenter,
+    public InitializeGameInputPort initializeGameUseCase(
+            InitializeGamePresenterOutputPort presenter,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
             TransactionOperationsOutputPort txOps) {
-        return new CreatePlayerUseCase(presenter, playerOps, playerRepositoryOps, sceneOps, txOps);
+        return new InitializeGameUseCase(presenter, playerOps, playerRepositoryOps, sceneOps, txOps);
     }
 
     @Bean

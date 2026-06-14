@@ -1,9 +1,10 @@
 package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.model.scene.Scene;
-import com.github.gameclean.core.usecase.initialize.ConstructWorldInputPort;
-import com.github.gameclean.core.usecase.initialize.ConstructWorldPresenterOutputPort;
+import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
+import com.github.gameclean.core.usecase.initialize.InitializeGamePresenterOutputPort;
 import com.github.gameclean.core.usecase.initialize.SceneEntry;
+import com.github.gameclean.infrastructure.persistence.player.PlayerSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -16,61 +17,72 @@ import java.io.InputStream;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
 /**
- * End-to-end integration of the {@code ConstructWorld} vertical against the real Dockerized Postgres:
- * the use case (resolved through the composition root), the {@code SpringSceneRepositoryAdapter}, the
- * transaction adapter, the MapStruct mapper and the Flyway-migrated schema all participate. Only the
- * presenter is replaced — by a Mockito mock — so the use case's reported outcomes can be asserted
- * alongside the persisted state.
+ * End-to-end integration of the {@code InitializeGame} vertical against the real Dockerized Postgres:
+ * the use case (resolved through the composition root), the {@code SpringSceneRepositoryAdapter} and
+ * {@code SpringPlayerRepositoryAdapter}, the transaction adapter, the MapStruct mappers and the
+ * Flyway-migrated schema all participate. Only the presenter is replaced — by a Mockito mock — so the
+ * use case's reported outcomes can be asserted alongside the persisted state across both phases.
  *
  * <p>{@code @SpringBootTest} (not a {@code @DataJdbcTest} slice) so the programmatic transactions
- * genuinely commit — there is no test-managed rollback. Each test therefore cleans up after itself
- * in {@code @AfterEach}; deleting a scene removes its owned exits with it.
+ * genuinely commit — there is no test-managed rollback. The test cleans up after itself in
+ * {@code @AfterEach}; deleting a scene removes its owned exits with it.
  *
- * <p>Boot 4 / Spring 7 note: {@code @MockBean} is removed; the replacement is
- * {@code @MockitoBean} from {@code org.springframework.test.context.bean.override.mockito}.
+ * <p>Boot 4 / Spring 7 note: {@code @MockBean} is removed; the replacement is {@code @MockitoBean} from
+ * {@code org.springframework.test.context.bean.override.mockito}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class ConstructWorldIT {
+class InitializeGameIT {
 
     private static final List<String> SEED_IDS = List.of("scn1", "scn2", "scn3", "scn4");
+    private static final String SEEDED_PLAYER_ID = "plr1";
 
     @MockitoBean
-    private ConstructWorldPresenterOutputPort presenter;
+    private InitializeGamePresenterOutputPort presenter;
 
     @Autowired
-    private ConstructWorldInputPort constructWorld;
+    private InitializeGameInputPort initializeGame;
 
     @Autowired
     private SceneSpringDataRepository sceneRepository;
+
+    @Autowired
+    private PlayerSpringDataRepository playerRepository;
 
     private final SceneYamlReader reader = new SceneYamlReader();
 
     @AfterEach
     void cleanUp() {
+        playerRepository.deleteById(SEEDED_PLAYER_ID);
         SEED_IDS.forEach(sceneRepository::deleteById);
     }
 
     @Test
-    void constructsAndSeedsTheAuthoredWorldThenSkipsOnASecondRun() throws Exception {
+    void initializesTheWorldAndPlayerThenSkipsBothOnASecondRun() throws Exception {
         List<SceneEntry> entries = readSeed();
 
-        // first run against an empty world: the four authored scenes are seeded ...
-        constructWorld.constructWorld(entries);
+        // first run against an empty game: the four authored scenes are seeded and the player placed ...
+        initializeGame.initialize(entries, "scn1");
 
         assertThat(sceneRepository.count()).isEqualTo(4);
         ArgumentCaptor<List<Scene>> captor = sceneListCaptor();
         verify(presenter).presentSuccessfulWorldConstruction(captor.capture());
         assertThat(captor.getValue()).extracting(scene -> scene.getId().getValue())
                 .containsExactlyElementsOf(SEED_IDS);
+        assertThat(playerRepository.findById(SEEDED_PLAYER_ID)).isPresent()
+                .get().satisfies(player -> assertThat(player.getCurrentSceneId()).isEqualTo("scn1"));
+        verify(presenter).presentSuccessfulPlayerCreation(any());
 
-        // ... a second run finds the world already populated and skips, adding no duplicate rows.
-        constructWorld.constructWorld(entries);
+        // ... a second run finds both already present and skips, adding no duplicate rows.
+        initializeGame.initialize(entries, "scn1");
 
         assertThat(sceneRepository.count()).isEqualTo(4);
+        assertThat(playerRepository.count()).isEqualTo(1);
         verify(presenter).presentWorldAlreadyConstructed();
+        verify(presenter).presentPlayerAlreadyExists(any());
     }
 
     private List<SceneEntry> readSeed() throws Exception {
