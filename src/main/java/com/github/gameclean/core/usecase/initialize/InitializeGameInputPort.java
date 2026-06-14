@@ -7,15 +7,18 @@ import java.util.List;
  * starting state. A driving adapter — the boot-time {@code GameSeeder}, later any caller — invokes it
  * to construct the authored world and place the single player in it.
  *
- * <p>One interaction, {@link #initialize(List, String)}, whose initiating actor is the <em>system at
- * startup</em>. It is {@code void}: every outcome (world seeded, world already present, an invalid
- * authored input, an unresolved exit target, a player created, a player that already exists, an unknown
- * starting scene, or an unexpected error) is reported through the
- * {@link InitializeGamePresenterOutputPort}, never returned.
+ * <p>One interaction, {@link #systemInitializesGame(List, String)}, whose initiating actor is the
+ * <em>system at startup</em>. Its name is the Cockburn step it implements — subject (the system) and
+ * predicate (initializes the game) — not a bare lifecycle verb like {@code initialize}. It is
+ * {@code void}: its single success — a playable game, the world present and the player placed — and each
+ * failure (an invalid authored input, an unresolved exit target, an unknown starting scene, an
+ * unexpected error) is reported through the {@link InitializeGamePresenterOutputPort}, never returned.
+ * Because a {@code present*} call relinquishes control, exactly one of those outcomes is reached per run,
+ * as the interaction's last act.
  *
  * <p>The world→player order is a <em>domain</em> precondition — a player needs a scene to stand in —
  * not a lifecycle one, so it lives <em>inside</em> the use case rather than being sequenced by a
- * caller: world construction and player seeding are private steps of this single interaction, and the
+ * caller: world construction and player placement are the two phases of this single interaction, and the
  * player is placed only once the world is usable. Authored input crosses the boundary as primitives —
  * the {@link SceneEntry} carriers for the scenes, a bare {@code String} for the starting scene id — and
  * the value objects are constructed inside the use case, the single validity gate.
@@ -35,5 +38,5 @@ public interface InitializeGameInputPort {
      *                        by design — the use case validates it and checks that it resolves to a
      *                        persisted scene)
      */
-    void initialize(List<SceneEntry> sceneEntries, String startingSceneId);
+    void systemInitializesGame(List<SceneEntry> sceneEntries, String startingSceneId);
 }

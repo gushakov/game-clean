@@ -189,26 +189,60 @@ through the domain model; Flyway owns schema/DDL only, never data. The seed-if-e
 idempotency guard lives *inside* the use case, so the guarantee holds regardless of which
 adapter fires it.
 
-**World and player are two phases of one system interaction.** `[thread #4]` Initializing a
-fresh game is a *single* system-actor goal — `InitializeGame` — not two. Constructing the
-authored world and placing the single player are *phases* of one `void` interaction, run as
-private subfunctions, because the world→player order is a **domain precondition** (a player
-needs a scene to stand in), not two independent goals that merely happen to run at boot.
-Holding the sequence inside one use case is exactly what lets the precondition be enforced
-*where its outcome is visible*: the void/unidirectional contract binds the **public**
-interaction, but a private subfunction may return and branch like ordinary code — so
-world-construction returns a plain boolean gate, player-placement runs only when the world is
-usable (freshly seeded *or* already present), and a construction failure stops the interaction
-before any player is created. This is the project's first in-use-case decomposition, and it
-takes the *lightest* form deliberately — private subfunctions, not the heavier **subcase**
-machinery (a reusable procedure with its own presenter), which waits for a genuine
-cross-use-case reuse need. The earlier shape — a separate `ConstructWorld` and `CreatePlayer`
-sequenced *by the boot orchestrator* — is the cautionary tale §6 now records: it pushed a
-domain precondition into infrastructure and acted on an outcome it had renounced the right to
-know. The player phase keeps its own self-guard (it re-checks that the starting scene
-resolves), so even a degraded world cannot yield a dangling player; the validity gate, two-pass
-exit resolution, and transaction-tight seed/create are unchanged — they simply moved into the
-phases.
+**World and player are two phases of one system interaction — that present once.** `[thread #4]`
+Initializing a fresh game is a *single* system-actor goal — `InitializeGame` — not two.
+Constructing the authored world and placing the single player are *phases* of one `void`
+interaction, because the world→player order is a **domain precondition** (a player needs a scene
+to stand in), not two independent goals that merely happen to run at boot. Holding the sequence
+inside one use case is what lets the precondition be enforced *where its outcome is visible*. The
+decisive constraint is the rule stated next: a phase **must not present and then continue**. So
+the world phase is *not* a sub-interaction that reports its own success — it is a pair of
+**non-presenting checkpoints** (build the scene aggregates, resolve their exit targets) feeding
+the interaction's *single* success, `presentGameInitialized`. "World already seeded" and "player
+already present" fold into that one outcome, because the system actor's goal — a playable game —
+is met identically whether the state was just written or already there. The phases are plain
+inline checkpoints, not the heavier **subcase** machinery (a reusable procedure with its own
+presenter), which waits for a genuine cross-use-case reuse need — and not, any longer, private
+helpers that returned a boolean gate. That boolean was the tell that a non-terminal phase was
+being treated as a terminal interaction: it *presented* its outcome **and** *returned a
+continue/stop flag*, straddling the helper/subcase split and doing the one thing the
+single-presentation rule forbids. What remains is the validity gate, the inter-aggregate
+resolution (every exit target *and* the starting scene resolve to an authored scene — checked
+**in-memory** against the world being built, because on a first run the store is not seeded yet,
+so a store lookup would be a false negative), and a now-*single* transaction-tight
+seed-and-create — all converging on the one presentation.
+
+**Presentation is terminal: exactly one `present*` per run, and it is the last act.** This is the
+sharpest expression so far of unidirectional flow, and `InitializeGame` is what forced it into
+the open. A `present*` call does not invoke a subroutine — it *relinquishes control completely*.
+The interaction has finished advancing its actor toward the goal along one of Cockburn's
+"stripes"; another actor may now initiate a different interaction, or none, and the original
+interaction can make **no assumption about application state thereafter**. So on any execution
+path exactly one `present*` is reached, as the final action — never "present, then continue,"
+never two stripes active in one run. The symmetry that makes this load-bearing: it is the
+use-case-side twin of the controller rule (never branch on a use case's result, never chain use
+cases). Both forbid *acting on control you have already given away* — the controller has no
+return channel from a `void` use case; the use case has no resume channel after it presents. The
+rule is already latent in the checkpoint pattern (a success checkpoint either continues
+*silently* or presents *and returns* — never presents and continues) and in the terminal-subcase
+contract (present, then *always throw*); naming it interaction-globally is what catches the
+violation a phase-by-phase merge invites. **This belongs in `clean-ddd-core` (the
+unidirectional-flow section) as a first-class invariant — flagged here as a promotion candidate,
+not promoted from this project per the methodology's Prompt-4 discipline.**
+
+**Transaction corollary.** `[thread #3]` When the single outcome is a success behind a write, the
+rule takes a concrete shape: at most **one** `txOps.doAfterCommit(() -> present*)` is ever
+activated in an interaction, registered inside the one `doInTransaction`, and that
+`doInTransaction` call is *followed by `return`* — the deferred presentation is the interaction's
+terminal act, so nothing may run after it commits. Failures *before* the transaction
+present-and-return directly (each its own stripe); a failure *inside* it throws, rolling back and
+unwinding to the single outermost `catch → presentError`, so even the error path presents exactly
+once. One outcome also invited **one atomic unit**: the world-seed and player-create guards-plus-
+writes that were two transactions collapsed into a single `doInTransaction`. The boundary that
+keeps the rule from over-reaching: a `doAfterCommit(present)` and a domain-event dispatch are
+**not** a second presentation — scheduling deferred work, or dispatching an event that later
+triggers a *different* interaction, is allowed (that is the §8 event spine); the invariant governs
+an interaction's own forward `present*` calls, not the causal chain it may set in motion.
 
 **A read-only interaction, and a presenter that has not yet split.** `[thread #2]` `Look` is
 the first read-only use case: it reads the player, resolves the player's current scene, and
@@ -221,6 +255,16 @@ presenter port. Each use case keeps its *own* outcome methods (`look` its not-fo
 `move` its no-such-exit case); merging whole ports would pile unrelated outcomes onto one
 interface. So the extraction waits for `move` to exist and shape it — co-location now, a
 focused shared capability later, never a grab-bag presenter.
+
+**Interaction methods are named as the Cockburn step, not as a service verb.** `[thread #4]` An
+interaction method's name is its *actor + predicate* — `playerLooksAround`,
+`systemInitializesGame` — the subject being the initiating actor (the player, or the system at
+startup) and the predicate the goal it advances. A bare verb (`look`, `initialize`) reads as a
+framework or service call and sheds the use-case identity the method *is*; because the summary-goal
+package and the use-case class already carry the goal noun, the method is free to spell out the
+step. The name then states, right at the call site, *who acts and toward what* — the same Cockburn
+thread the package and class encode at coarser grain. (Sibling to `clean-ddd-core`'s presenter-method
+grammar; a candidate to promote there as the matching rule for input-port methods.)
 
 **Express outcomes by presenting, not always by throwing.** A dangling exit target is
 handled by **branch-and-present** — a checkpoint collects the unresolved targets and calls a

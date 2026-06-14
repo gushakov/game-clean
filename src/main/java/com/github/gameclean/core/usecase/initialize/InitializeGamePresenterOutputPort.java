@@ -1,6 +1,5 @@
 package com.github.gameclean.core.usecase.initialize;
 
-import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
@@ -17,19 +16,28 @@ import java.util.Map;
  * Qualifier} grammar; domain objects pass straight through (immutable, so the presenter cannot corrupt
  * them — no Response-Model DTOs).
  *
- * <p>The single interaction has two phases — world construction then player placement — so the port
- * carries the outcomes of both. The implementation for the system-at-startup actor presents to a
- * <em>log file</em>, not a console: this is a system interaction with no interactive audience.
+ * <p>The interaction has two phases — world construction then player placement — but it presents
+ * <em>once</em>: a {@code present*} call relinquishes control, so a single execution path reaches exactly
+ * one of these methods, as its last act. There is therefore one success outcome,
+ * {@link #presentGameInitialized}, that covers every happy combination (world freshly seeded or already
+ * present, player freshly created or already present) — the system actor's goal, a playable game, is the
+ * same in all of them. The remaining methods are the distinct failure stripes. The implementation for the
+ * system-at-startup actor presents to a <em>log file</em>, not a console: this is a system interaction
+ * with no interactive audience.
  */
 public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresenterOutputPort {
 
-    // --- world construction phase ---------------------------------------------------------------
+    // --- the single success outcome -------------------------------------------------------------
 
-    /** Happy path: the world was empty and the given scenes were constructed and seeded. */
-    void presentSuccessfulWorldConstruction(List<Scene> scenes);
+    /**
+     * Happy path: the game is in a playable starting state — the authored {@code scenes} are present and
+     * a player with {@code playerId} is placed in the world. Covers both first-run initialization
+     * (scenes seeded, player created) and an idempotent re-run (one or both already present); the
+     * outcome the system actor cares about is identical, so it is one presentation, not four.
+     */
+    void presentGameInitialized(List<Scene> scenes, PlayerId playerId);
 
-    /** Neutral idempotent outcome: the world was already populated, so seeding was skipped. */
-    void presentWorldAlreadyConstructed();
+    // --- failure stripes ------------------------------------------------------------------------
 
     /**
      * Inter-aggregate consistency failure: one or more exits point at a {@link SceneId} that no authored
@@ -38,21 +46,11 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
      */
     void presentErrorWhenExitTargetUnknown(Map<SceneId, List<Exit>> unresolvedExitsByScene);
 
-    // --- player placement phase -----------------------------------------------------------------
-
-    /** Happy path: no player existed, so the given player was created and persisted. */
-    void presentSuccessfulPlayerCreation(Player player);
-
-    /** Neutral idempotent outcome: a player already exists, so creation was skipped. */
-    void presentPlayerAlreadyExists(PlayerId playerId);
-
     /**
-     * Inter-aggregate consistency failure: the configured starting scene id resolves to no persisted
+     * Inter-aggregate consistency failure: the configured starting scene id resolves to no authored
      * scene. Reported as a meaningful domain outcome rather than a dangling reference.
      */
     void presentStartingSceneUnknown(SceneId startingSceneId);
-
-    // --- shared validity gate -------------------------------------------------------------------
 
     /**
      * Validation failure while constructing value objects from authored input — a blank scene name, a
