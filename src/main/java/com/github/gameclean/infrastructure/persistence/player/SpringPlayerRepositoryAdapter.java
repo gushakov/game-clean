@@ -18,9 +18,12 @@ import java.util.Optional;
  * in the core's {@link PersistenceOperationsError} so callers see only domain types and a single
  * unchecked failure mode.
  *
- * <p>Writes go through {@link JdbcAggregateTemplate#insert} rather than a {@code save}: player ids are
- * assigned, and {@code save} would treat an assigned id as an update. The seeder creates the player
- * exactly once into an empty store, so the write is unambiguously an insert.
+ * <p>{@code savePlayer} is an <em>upsert</em>: player ids are assigned (never null), so Spring Data JDBC's
+ * {@code save} cannot tell a new player from an existing one — it would always attempt an update. The
+ * adapter decides explicitly, issuing {@link JdbcAggregateTemplate#insert} when no row exists yet (the boot
+ * seeder creating the player) and {@link JdbcAggregateTemplate#update} when one does (a {@code move}
+ * recording the player's new position). Optimistic locking via {@code @Version} is deliberately deferred to
+ * the concurrency thread — single-session play has no contended player aggregate yet.
  */
 @Component
 @RequiredArgsConstructor
@@ -43,8 +46,14 @@ public class SpringPlayerRepositoryAdapter implements PlayerRepositoryOperations
     @Override
     public void savePlayer(Player player) {
         try {
-            aggregateTemplate.insert(mapper.toDbEntity(player));
-            log.debug("[Persistence] Inserted player {}", player.getId().getValue());
+            PlayerDbEntity entity = mapper.toDbEntity(player);
+            if (repository.existsById(entity.getId())) {
+                aggregateTemplate.update(entity);
+                log.debug("[Persistence] Updated player {}", player.getId().getValue());
+            } else {
+                aggregateTemplate.insert(entity);
+                log.debug("[Persistence] Inserted player {}", player.getId().getValue());
+            }
         } catch (Exception e) {
             throw new PersistenceOperationsError(
                     "Cannot save player %s".formatted(player.getId().getValue()), e);

@@ -35,6 +35,24 @@ class PlayerTest {
     }
 
     @Test
+    void moves_to_a_new_scene_keeping_identity_and_leaving_the_original_unchanged() {
+        Player atGate = Player.builder().id(new PlayerId("plr1")).currentScene(new SceneId("scn1")).build();
+
+        Player moved = atGate.moveTo(new SceneId("scn2"));
+
+        assertThat(moved.getId()).isEqualTo(new PlayerId("plr1"));
+        assertThat(moved.getCurrentScene()).isEqualTo(new SceneId("scn2"));
+        // Immutable: the original still stands where it was.
+        assertThat(atGate.getCurrentScene()).isEqualTo(new SceneId("scn1"));
+    }
+
+    @Test
+    void rejects_a_move_to_a_null_scene() {
+        Player atGate = Player.builder().id(new PlayerId("plr1")).currentScene(new SceneId("scn1")).build();
+        assertThatNullPointerException().isThrownBy(() -> atGate.moveTo(null));
+    }
+
+    @Test
     void equals_by_identity_only() {
         Player atGate = Player.builder().id(new PlayerId("plr1")).currentScene(new SceneId("scn1")).build();
         Player movedOn = Player.builder().id(new PlayerId("plr1")).currentScene(new SceneId("scn2")).build();

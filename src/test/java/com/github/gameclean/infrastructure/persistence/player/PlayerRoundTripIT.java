@@ -18,9 +18,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * startup; the {@code @DataJdbcTest} slice rolls each test back by default, so inserted rows never
  * persist (the committed Flyway DDL is the documented exception).
  *
- * <p>Writes go through {@link JdbcAggregateTemplate#insert} (the insert-only {@code savePlayer} shape);
- * reads go through {@link PlayerSpringDataRepository}. The MapStruct mapper is the only collaborator
- * the slice does not supply, so it is pulled in via {@code @Import}.
+ * <p>The raw round-trip writes through {@link JdbcAggregateTemplate#insert} and reads through
+ * {@link PlayerSpringDataRepository}; a second test drives the adapter's {@code savePlayer} upsert end to
+ * end (insert then in-place update — the path {@code move} exercises). The MapStruct mapper is the only
+ * collaborator the slice does not supply, so it is pulled in via {@code @Import}.
  */
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -51,6 +52,22 @@ class PlayerRoundTripIT {
         // even if the current scene were corrupted on the round-trip.
         assertThat(reloaded.getId()).isEqualTo(player.getId());
         assertThat(reloaded.getCurrentScene()).isEqualTo(player.getCurrentScene());
+        assertThat(repository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void savePlayer_inserts_a_new_player_then_updates_its_position_in_place() {
+        SpringPlayerRepositoryAdapter adapter =
+                new SpringPlayerRepositoryAdapter(repository, aggregateTemplate, mapper);
+
+        adapter.savePlayer(Player.builder()
+                .id(new PlayerId("plr1")).currentScene(new SceneId("scn1")).build());
+        // Same id, new position: the second save must update the existing row, not insert a second one.
+        adapter.savePlayer(Player.builder()
+                .id(new PlayerId("plr1")).currentScene(new SceneId("scn2")).build());
+
+        Player reloaded = adapter.findPlayer(new PlayerId("plr1")).orElseThrow();
+        assertThat(reloaded.getCurrentScene()).isEqualTo(new SceneId("scn2"));
         assertThat(repository.count()).isEqualTo(1);
     }
 }

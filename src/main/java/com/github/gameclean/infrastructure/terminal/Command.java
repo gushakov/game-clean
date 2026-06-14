@@ -9,7 +9,7 @@ package com.github.gameclean.infrastructure.terminal;
  * core ever knowing command syntax existed.
  *
  * <p>Implementations are the small closed set of intents the parser can produce: {@link LookCommand},
- * {@link QuitCommand}, {@link UnknownCommand}.
+ * {@link MoveCommand}, {@link QuitCommand}, {@link UnknownCommand}.
  */
 public interface Command {
 }

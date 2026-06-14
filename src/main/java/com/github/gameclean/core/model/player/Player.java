@@ -35,4 +35,18 @@ public class Player {
         this.id = Objects.requireNonNull(id, "player id must not be null");
         this.currentScene = Objects.requireNonNull(currentScene, "player current scene must not be null");
     }
+
+    /**
+     * Returns a copy of this player standing in {@code target} — the state change {@code move} records.
+     * The aggregate is immutable, so moving yields a <em>new</em> instance with the same identity and the
+     * new position; the original is untouched. This is the player's first behaviour beyond holding its
+     * position, surfaced because {@code move} forced it — the same emergence discipline that kept the
+     * aggregate to a single field until now. A null target is rejected by the constructor's validity gate.
+     *
+     * @param target the scene the player moves into
+     * @return a new {@code Player} with this player's id and {@code target} as its current scene
+     */
+    public Player moveTo(SceneId target) {
+        return new Player(id, target);
+    }
 }

@@ -9,9 +9,9 @@ import java.util.Optional;
  * Driven (output) port for player persistence — the {@code OutputPort} suffix marks the hexagonal
  * direction: the core is the caller, an infrastructure adapter the implementor.
  *
- * <p>Scoped to what the first player-facing round needs: a lookup by id (the {@code Look} use case
- * reads the player to find its current scene; the boot seeder uses the same lookup as an existence
- * check) and a save (the boot seeder creates the single player). Following the established
+ * <p>Scoped to what its use cases need: a lookup by id (the {@code Look} use case reads the player to
+ * find its current scene; the boot seeder uses the same lookup as an existence check) and a save (the
+ * boot seeder creates the single player; {@code move} updates its position). Following the established
  * driven-port convention, it trades in the domain {@link Player} model — the adapter hides its own
  * persistence shape.
  *
@@ -27,7 +27,9 @@ public interface PlayerRepositoryOperationsOutputPort {
     Optional<Player> findPlayer(PlayerId id);
 
     /**
-     * Persists a single player (insert). Ids are assigned, so this is always an insert.
+     * Persists the player, inserting it if new and updating it in place otherwise (an upsert). The boot
+     * seeder creates the player; {@code move} updates its position. The adapter hides the insert-vs-update
+     * decision, so callers express only intent — "persist this player".
      *
      * @throws PersistenceOperationsError if the save fails
      */

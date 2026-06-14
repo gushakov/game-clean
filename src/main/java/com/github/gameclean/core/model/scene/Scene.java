@@ -7,6 +7,7 @@ import lombok.Getter;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -39,6 +40,24 @@ public class Scene {
         this.fullDescription = requireNonBlank(fullDescription, "scene full description");
         this.exits = List.copyOf(Objects.requireNonNull(exits, "scene exits must not be null"));
         requireUniqueExitNames(this.exits);
+    }
+
+    /**
+     * Finds the exit leaving this scene by name — the lookup {@code move} uses to resolve the direction
+     * the player chose. Matching is case-insensitive and ignores surrounding whitespace, so
+     * {@code "East"}, {@code "east"} and {@code "  east  "} all select the same exit. Exit names are
+     * unique within a scene (an enforced invariant), so at most one exit can match.
+     *
+     * @return the matching exit, or empty if no exit of that name leaves this scene
+     */
+    public Optional<Exit> exitNamed(String name) {
+        if (name == null) {
+            return Optional.empty();
+        }
+        String wanted = name.strip();
+        return exits.stream()
+                .filter(exit -> exit.getName().equalsIgnoreCase(wanted))
+                .findFirst();
     }
 
     private static String requireNonBlank(String value, String what) {

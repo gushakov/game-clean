@@ -18,7 +18,7 @@ game:  # all game.* properties are catalogued in GameConfigurationProperties
   world:
     seed-location: classpath:world/scenes.yaml
   # The interactive runtime: BootSequence seeds the game (world + player) then runs the JLine console
-  # (TerminalConfig + ConsoleSession + TerminalScenePresenter). Enabled here so the app is playable;
+  # (TerminalConfig + ConsoleSession + the terminal presenters). Enabled here so the app is playable;
   # left unset in test profiles so @SpringBootTest slices never seed implicitly, block on a console,
   # or try to grab a system terminal.
   terminal:

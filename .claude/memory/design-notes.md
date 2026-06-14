@@ -244,17 +244,31 @@ keeps the rule from over-reaching: a `doAfterCommit(present)` and a domain-event
 triggers a *different* interaction, is allowed (that is the §8 event spine); the invariant governs
 an interaction's own forward `present*` calls, not the causal chain it may set in motion.
 
-**A read-only interaction, and a presenter that has not yet split.** `[thread #2]` `Look` is
-the first read-only use case: it reads the player, resolves the player's current scene, and
-presents — reaching its outcomes by **branch-and-present** (missing player, dangling
-current-scene reference) exactly as world construction does for unresolved exits, never by
-throwing. Its presenter port is **co-located** (`LookPresenterOutputPort`) and shaped around
-`presentScene(Scene)`. `move` will want that same rendering — but the sharing thread produced a
-sharp finding: what would be shared is the **narrow `presentScene` capability**, not the whole
-presenter port. Each use case keeps its *own* outcome methods (`look` its not-found cases,
-`move` its no-such-exit case); merging whole ports would pile unrelated outcomes onto one
-interface. So the extraction waits for `move` to exist and shape it — co-location now, a
-focused shared capability later, never a grab-bag presenter.
+**Read-only and read-write interactions over one shared scene presentation.** `[thread #2]`
+`Look` (read-only) and `move` (read-write, the first interaction to *update* an aggregate) both
+operate *from the acting player's current scene*, reaching their outcomes by **branch-and-present**
+(missing player, dangling current-scene reference) rather than by throwing. That shared grounding —
+not the use case — is what decides presenter sharing, and `move`'s arrival **corrected the first
+guess**. The guess was that only the narrow `presentScene` capability would be shared, each use case
+keeping its own not-found outcomes. But because `move` resolves the *same* player-and-current-scene
+prologue, the not-found outcomes are shared too: the cluster is the three outcomes of "describe where
+the acting player stands, or why we can't" — lifted into `CurrentScenePresenterOutputPort`. `move`'s
+port extends it with the two outcomes peculiar to moving (no-such-exit, dangling exit target), and
+`look`'s port turns out to *be* the cluster exactly (kept as an empty marker for symmetry). The
+lesson: **outcome-sharing tracks the shared prologue, not the use case** — any later interaction
+grounded in the current scene (`look <target>`, `take`) joins the same cluster.
+
+This split sharpens the project's headline finding into **three orthogonal axes of sharing**, each
+resolved differently. The *port vocabulary* is shared — by interface extension, with **no default
+methods** (a presenter port stays behaviour-free; how a scene renders is an adapter concern). The
+*adapter rendering* is shared — a single `CurrentSceneRenderer` collaborator over a `Console` facade
+(§7), injected into two thin per-use-case presenter beans: **composition**, not a presenter base
+class (which would overclaim "is-a scene presenter") and not a grab-bag port. But the *use-case
+logic* is deliberately **not** shared. The identical opening — resolve player → read → resolve
+current scene, branch-and-present on each failure — is left inline-duplicated rather than factored
+into a subcase, because a prologue subcase would *present on failure and continue on success*: the
+present-or-continue straddle the single-presentation rule forbids. **Share the vocabulary and the
+rendering; never the logic.**
 
 **Interaction methods are named as the Cockburn step, not as a service verb.** `[thread #4]` An
 interaction method's name is its *actor + predicate* — `playerLooksAround`,
@@ -326,6 +340,20 @@ built before its first consumer, which inverts the usual inside-out order. Accep
 because it is *stable cross-project infrastructure*, not an emergent domain artifact; the
 emergence discipline (§2) applies to the model, not to plumbing the methodology already
 considers settled.
+
+**Insert-vs-update for assigned ids — upsert now, `@Version` deferred.** `[thread #3]` `move` is
+the first interaction to *update* an existing aggregate, which exposed a Spring Data JDBC quirk: with
+assigned, never-null ids, `save` cannot distinguish a new row from an existing one (it always issues
+an update), which is why the player adapter had used an explicit `insert`. The adapter now decides
+explicitly — `existsById` ? `update` : `insert` — behind a persistence-ignorant `savePlayer`
+("persist this player," not "insert"). The framework's other answer, an `@Version` field, was weighed
+and **deferred**: its only unique payoff is optimistic locking, and single-session play has no
+contended player aggregate yet. Adopting it now would either keep the version on the DB entity (no
+real locking, plus a wasted read to learn the current version) or bleed a non-domain field into the
+always-valid `Player` (against §2's minimalism). So `@Version` is held *as material for the
+concurrency thread*: when a genuinely contended aggregate arrives, the live question becomes precisely
+whether optimistic locking can stay on the persistence entity or must surface in the model — a
+sharper lesson than anything a speculative version column would teach today.
 
 ## 6. The composition root — the framework held at arm's length
 
@@ -429,10 +457,15 @@ stdin/stdout and force JLine into dumb-terminal mode.
 **The driver evolves; the beans don't.** `[thread #4]` The terminal beans are guarded so
 unit-test slices never grab a system terminal. The *driver* over them changes across phases —
 a blocking runner now, `SmartLifecycle`-managed threads (input loop, clock, outbox relay)
-later — while the bean topology stays put. A thin `Console` facade over JLine is deliberately
-deferred until a *second* adapter needs the same choreography (styling, dumb-terminal
-handling, width-aware formatting): let it emerge from a second use site, the same emergence
-discipline the subcases thread will demand.
+later — while the bean topology stays put. A thin `Console` facade over JLine — long deferred
+until a *second* use site needed the same choreography (styling, dumb-terminal handling,
+width-aware formatting) — **emerged with `move`**: the styled-writing toolkit the `look` and
+`move` presenters share is now one `Console` resource (declared beside `Terminal`/`LineReader` in
+`TerminalConfig`), with a domain-aware `CurrentSceneRenderer` rendering the scene cluster on top of
+it (§4). Emergence on schedule — a second use site shaped the facade, not speculation. Note the
+layering the second site forced into the open: `Console` is **domain-agnostic** (it knows styled
+text and the terminal, never `Scene`); turning a `Scene` into styled output is *presenter* logic and
+lives in `CurrentSceneRenderer`, one layer up.
 
 ## 8. Trajectory: from synchronous to loop-driven concurrency
 

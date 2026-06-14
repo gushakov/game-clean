@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.terminal;
 
 import com.github.gameclean.core.usecase.explore.LookInputPort;
+import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jline.reader.EndOfFileException;
@@ -41,7 +42,7 @@ public class ConsoleSession {
     private final ApplicationContext applicationContext;
 
     public void start() {
-        printLine("Welcome to game-clean. Commands: 'look', 'bye'.");
+        printLine("Welcome to game-clean. Commands: 'look', 'move <exit>', 'bye'.");
         while (true) {
             String line;
             try {
@@ -62,8 +63,10 @@ public class ConsoleSession {
                 break;
             } else if (command instanceof LookCommand) {
                 lookAround();
+            } else if (command instanceof MoveCommand move) {
+                move(move.getExitName());
             } else if (command instanceof UnknownCommand unknown) {
-                printLine("Unknown command: '%s'. Try 'look' or 'bye'.".formatted(unknown.getInput()));
+                printLine("Unknown command: '%s'. Try 'look', 'move <exit>', or 'bye'.".formatted(unknown.getInput()));
             }
         }
     }
@@ -73,6 +76,13 @@ public class ConsoleSession {
         // The acting player is ambient — the use case resolves it; the controller passes nothing.
         LookInputPort lookUseCase = applicationContext.getBean(LookInputPort.class);
         lookUseCase.playerLooksAround();
+    }
+
+    private void move(String exitName) {
+        // Same idiom as look: a fresh prototype use case per interaction, presenting its own outcome.
+        // The acting player is ambient; only the chosen exit crosses inward, as a primitive.
+        MoveInputPort moveUseCase = applicationContext.getBean(MoveInputPort.class);
+        moveUseCase.playerMovesThrough(exitName);
     }
 
     private void printLine(String text) {
