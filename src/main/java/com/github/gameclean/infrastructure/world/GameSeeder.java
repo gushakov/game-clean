@@ -15,7 +15,8 @@ import java.util.List;
 
 /**
  * The single boot-time driving (primary) adapter for the system actor: it reads the authored seed and
- * the configured starting scene, then fires {@link InitializeGameInputPort#initialize(List, String)} to
+ * the configured starting scene, then fires
+ * {@link InitializeGameInputPort#systemInitializesGame(List, String)} to
  * bring a fresh game — world plus player — into being through the domain. It replaces the former
  * {@code WorldSeeder} + {@code PlayerSeeder} pair: the world→player order they used to imply by being
  * invoked in sequence is now a single use-case interaction, so one adapter fires one interaction.
@@ -52,6 +53,6 @@ public class GameSeeder {
             entries = reader.read(in);
         }
         InitializeGameInputPort initializeGame = applicationContext.getBean(InitializeGameInputPort.class);
-        initializeGame.initialize(entries, startingSceneId);
+        initializeGame.systemInitializesGame(entries, startingSceneId);
     }
 }

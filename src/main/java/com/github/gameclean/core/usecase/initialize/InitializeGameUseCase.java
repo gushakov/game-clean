@@ -21,25 +21,33 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Brings a fresh game into a playable starting state: constructs the authored world, then places the
+ * Brings a fresh game into a playable starting state: constructs the authored world and places the
  * single player in it. Implementation of {@link InitializeGameInputPort}; framework-free, wired by the
  * composition root, exercised in isolation against mocked ports.
  *
- * <p>The two steps are one system-actor goal, not two: a player needs a scene to stand in, so the
- * world→player order is a <em>domain</em> precondition. It is enforced <em>inside</em> this single
- * interaction — {@link #constructWorld(List)} then {@link #createPlayer(String)} as private
- * subfunctions — rather than sequenced by a caller across the hexagon boundary (which would assume the
- * first step's outcome it has, by the void/unidirectional contract, renounced the right to know). The
- * player is placed only once the world is usable; a world that fails to construct stops the interaction
- * before any player is created.
+ * <p><b>One interaction, one runtime presentation.</b> Constructing the world and placing the player are
+ * two <em>phases</em> of a single system-actor goal, not two interactions: a player needs a scene to
+ * stand in, so the world→player order is a <em>domain</em> precondition enforced <em>inside</em> this one
+ * interaction rather than sequenced by a caller across the hexagon boundary. The decisive point is that
+ * the phases do <em>not</em> each present. A {@code present*} call relinquishes control for good
+ * (unidirectional flow), so on any execution path exactly <em>one</em> {@code present*} is reached and it
+ * is the last act of the interaction — never "present, then continue." The world phase is therefore a
+ * pair of non-presenting checkpoints feeding the single success outcome,
+ * {@link InitializeGamePresenterOutputPort#presentGameInitialized}. "World already seeded" and "player
+ * already present" are folded into that one success: the system actor's goal — a playable game — is met
+ * identically whether the state was freshly written or already there.
  *
- * <p>Each phase follows the methodology's checkpoint structure, two-pass and transaction-tight: build
- * and resolve run <em>outside</em> any transaction; the seed/create-if-empty guard and the writes share
- * one {@code doInTransaction}; presentation is deferred to after-commit so success is never reported
- * before the data is durable. The initiating actor is the system at startup, so there is no security
- * assertion. The single outermost {@code catch} routes any unhandled error (notably a
- * {@code PersistenceOperationsError}, which has already rolled its transaction back) to
- * {@code presentError}.
+ * <p>The checkpoints run two-pass and transaction-tight. Construction and resolution run <em>outside</em>
+ * any transaction: the intra-aggregate validity gate (value-object construction), then the
+ * inter-aggregate rules that every exit target and the starting scene resolve to an authored scene —
+ * resolved against the in-memory world being initialized, since on a first run the store is not seeded
+ * yet. A <em>single</em> {@code doInTransaction} then holds both idempotency guards (seed-if-empty,
+ * create-if-absent) together with their writes, so those read-then-write decisions cannot interleave with
+ * a concurrent initialization. The lone success presentation is deferred to after-commit so it is never
+ * reported before the data is durable, and the interaction returns immediately after registering it. The
+ * initiating actor is the system at startup, so there is no security assertion. The single outermost
+ * {@code catch} routes any unhandled error (notably a {@code PersistenceOperationsError}, which has
+ * already rolled its transaction back) to {@code presentError}.
  */
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
@@ -52,16 +60,63 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     TransactionOperationsOutputPort txOps;
 
     @Override
-    public void initialize(List<SceneEntry> sceneEntries, String startingSceneId) {
+    public void systemInitializesGame(List<SceneEntry> sceneEntries, String startingSceneId) {
         try {
             // Initiating actor: the system at startup — no security assertion is required.
 
-            if (!constructWorld(sceneEntries)) {
-                // The world is unusable and the failure was already presented; do not place a player in
-                // a world that does not exist.
+            // Checkpoint 1 — construct the scene aggregates (intra-aggregate validity gate).
+            List<Scene> scenes;
+            try {
+                scenes = buildScenes(sceneEntries);
+            } catch (IllegalArgumentException | NullPointerException e) {
+                presenter.presentInvalidParametersError(e);
                 return;
             }
-            createPlayer(startingSceneId);
+
+            // Checkpoint 2 — inter-aggregate rule: every exit target resolves to an authored scene.
+            Map<SceneId, List<Exit>> unresolvedExitsByScene = findUnresolvedExits(scenes);
+            if (!unresolvedExitsByScene.isEmpty()) {
+                presenter.presentErrorWhenExitTargetUnknown(unresolvedExitsByScene);
+                return;
+            }
+
+            // Checkpoint 3 — construct the player value objects and aggregate (validity gate). The acting
+            // player's id is ambient (pulled from playerOps); the starting scene is the authored carrier.
+            PlayerId playerId;
+            SceneId startingScene;
+            Player player;
+            try {
+                playerId = new PlayerId(playerOps.currentPlayerId());
+                startingScene = new SceneId(startingSceneId);
+                player = Player.builder().id(playerId).currentScene(startingScene).build();
+            } catch (IllegalArgumentException | NullPointerException e) {
+                presenter.presentInvalidParametersError(e);
+                return;
+            }
+
+            // Checkpoint 4 — inter-aggregate rule: the starting scene resolves to an authored scene.
+            // Resolved against the in-memory world (like the exit check), not the store: on a first run
+            // the scenes are not persisted yet, so a store lookup here would be a false negative.
+            if (scenes.stream().noneMatch(scene -> scene.getId().equals(startingScene))) {
+                presenter.presentStartingSceneUnknown(startingScene);
+                return;
+            }
+
+            // Checkpoint 5 — one outcome, one atomic unit. A single transaction seeds the world if it is
+            // still empty and creates the player if none exists yet; holding both read-then-write guards
+            // in one transaction stops a concurrent initialization from double-seeding or double-creating.
+            // Exactly one after-commit presentation reports the single success, and the interaction ends
+            // here — nothing runs past a presentation.
+            txOps.doInTransaction(false, () -> {
+                if (sceneOps.worldIsEmpty()) {
+                    scenes.forEach(sceneOps::saveScene);
+                }
+                if (playerRepositoryOps.findPlayer(playerId).isEmpty()) {
+                    playerRepositoryOps.savePlayer(player);
+                }
+                txOps.doAfterCommit(() -> presenter.presentGameInitialized(scenes, playerId));
+            });
+            return;
 
         } catch (Exception e) {
             // Outermost checkpoint. Anything not handled above ends here — notably a
@@ -69,84 +124,6 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             // propagating out of doInTransaction.
             presenter.presentError(e);
         }
-    }
-
-    /**
-     * Constructs and seeds the authored world — the first phase of the interaction.
-     *
-     * @return {@code true} if the world is usable afterwards — freshly seeded or already populated — so
-     *         player placement may proceed; {@code false} if construction failed and the error was
-     *         already presented. A persistence failure is <em>not</em> swallowed here: it propagates to
-     *         {@link #initialize}'s outermost checkpoint, which also stops player placement.
-     */
-    private boolean constructWorld(List<SceneEntry> sceneEntries) {
-        // Checkpoint 1 — construct the aggregates (intra-aggregate validity gate).
-        List<Scene> scenes;
-        try {
-            scenes = buildScenes(sceneEntries);
-        } catch (IllegalArgumentException | NullPointerException e) {
-            presenter.presentInvalidParametersError(e);
-            return false;
-        }
-
-        // Checkpoint 2 — inter-aggregate rule: every exit target resolves to a known scene.
-        Map<SceneId, List<Exit>> unresolvedExitsByScene = findUnresolvedExits(scenes);
-        if (!unresolvedExitsByScene.isEmpty()) {
-            presenter.presentErrorWhenExitTargetUnknown(unresolvedExitsByScene);
-            return false;
-        }
-
-        // Checkpoint 3 — seed once, atomically. The emptiness guard lives inside the same transaction as
-        // the writes so the seed-if-empty decision cannot interleave with a concurrent construction;
-        // present only after the transaction commits.
-        txOps.doInTransaction(false, () -> {
-            if (!sceneOps.worldIsEmpty()) {
-                txOps.doAfterCommit(presenter::presentWorldAlreadyConstructed);
-                return;
-            }
-            scenes.forEach(sceneOps::saveScene);
-            txOps.doAfterCommit(() -> presenter.presentSuccessfulWorldConstruction(scenes));
-        });
-        return true;
-    }
-
-    /**
-     * Creates and persists the single player at the configured starting scene — the second phase. The
-     * last step of the interaction, so it only presents its own outcome.
-     */
-    private void createPlayer(String startingSceneId) {
-        // Checkpoint 1 — construct the value objects and aggregate (validity gate). The acting player's
-        // id is ambient (pulled from playerOps); the starting scene is the authored carrier.
-        PlayerId playerId;
-        SceneId startingScene;
-        Player player;
-        try {
-            playerId = new PlayerId(playerOps.currentPlayerId());
-            startingScene = new SceneId(startingSceneId);
-            player = Player.builder().id(playerId).currentScene(startingScene).build();
-        } catch (IllegalArgumentException | NullPointerException e) {
-            presenter.presentInvalidParametersError(e);
-            return;
-        }
-
-        // Checkpoint 2 — inter-aggregate rule: the starting scene must resolve to a known scene. A read,
-        // so it runs outside the transaction.
-        if (sceneOps.findScene(startingScene).isEmpty()) {
-            presenter.presentStartingSceneUnknown(startingScene);
-            return;
-        }
-
-        // Checkpoint 3 — create once, atomically. The existence guard lives inside the same transaction
-        // as the write so the create-if-absent decision cannot interleave with a concurrent creation;
-        // present only after the transaction commits.
-        txOps.doInTransaction(false, () -> {
-            if (playerRepositoryOps.findPlayer(playerId).isPresent()) {
-                txOps.doAfterCommit(() -> presenter.presentPlayerAlreadyExists(playerId));
-                return;
-            }
-            playerRepositoryOps.savePlayer(player);
-            txOps.doAfterCommit(() -> presenter.presentSuccessfulPlayerCreation(player));
-        });
     }
 
     private static List<Scene> buildScenes(List<SceneEntry> entries) {

@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.world;
 
+import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGamePresenterOutputPort;
@@ -18,6 +19,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -25,7 +28,7 @@ import static org.mockito.Mockito.verify;
  * the use case (resolved through the composition root), the {@code SpringSceneRepositoryAdapter} and
  * {@code SpringPlayerRepositoryAdapter}, the transaction adapter, the MapStruct mappers and the
  * Flyway-migrated schema all participate. Only the presenter is replaced — by a Mockito mock — so the
- * use case's reported outcomes can be asserted alongside the persisted state across both phases.
+ * use case's single reported outcome can be asserted alongside the persisted state.
  *
  * <p>{@code @SpringBootTest} (not a {@code @DataJdbcTest} slice) so the programmatic transactions
  * genuinely commit — there is no test-managed rollback. The test cleans up after itself in
@@ -61,28 +64,28 @@ class InitializeGameIT {
     }
 
     @Test
-    void initializesTheWorldAndPlayerThenSkipsBothOnASecondRun() throws Exception {
+    void initializesTheWorldAndPlayerThenStaysIdempotentOnASecondRun() throws Exception {
         List<SceneEntry> entries = readSeed();
 
-        // first run against an empty game: the four authored scenes are seeded and the player placed ...
-        initializeGame.initialize(entries, "scn1");
+        // first run against an empty game: the four authored scenes are seeded and the player placed,
+        // reported by the single success outcome ...
+        initializeGame.systemInitializesGame(entries, "scn1");
 
         assertThat(sceneRepository.count()).isEqualTo(4);
-        ArgumentCaptor<List<Scene>> captor = sceneListCaptor();
-        verify(presenter).presentSuccessfulWorldConstruction(captor.capture());
-        assertThat(captor.getValue()).extracting(scene -> scene.getId().getValue())
-                .containsExactlyElementsOf(SEED_IDS);
         assertThat(playerRepository.findById(SEEDED_PLAYER_ID)).isPresent()
                 .get().satisfies(player -> assertThat(player.getCurrentSceneId()).isEqualTo("scn1"));
-        verify(presenter).presentSuccessfulPlayerCreation(any());
+        ArgumentCaptor<List<Scene>> captor = sceneListCaptor();
+        verify(presenter).presentGameInitialized(captor.capture(), eq(new PlayerId(SEEDED_PLAYER_ID)));
+        assertThat(captor.getValue()).extracting(scene -> scene.getId().getValue())
+                .containsExactlyElementsOf(SEED_IDS);
 
-        // ... a second run finds both already present and skips, adding no duplicate rows.
-        initializeGame.initialize(entries, "scn1");
+        // ... a second run finds both already present, writes no duplicate rows, and presents the same
+        // single success again.
+        initializeGame.systemInitializesGame(entries, "scn1");
 
         assertThat(sceneRepository.count()).isEqualTo(4);
         assertThat(playerRepository.count()).isEqualTo(1);
-        verify(presenter).presentWorldAlreadyConstructed();
-        verify(presenter).presentPlayerAlreadyExists(any());
+        verify(presenter, times(2)).presentGameInitialized(any(), eq(new PlayerId(SEEDED_PLAYER_ID)));
     }
 
     private List<SceneEntry> readSeed() throws Exception {

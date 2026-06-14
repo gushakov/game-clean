@@ -24,6 +24,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -32,11 +33,12 @@ import static org.mockito.Mockito.*;
  * single interaction are covered together: world construction then player placement, plus the
  * precondition that a world which fails to construct stops the interaction before any player is created.
  *
- * <p>The transaction port is stubbed to run its action inline and to fire after-commit callbacks
- * immediately, so the post-commit presentations are observable; the persistence-failure cases instead
- * let the action's error propagate, exactly as the real adapter would. Player-phase cases start from an
- * already-populated world ({@code worldIsEmpty() == false}) so the world step is a quick no-op that
- * still lets player placement proceed.
+ * <p>The interaction presents <em>once</em>: every happy combination (world seeded or already present,
+ * player created or already present) ends in the single {@code presentGameInitialized} success, so the
+ * tests assert that one outcome rather than per-phase presentations. The transaction port is stubbed to
+ * run its action inline and to fire after-commit callbacks immediately, so the single post-commit
+ * presentation is observable; the persistence-failure cases instead let the action's error propagate,
+ * exactly as the real adapter would.
  */
 @ExtendWith(MockitoExtension.class)
 class InitializeGameUseCaseTest {
@@ -55,63 +57,73 @@ class InitializeGameUseCaseTest {
     @InjectMocks
     private InitializeGameUseCase useCase;
 
-    // --- happy path: world then player ----------------------------------------------------------
+    // --- the single success outcome, across the idempotency branches ----------------------------
 
     @Test
-    void seedsAnEmptyWorldThenCreatesThePlayerAndPresentsBothSuccessesAfterCommit() {
+    void seedsAnEmptyWorldCreatesThePlayerAndPresentsGameInitializedAfterCommit() {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(scene("scn1")));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         runTransactionsAndFireAfterCommit();
 
-        useCase.initialize(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
 
         assertScenesSavedInOrder("scn1", "scn2");
-        assertSuccessfulConstructionPresentedFor("scn1", "scn2");
         assertPlayerSaved("plr1", "scn1");
-        assertSuccessfulCreationPresentedFor("plr1", "scn1");
+        assertGameInitializedPresentedFor("plr1", "scn1", "scn2");
     }
 
     @Test
-    void skipsSeedingWhenTheWorldIsNotEmptyButStillCreatesThePlayer() {
+    void addsThePlayerToAnAlreadySeededWorldAndPresentsGameInitialized() {
         when(sceneOps.worldIsEmpty()).thenReturn(false);
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(scene("scn1")));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         runTransactionsAndFireAfterCommit();
 
-        useCase.initialize(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
 
         verify(sceneOps, never()).saveScene(any());
-        verify(presenter).presentWorldAlreadyConstructed();
         assertPlayerSaved("plr1", "scn1");
-        verify(presenter).presentSuccessfulPlayerCreation(any());
+        assertGameInitializedPresentedFor("plr1", "scn1", "scn2");
+    }
+
+    @Test
+    void writesNothingButStillPresentsGameInitializedWhenWorldAndPlayerAlreadyExist() {
+        when(sceneOps.worldIsEmpty()).thenReturn(false);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
+                .thenReturn(Optional.of(player("plr1", "scn1")));
+        runTransactionsAndFireAfterCommit();
+
+        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+
+        verify(sceneOps, never()).saveScene(any());
+        verify(playerRepositoryOps, never()).savePlayer(any());
+        assertGameInitializedPresentedFor("plr1", "scn1", "scn2");
     }
 
     // --- a world that fails to construct stops the interaction before any player ----------------
 
     @Test
-    void rejectsAMalformedSceneEntryAndDoesNotCreateAPlayer() {
+    void rejectsAMalformedSceneEntryAndDoesNotInitialize() {
         // id without the 'scn' prefix — SceneId construction fails the intra-aggregate validity gate
         List<SceneEntry> entries = List.of(
                 new SceneEntry("bogus", "Old Gate", "A gate.", "A weathered stone archway.", List.of()));
 
-        useCase.initialize(entries, "scn1");
+        useCase.systemInitializesGame(entries, "scn1");
 
         verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
-        verifyNoTransactionAndNoWrites();
-        verifyNoPlayerCreated();
+        verifyNothingInitialized();
     }
 
     @Test
-    void rejectsAnExitWhoseTargetIsNotADefinedSceneAndDoesNotCreateAPlayer() {
+    void rejectsAnExitWhoseTargetIsNotADefinedSceneAndDoesNotInitialize() {
         // scn1's only exit points at scn9, which the seed never defines — an inter-aggregate failure
         List<SceneEntry> entries = List.of(
                 new SceneEntry("scn1", "Old Gate", "A gate.", "A weathered stone archway.",
                         List.of(new ExitEntry("east", "scn9"))));
 
-        useCase.initialize(entries, "scn1");
+        useCase.systemInitializesGame(entries, "scn1");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<SceneId, List<Exit>>> captor = ArgumentCaptor.forClass(Map.class);
@@ -119,85 +131,61 @@ class InitializeGameUseCaseTest {
         assertThat(captor.getValue()).containsOnlyKeys(new SceneId("scn1"));
         assertThat(captor.getValue().get(new SceneId("scn1")))
                 .extracting(Exit::getName).containsExactly("east");
-        verifyNoTransactionAndNoWrites();
-        verifyNoPlayerCreated();
+        verifyNothingInitialized();
     }
 
     @Test
-    void presentsAnErrorWhenASceneCannotBeSavedAndDoesNotCreateAPlayer() {
+    void rejectsAMalformedPlayerIdAndDoesNotInitialize() {
+        // 'bogus' lacks the 'plr' prefix — PlayerId construction fails the validity gate.
+        when(playerOps.currentPlayerId()).thenReturn("bogus");
+
+        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+
+        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsAStartingSceneNotAmongTheAuthoredScenes() {
+        // scn9 is a well-formed id but no authored scene defines it — an inter-aggregate failure,
+        // resolved against the in-memory world rather than the (as-yet-unseeded) store.
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame(twoConnectedScenes(), "scn9");
+
+        verify(presenter).presentStartingSceneUnknown(new SceneId("scn9"));
+        verifyNothingInitialized();
+    }
+
+    // --- a persistence failure inside the single transaction routes to the catch-all ------------
+
+    @Test
+    void presentsAnErrorWhenASceneCannotBeSaved() {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(sceneOps).saveScene(any());
         runTransactionsPropagatingErrors();
 
-        useCase.initialize(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentSuccessfulWorldConstruction(any());
-        verifyNoPlayerCreated();
-    }
-
-    // --- player phase (world already usable) ----------------------------------------------------
-
-    @Test
-    void rejectsAMalformedPlayerIdBeforeTouchingPlayerPersistence() {
-        // 'bogus' lacks the 'plr' prefix — PlayerId construction fails the validity gate.
-        when(sceneOps.worldIsEmpty()).thenReturn(false);
-        when(playerOps.currentPlayerId()).thenReturn("bogus");
-        runTransactionsAndFireAfterCommit();
-
-        useCase.initialize(twoConnectedScenes(), "scn1");
-
-        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
-        verify(sceneOps, never()).findScene(any());
-        verifyNoPlayerCreated();
-    }
-
-    @Test
-    void rejectsAnUnknownStartingScene() {
-        // scn9 is never persisted — an inter-aggregate failure, surfaced before the player transaction.
-        when(sceneOps.worldIsEmpty()).thenReturn(false);
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(sceneOps.findScene(new SceneId("scn9"))).thenReturn(Optional.empty());
-        runTransactionsAndFireAfterCommit();
-
-        useCase.initialize(twoConnectedScenes(), "scn9");
-
-        verify(presenter).presentStartingSceneUnknown(new SceneId("scn9"));
-        verify(playerRepositoryOps, never()).findPlayer(any());
-        verifyNoPlayerCreated();
-    }
-
-    @Test
-    void skipsPlayerCreationWhenAPlayerAlreadyExists() {
-        when(sceneOps.worldIsEmpty()).thenReturn(false);
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(scene("scn1")));
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn1")));
-        runTransactionsAndFireAfterCommit();
-
-        useCase.initialize(twoConnectedScenes(), "scn1");
-
-        verify(playerRepositoryOps, never()).savePlayer(any());
-        verify(presenter).presentPlayerAlreadyExists(new PlayerId("plr1"));
-        verify(presenter, never()).presentSuccessfulPlayerCreation(any());
+        verify(presenter, never()).presentGameInitialized(any(), any());
     }
 
     @Test
     void presentsAnErrorWhenThePlayerCannotBeSaved() {
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(scene("scn1")));
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
         runTransactionsPropagatingErrors();
 
-        useCase.initialize(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentSuccessfulPlayerCreation(any());
+        verify(presenter, never()).presentGameInitialized(any(), any());
     }
 
     // --- fixtures -------------------------------------------------------------------------------
@@ -214,16 +202,6 @@ class InitializeGameUseCaseTest {
 
     private static Player player(String id, String currentScene) {
         return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
-    }
-
-    private static Scene scene(String id) {
-        return Scene.builder()
-                .id(new SceneId(id))
-                .name("Old Gate")
-                .shortDescription("A weathered archway.")
-                .fullDescription("The gate's iron hinges have long since rusted shut.")
-                .exits(List.of())
-                .build();
     }
 
     // --- transaction-port stubs -----------------------------------------------------------------
@@ -257,14 +235,6 @@ class InitializeGameUseCaseTest {
                 .containsExactly(expectedIds);
     }
 
-    private void assertSuccessfulConstructionPresentedFor(String... expectedIds) {
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Scene>> captor = ArgumentCaptor.forClass(List.class);
-        verify(presenter).presentSuccessfulWorldConstruction(captor.capture());
-        assertThat(captor.getValue()).extracting(scene -> scene.getId().getValue())
-                .containsExactly(expectedIds);
-    }
-
     private void assertPlayerSaved(String expectedId, String expectedScene) {
         ArgumentCaptor<Player> captor = ArgumentCaptor.forClass(Player.class);
         verify(playerRepositoryOps).savePlayer(captor.capture());
@@ -272,20 +242,18 @@ class InitializeGameUseCaseTest {
         assertThat(captor.getValue().getCurrentScene().getValue()).isEqualTo(expectedScene);
     }
 
-    private void assertSuccessfulCreationPresentedFor(String expectedId, String expectedScene) {
-        ArgumentCaptor<Player> captor = ArgumentCaptor.forClass(Player.class);
-        verify(presenter).presentSuccessfulPlayerCreation(captor.capture());
-        assertThat(captor.getValue().getId().getValue()).isEqualTo(expectedId);
-        assertThat(captor.getValue().getCurrentScene().getValue()).isEqualTo(expectedScene);
+    private void assertGameInitializedPresentedFor(String expectedPlayerId, String... expectedSceneIds) {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Scene>> captor = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(captor.capture(), eq(new PlayerId(expectedPlayerId)));
+        assertThat(captor.getValue()).extracting(scene -> scene.getId().getValue())
+                .containsExactly(expectedSceneIds);
     }
 
-    private void verifyNoTransactionAndNoWrites() {
+    private void verifyNothingInitialized() {
         verify(txOps, never()).doInTransaction(anyBoolean(), any());
         verify(sceneOps, never()).saveScene(any());
-    }
-
-    private void verifyNoPlayerCreated() {
         verify(playerRepositoryOps, never()).savePlayer(any());
-        verify(presenter, never()).presentSuccessfulPlayerCreation(any());
+        verify(presenter, never()).presentGameInitialized(any(), any());
     }
 }
