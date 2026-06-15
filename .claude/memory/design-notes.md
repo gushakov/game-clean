@@ -202,8 +202,9 @@ the interaction's *single* success, `presentGameInitialized`. "World already see
 already present" fold into that one outcome, because the system actor's goal — a playable game —
 is met identically whether the state was just written or already there. The phases are plain
 inline checkpoints, not the heavier **subcase** machinery (a reusable procedure with its own
-presenter), which waits for a genuine cross-use-case reuse need — and not, any longer, private
-helpers that returned a boolean gate. That boolean was the tell that a non-terminal phase was
+presenter) — that waited for a genuine cross-use-case reuse need, which has since arrived
+*elsewhere* (the `orient` subcase, below); `InitializeGame`'s phases are single-use, so they stay
+inline — and not, any longer, private helpers that returned a boolean gate. That boolean was the tell that a non-terminal phase was
 being treated as a terminal interaction: it *presented* its outcome **and** *returned a
 continue/stop flag*, straddling the helper/subcase split and doing the one thing the
 single-presentation rule forbids. What remains is the validity gate, the inter-aggregate
@@ -212,23 +213,17 @@ resolution (every exit target *and* the starting scene resolve to an authored sc
 so a store lookup would be a false negative), and a now-*single* transaction-tight
 seed-and-create — all converging on the one presentation.
 
-**Presentation is terminal: exactly one `present*` per run, and it is the last act.** This is the
-sharpest expression so far of unidirectional flow, and `InitializeGame` is what forced it into
-the open. A `present*` call does not invoke a subroutine — it *relinquishes control completely*.
-The interaction has finished advancing its actor toward the goal along one of Cockburn's
-"stripes"; another actor may now initiate a different interaction, or none, and the original
-interaction can make **no assumption about application state thereafter**. So on any execution
-path exactly one `present*` is reached, as the final action — never "present, then continue,"
-never two stripes active in one run. The symmetry that makes this load-bearing: it is the
-use-case-side twin of the controller rule (never branch on a use case's result, never chain use
-cases). Both forbid *acting on control you have already given away* — the controller has no
-return channel from a `void` use case; the use case has no resume channel after it presents. The
-rule is already latent in the checkpoint pattern (a success checkpoint either continues
-*silently* or presents *and returns* — never presents and continues) and in the terminal-subcase
-contract (present, then *always throw*); naming it interaction-globally is what catches the
-violation a phase-by-phase merge invites. **This belongs in `clean-ddd-core` (the
-unidirectional-flow section) as a first-class invariant — flagged here as a promotion candidate,
-not promoted from this project per the methodology's Prompt-4 discipline.**
+**Presentation is terminal — and `InitializeGame` is what forced the invariant into the open.**
+The general rule now lives canonically in `clean-ddd-core` → *Unidirectional flow of control* →
+*Presentation is terminal* (exactly one `present*` per run, reached as the interaction's last act;
+a `present*` relinquishes control completely rather than calling a subroutine; the use-case-side
+twin of the controller rule, which never branches on a result or chains use cases). It was
+**promoted out of this project**, so it is not restated in full here — this section keeps only
+game-clean's own contribution. That contribution is the *evidence*: merging world-construction and
+player-placement into one use case is what made the rule load-bearing, and it caught the concrete
+violation described above — the private phase helper that *presented* its outcome **and**
+*returned a continue/stop boolean*. That straddle is exactly the trap a phase-by-phase merge
+invites, which is why naming the rule interaction-globally was what surfaced it here.
 
 **Transaction corollary.** `[thread #3]` When the single outcome is a success behind a write, the
 rule takes a concrete shape: at most **one** `txOps.doAfterCommit(() -> present*)` is ever
@@ -252,23 +247,54 @@ not the use case — is what decides presenter sharing, and `move`'s arrival **c
 guess**. The guess was that only the narrow `presentScene` capability would be shared, each use case
 keeping its own not-found outcomes. But because `move` resolves the *same* player-and-current-scene
 prologue, the not-found outcomes are shared too: the cluster is the three outcomes of "describe where
-the acting player stands, or why we can't" — lifted into `CurrentScenePresenterOutputPort`. `move`'s
+the acting player stands, or why we can't" — lifted into the shared `OrientPlayerPresenterOutputPort`
+(the `orient` subcase's presenter port — see below). `move`'s
 port extends it with the two outcomes peculiar to moving (no-such-exit, dangling exit target), and
 `look`'s port turns out to *be* the cluster exactly (kept as an empty marker for symmetry). The
 lesson: **outcome-sharing tracks the shared prologue, not the use case** — any later interaction
 grounded in the current scene (`look <target>`, `take`) joins the same cluster.
 
 This split sharpens the project's headline finding into **three orthogonal axes of sharing**, each
-resolved differently. The *port vocabulary* is shared — by interface extension, with **no default
-methods** (a presenter port stays behaviour-free; how a scene renders is an adapter concern). The
-*adapter rendering* is shared — a single `CurrentSceneRenderer` collaborator over a `Console` facade
-(§7), injected into two thin per-use-case presenter beans: **composition**, not a presenter base
-class (which would overclaim "is-a scene presenter") and not a grab-bag port. But the *use-case
-logic* is deliberately **not** shared. The identical opening — resolve player → read → resolve
-current scene, branch-and-present on each failure — is left inline-duplicated rather than factored
-into a subcase, because a prologue subcase would *present on failure and continue on success*: the
-present-or-continue straddle the single-presentation rule forbids. **Share the vocabulary and the
-rendering; never the logic.**
+resolved by its own mechanism. The *port vocabulary* is shared — by interface extension, with **no
+default methods** (a presenter port stays behaviour-free; how a scene renders is an adapter concern).
+The *adapter rendering* is shared — a single `CurrentSceneRenderer` collaborator over a `Console`
+facade (§7), injected into two thin per-use-case presenters: **composition**, not a presenter base
+class (which would overclaim "is-a scene presenter") and not a grab-bag port. And the *use-case logic*
+is **now shared too**, through the `orient` subcase below. That last axis **reverses an earlier
+stance** ("share the vocabulary and the rendering; *never* the logic"): the prologue had been
+inline-duplicated because a naive prologue subcase would *present on failure and continue on success* —
+the present-or-continue straddle the single-presentation rule forbids. The guarded-prologue subcase
+dissolves that straddle, so all three axes are now shared.
+
+**The `orient` guarded-prologue subcase — sharing decisions *and* presentation.** `[thread #4]` The
+shared opening (resolve the ambient player → read → resolve their current scene) that `look` and `move`
+both perform — and that `examine`, `take`, ... will reuse — is factored into the project's first
+**subcase**, `OrientPlayerSubcase.playerGetsBearings()`. It is a *third* subcase shape, distinct from
+the methodology's two paths (a pure **helper** that returns/throws and lets the parent present; a
+**terminal subcase** that presents and *always* throws, never returning). `orient` **fuses the two,
+keyed on the outcome branch**: its **failure branches behave as a terminal subcase** — a missing player
+or a dangling current-scene reference is *presented* through the shared presenter, then signalled by
+throwing the marker `SubcaseAlreadyPresented`; its **success branch behaves as a helper** — it presents
+nothing and *returns* an `OrientPlayerResult` (player + current scene) for the parent to act on (`move`
+mutates the player, `look` renders the scene).
+
+Each invocation therefore does exactly one of {present-and-throw, return-without-presenting} — never
+both — so **"presentation is terminal" holds at the granularity of the whole interaction** (parent +
+subcase): on every path through `look`/`move`, exactly one `present*` fires. The marker rides the
+parent's checkpoint ladder — a dedicated `catch (SubcaseAlreadyPresented)` *ahead of* `catch (Exception)`
+swallows it as a no-op (the presentation already happened), while genuine faults (a malformed id, a
+persistence error) fall through to `presentError`. The swallow lives in the **parent's catch, not the
+presenter**: an attempt to filter the marker inside `ErrorHandlingPresenterOutputPort.presentError` was
+**rejected** because it gave a *humble* presenter port a *flow decision* and a `default` method (both
+against the behaviour-free-port rule above) and rippled a method rename across every presenter — the
+explicit parent catch is local, honest about control flow, and is the methodology's own prescription.
+
+The methodology framed Path-1-vs-Path-2 as a choice made *per subcase*; `orient`'s finding is that for a
+**guarded prologue** the choice is naturally made *per branch* — equivalently, **a terminal (Path-2)
+subcase may return a result on its non-presenting success branch**. This is a promotion candidate for
+`subcases.md` (flagged here, not promoted from this project, per the methodology's Prompt-4 discipline).
+The composition-root consequence — parent and subcase share one ad-hoc-`new`ed presenter instance — is
+in §6.
 
 **Interaction methods are named as the Cockburn step, not as a service verb.** `[thread #4]` An
 interaction method's name is its *actor + predicate* — `playerLooksAround`,
@@ -363,6 +389,22 @@ is invisible to the container, and assembled with explicit `new` — no Spring s
 lands on a core class. Where Spring can't infer wiring (the two `TransactionTemplate`s,
 read-write `@Primary` + `@Qualifier("read-only")`), it is declared by hand in one
 `@Configuration` rather than scattered across component-scanned classes.
+
+**Presenters (and subcases) are `new`ed ad-hoc, not injected as beans — the default.** `[thread #2]`
+A use-case factory constructs its presenter with `new` inside the `@Bean` method and hands the *same
+instance* to the use case and to any subcase it drives, then `new`s the subcase too. This is what makes
+the `orient` subcase's shared presenter sound (§4): a single presenter receives every outcome, whether
+the subcase presents a not-found or the parent presents the scene. It is now applied uniformly — even
+`InitializeGame`, which has no subcase, `new`s its `LoggingInitializeGamePresenter` — so the rule reads
+"presenters are constructed by the composition root," with no presenter `@Component` left. The
+deliberate trade-off: a presenter is **no longer swappable by bean selection**, which has a *testing*
+corollary worth stating because it reshapes the test suite — presenter-outcome assertions live in the
+**use-case unit test** (mock the presenter, construct with `new`), while an **integration test asserts
+real side-effects** (persisted state), since it can no longer replace the presenter with a `@MockitoBean`.
+`InitializeGameIT` was rewritten to this shape. The terminal presenters keep their behaviour purely
+through the `Console`/`CurrentSceneRenderer` resources they are `new`ed with (those *stay* beans, gated
+by `game.terminal.enabled`), so disabling the terminal still removes the rendering surface even though
+the presenter is no longer conditional itself.
 
 **Prototype use cases are pulled, not held.** A use case is a per-interaction subroutine
 holding no conversational state, so a longer-lived driving adapter must fetch a *fresh*

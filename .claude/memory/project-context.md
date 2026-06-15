@@ -44,7 +44,8 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared),
   `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`),
-  `usecase/{summarygoal}/` (use-case class + its input and presenter ports).
+  `usecase/{summarygoal}/` (use-case class + its input and presenter ports; a reusable **subcase**
+  gets its own peer package, e.g. `usecase/orient/`).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog). Sub-packages:
@@ -128,9 +129,10 @@ named exit into the target scene, then sees it):
   `doInTransaction` holds only the `savePlayer` write; the entered scene is presented in `doAfterCommit`.
   Branch-and-present for missing player / dangling current scene / no such exit / dangling exit target.
 - **Shared presenter capability** — the current-scene **outcome cluster** (`presentScene` +
-  `presentPlayerNotFound` + `presentCurrentSceneNotFound`) extracted to `CurrentScenePresenterOutputPort`;
-  `LookPresenterOutputPort` is now an empty marker extending it, `MovePresenterOutputPort` extends it +
-  `presentNoSuchExit`/`presentTargetSceneNotFound` (design-notes §4: three orthogonal axes of sharing).
+  `presentPlayerNotFound` + `presentCurrentSceneNotFound`) lives on `OrientPlayerPresenterOutputPort` (the
+  `orient` subcase's port — see below; introduced here as `CurrentScenePresenterOutputPort`, since
+  renamed/moved); `LookPresenterOutputPort` is an empty marker extending it, `MovePresenterOutputPort`
+  extends it + `presentNoSuchExit`/`presentTargetSceneNotFound` (design-notes §4: three axes of sharing).
 - **Terminal** — `Console` styled-writer resource (§7 facade, declared in `TerminalConfig`) + shared
   `CurrentSceneRenderer`; two thin presenter beans `TerminalLookPresenter` / `TerminalMovePresenter`
   (replacing `TerminalScenePresenter`). `MoveCommand` + `move`/`go` verbs in `CommandParser`; `ConsoleSession`
@@ -138,5 +140,23 @@ named exit into the target scene, then sees it):
 - **Persistence** — `savePlayer` is now an **upsert** (`existsById ? update : insert`); `@Version`/optimistic
   locking deferred to the concurrency thread (design-notes §5).
 
-Tests: 81 unit (Surefire, DB-free) + 11 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
+`orient` subcase + ad-hoc presenter wiring **complete** (issue #16) — the project's first **subcase**,
+factoring the shared `look`/`move` opening (resolve ambient player → resolve their current scene):
+
+- **Subcase** — `core/usecase/orient/`: `OrientPlayerSubcaseInputPort.playerGetsBearings()`,
+  `OrientPlayerSubcase`, the renamed/moved shared presenter port `OrientPlayerPresenterOutputPort` (was
+  `explore/CurrentScenePresenterOutputPort`), and the `OrientPlayerResult` (player + scene) it returns. A
+  **guarded prologue**: on a missing player / dangling current scene it presents the outcome and throws
+  the marker `SubcaseAlreadyPresented` (`core/port/`); on success it *returns* `OrientPlayerResult`.
+  `LookUseCase`/`MoveUseCase` delegate their opening to it and swallow the marker in a dedicated
+  `catch (SubcaseAlreadyPresented)` ahead of `catch (Exception)` (design-notes §4: third subcase shape,
+  Path-2-with-returned-results — promotion candidate for `subcases.md`).
+- **Wiring** — presenters and subcases are now **`new`ed ad-hoc in `UseCaseConfig`** (no presenter is a
+  `@Component` any more): each parent factory `new`s its presenter and shares that one instance with the
+  subcase; applied to `InitializeGame` too (`new LoggingInitializeGamePresenter()`).
+  `ErrorHandlingPresenterOutputPort` stays a single humble `presentError` (design-notes §6).
+- **Tests** — `OrientPlayerSubcaseTest` covers the prologue outcomes; `Look`/`Move` unit tests mock the
+  subcase; `InitializeGameIT` asserts persisted state (the presenter is no longer a mockable bean).
+
+Tests: 83 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
 beyond scenes + player (NPCs/items), the `look <target>` use case, async/event processing.

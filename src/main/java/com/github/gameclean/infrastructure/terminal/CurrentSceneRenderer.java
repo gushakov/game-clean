@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import lombok.RequiredArgsConstructor;
 import org.jline.utils.AttributedStringBuilder;
 import org.jline.utils.AttributedStyle;
@@ -15,7 +16,7 @@ import java.util.stream.Collectors;
 
 /**
  * Renders the outcomes of "operate from the acting player's current scene" — the
- * {@link com.github.gameclean.core.usecase.explore.CurrentScenePresenterOutputPort} cluster — to the
+ * {@link OrientPlayerPresenterOutputPort} cluster — to the
  * shared console. It is the single home of that rendering, injected by both the {@code look} and
  * {@code move} presenter beans so the scene description and the two not-found messages are written one
  * way, not copied per use case.

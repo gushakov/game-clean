@@ -4,10 +4,10 @@ import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
-import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
+import com.github.gameclean.core.usecase.orient.OrientPlayerResult;
+import com.github.gameclean.core.usecase.orient.OrientPlayerSubcaseInputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,20 +15,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Interaction tests for {@link LookUseCase} in isolation — every output port is mocked and the use
- * case is exercised directly through its input port (no Spring, no database). Being a read-only use
- * case, there is no transaction port to stub: the use case reads through the persistence ports and
- * presents directly.
- *
- * <p>The acting player is ambient: {@code playerOps.currentPlayerId()} stands in for "who is acting",
- * and {@code playerLooksAround()} takes no argument. {@code playerRepositoryOps} is the persistence
- * port that loads the player aggregate; the two are distinct ports, hence distinct mocks.
+ * Interaction tests for {@link LookUseCase} in isolation. {@code look}'s own surface is now thin: it drives
+ * the {@link OrientPlayerSubcaseInputPort orient subcase} and presents the resolved scene. So the subcase is
+ * mocked and the three paths through the use case are pinned — the subcase returns (present the scene), the
+ * subcase has already presented and signals {@link SubcaseAlreadyPresented} (no-op), or the subcase fails
+ * unexpectedly (route to the catch-all). The not-found outcomes themselves are the subcase's responsibility
+ * and are covered by {@code OrientPlayerSubcaseTest}.
  */
 @ExtendWith(MockitoExtension.class)
 class LookUseCaseTest {
@@ -36,11 +33,7 @@ class LookUseCaseTest {
     @Mock
     private LookPresenterOutputPort presenter;
     @Mock
-    private PlayerOperationsOutputPort playerOps;
-    @Mock
-    private PlayerRepositoryOperationsOutputPort playerRepositoryOps;
-    @Mock
-    private SceneRepositoryOperationsOutputPort sceneOps;
+    private OrientPlayerSubcaseInputPort orientPlayerSubcase;
 
     @InjectMocks
     private LookUseCase useCase;
@@ -48,10 +41,8 @@ class LookUseCaseTest {
     @Test
     void presentsThePlayersCurrentScene() {
         Scene oldGate = scene("scn1");
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(oldGate));
+        when(orientPlayerSubcase.playerGetsBearings())
+                .thenReturn(new OrientPlayerResult(player("plr1", "scn1"), oldGate));
 
         useCase.playerLooksAround();
 
@@ -60,46 +51,18 @@ class LookUseCaseTest {
     }
 
     @Test
-    void presentsPlayerNotFoundWhenNoPlayerIsPersisted() {
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+    void presentsNothingWhenTheSubcaseHasAlreadyPresented() {
+        when(orientPlayerSubcase.playerGetsBearings()).thenThrow(new SubcaseAlreadyPresented());
 
         useCase.playerLooksAround();
 
-        verify(presenter).presentPlayerNotFound(new PlayerId("plr1"));
-        verify(sceneOps, never()).findScene(any());
-        verify(presenter, never()).presentScene(any());
+        verifyNoInteractions(presenter);
     }
 
     @Test
-    void presentsCurrentSceneNotFoundWhenThePlayersSceneIsMissing() {
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn9")));
-        when(sceneOps.findScene(new SceneId("scn9"))).thenReturn(Optional.empty());
-
-        useCase.playerLooksAround();
-
-        verify(presenter).presentCurrentSceneNotFound(new SceneId("scn9"));
-        verify(presenter, never()).presentScene(any());
-    }
-
-    @Test
-    void routesAMalformedPlayerIdToTheCatchAll() {
-        // 'bogus' lacks the 'plr' prefix — PlayerId construction fails inside the use case.
-        when(playerOps.currentPlayerId()).thenReturn("bogus");
-
-        useCase.playerLooksAround();
-
-        verify(presenter).presentError(any(IllegalArgumentException.class));
-        verifyNoInteractions(playerRepositoryOps, sceneOps);
-    }
-
-    @Test
-    void routesAPersistenceFailureToTheCatchAll() {
+    void routesAnUnexpectedSubcaseFailureToTheCatchAll() {
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenThrow(boom);
+        when(orientPlayerSubcase.playerGetsBearings()).thenThrow(boom);
 
         useCase.playerLooksAround();
 

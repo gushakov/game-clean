@@ -92,9 +92,22 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   no after-commit hook. Outcomes (missing player, dangling current scene) are reached by
   branch-and-present, the error catch-all by the outermost `try`. Summary-goal package `explore/`
   (looking around; later `look <target>` / `move`).
+- **Subcase (shared, reusable interaction logic)** — `core/usecase/orient/` holds the project's first
+  subcase: `OrientPlayerSubcaseInputPort.playerGetsBearings()` / `OrientPlayerSubcase`, a **guarded
+  prologue** reused by `look`/`move` (resolve ambient player → resolve their current scene). Its own
+  presenter port `OrientPlayerPresenterOutputPort` is extended by each parent's presenter port, and the
+  parent is handed one presenter instance the subcase shares. On a missing player / dangling current scene
+  it presents the outcome and throws the marker `SubcaseAlreadyPresented` (`core/port/`); on success it
+  *returns* `OrientPlayerResult` (player + scene). Parents delegate their opening and swallow the marker in
+  a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all. Tested directly
+  (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4).
 - **Composition root** — `infrastructure/UseCaseConfig` declares each use case `@Bean
   @Scope(PROTOTYPE)`, return-typed to the **input port interface** (impl hidden from the container),
-  assembled with explicit `new` (no Spring stereotype on core classes).
+  assembled with explicit `new` (no Spring stereotype on core classes). **Presenters and subcases are
+  `new`ed inside the factory, not injected as beans** (no presenter is a `@Component`): the factory `new`s
+  its presenter and passes that one instance to both the use case and any subcase it drives — `InitializeGame`
+  included (`new LoggingInitializeGamePresenter()`). Trade-off + testing corollary (a presenter is not
+  bean-swappable → unit tests mock it, ITs assert persisted state) in design-notes §6.
 - **Loading a prototype use case from an adapter** — inject the Spring `ApplicationContext` and call
   `appContext.getBean(XxxInputPort.class)` at the start of each interaction (cargo-clean
   `BookingController` idiom; rationale/trade-off in design-notes §6). A singleton adapter
@@ -144,10 +157,11 @@ Established by the JLine entry-point work (issue #6).
   **no console appender** (JLine owns the console); `spring.main.banner-mode=off`.
   `src/test/resources/logback-test.xml` restores console logging for the build (takes precedence on the
   test classpath). `logs/` is git-ignored.
-- **Test seam** — `GameSeederIT` (`@SpringBootTest`, terminal off) autowires `GameSeeder` and calls
-  `seed()` directly to cover the world+player seeding path without a console; `InitializeGameIT` drives
-  the use case through the composition root (mocked presenter) and asserts both phases' outcomes;
-  `BootSequenceTest` (unit, mocked steps) pins the seed-before-start order.
+- **Test seam** — `InitializeGameIT` (`@SpringBootTest`, terminal off) drives the `InitializeGame` use
+  case through the composition root with explicitly-read seed entries and asserts the **persisted state**
+  (the presenter is `new`ed, not a mockable bean) over two runs to prove idempotency; `BootSequenceTest`
+  (unit, mocked steps) pins the seed-before-start order. (`GameSeederIT` was dropped as redundant with
+  `InitializeGameIT`; the thin `GameSeeder.seed()` glue — YAML read + `getBean` pull — has no dedicated IT.)
 
 ## Recipe — running and driving the terminal app
 
