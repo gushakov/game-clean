@@ -47,4 +47,13 @@ public class TerminalConfig {
                 .appName("game-clean")
                 .build();
     }
+
+    /**
+     * The styled-output facade over the {@link Terminal} — another shared infrastructure resource (not an
+     * adapter), injected by the driven presenter beans so the JLine writing vocabulary lives in one place.
+     */
+    @Bean
+    public Console console(Terminal terminal) {
+        return new Console(terminal);
+    }
 }

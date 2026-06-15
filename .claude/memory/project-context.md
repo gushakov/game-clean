@@ -118,5 +118,25 @@ Interactive terminal shell **complete** (issue #6) — one process, JLine owning
   ANTLR deferred (design-notes §9).
 - **Config** — `game.player.id` (`plr1`), `game.player.starting-scene-id` (`scn1`) in `GameConfigurationProperties`.
 
-Tests: 66 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
-beyond scenes + player (NPCs/items), the `look <target>` / `move` use cases, async/event processing.
+`Move` vertical **complete** (issue #14) — the first read-write player-facing use case (player moves through a
+named exit into the target scene, then sees it):
+
+- **Domain** — first behaviour on each aggregate (emergence): `Scene.exitNamed(String)` (case-insensitive,
+  trimmed lookup) and `Player.moveTo(SceneId)` (immutable, returns a new `Player`).
+- **Use case** — `Move` (`core/usecase/explore/`): input port `playerMovesThrough(String exitName)`,
+  `MoveUseCase`, co-located `MovePresenterOutputPort`. Reads + validity checks outside a tx; one
+  `doInTransaction` holds only the `savePlayer` write; the entered scene is presented in `doAfterCommit`.
+  Branch-and-present for missing player / dangling current scene / no such exit / dangling exit target.
+- **Shared presenter capability** — the current-scene **outcome cluster** (`presentScene` +
+  `presentPlayerNotFound` + `presentCurrentSceneNotFound`) extracted to `CurrentScenePresenterOutputPort`;
+  `LookPresenterOutputPort` is now an empty marker extending it, `MovePresenterOutputPort` extends it +
+  `presentNoSuchExit`/`presentTargetSceneNotFound` (design-notes §4: three orthogonal axes of sharing).
+- **Terminal** — `Console` styled-writer resource (§7 facade, declared in `TerminalConfig`) + shared
+  `CurrentSceneRenderer`; two thin presenter beans `TerminalLookPresenter` / `TerminalMovePresenter`
+  (replacing `TerminalScenePresenter`). `MoveCommand` + `move`/`go` verbs in `CommandParser`; `ConsoleSession`
+  dispatches to a pulled prototype `MoveInputPort`.
+- **Persistence** — `savePlayer` is now an **upsert** (`existsById ? update : insert`); `@Version`/optimistic
+  locking deferred to the concurrency thread (design-notes §5).
+
+Tests: 81 unit (Surefire, DB-free) + 11 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
+beyond scenes + player (NPCs/items), the `look <target>` use case, async/event processing.

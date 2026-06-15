@@ -7,6 +7,9 @@ import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPor
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.LookPresenterOutputPort;
 import com.github.gameclean.core.usecase.explore.LookUseCase;
+import com.github.gameclean.core.usecase.explore.MoveInputPort;
+import com.github.gameclean.core.usecase.explore.MovePresenterOutputPort;
+import com.github.gameclean.core.usecase.explore.MoveUseCase;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGamePresenterOutputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
@@ -48,5 +51,16 @@ public class UseCaseConfig {
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps) {
         return new LookUseCase(presenter, playerOps, playerRepositoryOps, sceneOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public MoveInputPort moveUseCase(
+            MovePresenterOutputPort presenter,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            TransactionOperationsOutputPort txOps) {
+        return new MoveUseCase(presenter, playerOps, playerRepositoryOps, sceneOps, txOps);
     }
 }

@@ -26,6 +26,18 @@ class CommandParserTest {
     }
 
     @Test
+    void parses_move_and_its_go_synonym_carrying_the_exit_name() {
+        assertThat(parser.parse("move east")).contains(new MoveCommand("east"));
+        assertThat(parser.parse("go east")).contains(new MoveCommand("east"));
+    }
+
+    @Test
+    void move_without_an_exit_is_unknown_this_round() {
+        // 'move' takes exactly one argument; bare 'move' fails the arity check.
+        assertThat(parser.parse("move")).contains(new UnknownCommand("move"));
+    }
+
+    @Test
     void parses_bye_and_quit_into_a_quit_command() {
         assertThat(parser.parse("bye")).contains(new QuitCommand());
         assertThat(parser.parse("quit")).contains(new QuitCommand());

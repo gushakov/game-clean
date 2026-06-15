@@ -75,6 +75,25 @@ class SceneTest {
     }
 
     @Test
+    void finds_an_exit_by_name() {
+        Scene scene = validScene().build();
+        assertThat(scene.exitNamed("east")).map(Exit::getTarget).contains(new SceneId("scn2"));
+    }
+
+    @Test
+    void matches_an_exit_name_case_insensitively_and_ignoring_whitespace() {
+        Scene scene = validScene().build();
+        assertThat(scene.exitNamed("  EaSt  ")).map(Exit::getName).contains("east");
+    }
+
+    @Test
+    void returns_empty_for_an_unknown_or_null_exit_name() {
+        Scene scene = validScene().build();
+        assertThat(scene.exitNamed("west")).isEmpty();
+        assertThat(scene.exitNamed(null)).isEmpty();
+    }
+
+    @Test
     void equals_by_id_only() {
         Scene a = validScene().build();
         Scene sameIdDifferentFields = validScene().name("Renamed").build();
