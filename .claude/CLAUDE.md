@@ -25,6 +25,7 @@ are recorded in `.claude/memory/design-notes.md`.
 ## Methodology in scope
 
 - @~/.claude/methodology/clean-ddd-core.md
+- @~/.claude/methodology/subcases.md
 - @~/.claude/methodology/persistence-and-transactions.md
 - @~/.claude/methodology/testing.md
 - @~/.claude/methodology/session-wrap-up.md
