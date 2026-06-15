@@ -4,10 +4,10 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.explore.MovePresenterOutputPort;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 /**
  * Secondary (driven) adapter rendering the {@code Move} use case's outcomes to the shared JLine console —
@@ -16,14 +16,13 @@ import org.springframework.stereotype.Component;
  * {@link CurrentSceneRenderer}; the two outcomes peculiar to moving — no such exit, a dangling target —
  * are rendered here through the {@link Console}.
  */
-@Component
-@ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 @RequiredArgsConstructor
 @Slf4j
 public class TerminalMovePresenter implements MovePresenterOutputPort {
 
-    private final CurrentSceneRenderer sceneRenderer;
-    private final Console console;
+    CurrentSceneRenderer sceneRenderer;
+    Console console;
 
     @Override
     public void presentScene(Scene scene) {

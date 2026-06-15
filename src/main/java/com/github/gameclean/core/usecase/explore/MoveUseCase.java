@@ -1,14 +1,15 @@
 package com.github.gameclean.core.usecase.explore;
 
 import com.github.gameclean.core.model.player.Player;
-import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
+import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import com.github.gameclean.core.usecase.orient.OrientPlayerResult;
+import com.github.gameclean.core.usecase.orient.OrientPlayerSubcaseInputPort;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -21,55 +22,40 @@ import java.util.Optional;
  * isolation against mocked ports.
  *
  * <p>It shares {@code look}'s opening exactly — resolve the ambient player, read it, resolve the current
- * scene — reaching the same not-found outcomes by <em>branch-and-present</em>. That shared prologue is
- * deliberately <b>not</b> factored into a subcase: on failure it presents and stops, on success it
- * continues, which is the present-or-continue straddle the single-presentation rule forbids. So it stays
- * inline; what is shared with {@code look} is the presenter <em>vocabulary</em> and its rendering, never
- * this logic.
+ * scene — and that opening is now factored into the {@link OrientPlayerSubcaseInputPort orient subcase}
+ * the two reuse. The subcase <em>returns</em> the player and their current scene on success, or presents
+ * the not-found outcome and throws {@link SubcaseAlreadyPresented} on a missing player / dangling scene;
+ * the dedicated checkpoint swallows that signal as a no-op. (Earlier this prologue was inline-duplicated
+ * to avoid a subcase that "presents on failure and continues on success"; the guarded-prologue subcase
+ * dissolves that straddle — each invocation either presents-and-throws or returns-without-presenting.)
  *
  * <p>Unlike {@code look}, {@code move} <b>writes</b>: it records the player's new position. The reads and
  * the validity checks all run <em>outside</em> any transaction; a single
  * {@link TransactionOperationsOutputPort#doInTransaction} holds only the write, and the success
  * presentation is deferred to after-commit so the player is never shown the entered room before the move
  * is durable. Exactly one {@code present*} is reached on every path and it is the interaction's last act:
- * the four not-found branches present and return; the outermost {@code catch} routes anything unhandled
- * (a malformed configured id, a {@code PersistenceOperationsError} that has already rolled back) to
- * {@code presentError}.
+ * the subcase presents the two not-found outcomes; the no-such-exit and dangling-target branches present
+ * and return; the outermost {@code catch} routes anything unhandled (a malformed configured id, or a
+ * {@code PersistenceOperationsError} that has already rolled back) to {@code presentError}.
  */
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class MoveUseCase implements MoveInputPort {
 
     MovePresenterOutputPort presenter;
-    PlayerOperationsOutputPort playerOps;
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     SceneRepositoryOperationsOutputPort sceneOps;
     TransactionOperationsOutputPort txOps;
+    OrientPlayerSubcaseInputPort orientPlayerSubcase;
 
     @Override
     public void playerMovesThrough(String exitName) {
         try {
-            // Initiating actor: the player — ambient, resolved here rather than passed in.
-            // Construct the id value object — the validity gate.
-            PlayerId id = new PlayerId(playerOps.currentPlayerId());
-
-            // Shared prologue (inline, not a subcase): read the player and resolve where they stand.
-            // Reads run outside any transaction.
-            Optional<Player> player = playerRepositoryOps.findPlayer(id);
-            if (player.isEmpty()) {
-                presenter.presentPlayerNotFound(id);
-                return;
-            }
-
-            SceneId currentSceneId = player.get().getCurrentScene();
-            Optional<Scene> currentScene = sceneOps.findScene(currentSceneId);
-            if (currentScene.isEmpty()) {
-                presenter.presentCurrentSceneNotFound(currentSceneId);
-                return;
-            }
+            // Shared opening: resolve the acting player and the scene they stand in (orient subcase).
+            OrientPlayerResult playerInScene = orientPlayerSubcase.playerGetsBearings();
 
             // Match the chosen exit among the current scene's exits (case-insensitive, in the domain).
-            Optional<Exit> exit = currentScene.get().exitNamed(exitName);
+            Optional<Exit> exit = playerInScene.getScene().exitNamed(exitName);
             if (exit.isEmpty()) {
                 presenter.presentNoSuchExit(exitName);
                 return;
@@ -85,7 +71,7 @@ public class MoveUseCase implements MoveInputPort {
 
             // One write, one atomic unit. Record the new position; present the entered scene only once the
             // move has committed, and end the interaction there — nothing runs past a presentation.
-            Player moved = player.get().moveTo(targetId);
+            Player moved = playerInScene.getPlayer().moveTo(targetId);
             Scene entered = targetScene.get();
             txOps.doInTransaction(false, () -> {
                 playerRepositoryOps.savePlayer(moved);
@@ -93,6 +79,8 @@ public class MoveUseCase implements MoveInputPort {
             });
             return;
 
+        } catch (SubcaseAlreadyPresented e) {
+            // The orient subcase already presented its outcome (missing player or dangling scene); no-op.
         } catch (Exception e) {
             // Outermost checkpoint: a malformed configured id or a PersistenceOperationsError ends here.
             presenter.presentError(e);

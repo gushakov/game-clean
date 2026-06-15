@@ -6,7 +6,6 @@ import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.initialize.InitializeGamePresenterOutputPort;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
@@ -21,7 +20,6 @@ import java.util.Map;
  * <p>Humble by contract: it renders the outcome the use case already decided by choosing which method
  * to call. It makes no business or flow decisions.
  */
-@Component
 @Slf4j
 public class LoggingInitializeGamePresenter implements InitializeGamePresenterOutputPort {
 

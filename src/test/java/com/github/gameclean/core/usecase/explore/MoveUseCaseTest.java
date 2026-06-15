@@ -5,11 +5,13 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import com.github.gameclean.core.usecase.orient.OrientPlayerResult;
+import com.github.gameclean.core.usecase.orient.OrientPlayerSubcaseInputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -27,15 +29,17 @@ import static org.mockito.Mockito.*;
 
 /**
  * Interaction tests for {@link MoveUseCase} in isolation — every output port is mocked and the use case is
- * exercised directly through its input port (no Spring, no database). {@code move} writes, so unlike
- * {@code look} it does collaborate with the transaction port: the stub runs the action inline and fires
- * after-commit callbacks immediately, so the single post-commit presentation of the entered scene is
- * observable; the persistence-failure case instead lets the action's error propagate, as the real adapter
- * would.
+ * exercised directly through its input port. The shared opening is delegated to the
+ * {@link OrientPlayerSubcaseInputPort orient subcase}, so it is mocked: it returns the player and their
+ * current scene on the happy paths, or signals {@link SubcaseAlreadyPresented} when it has already presented
+ * a not-found outcome (covered in detail by {@code OrientPlayerSubcaseTest}). {@code move} writes, so unlike
+ * {@code look} it collaborates with the transaction port: the stub runs the action inline and fires
+ * after-commit callbacks immediately, making the single post-commit presentation observable; the
+ * persistence-failure case instead lets the action's error propagate, as the real adapter would.
  *
- * <p>The interaction presents <em>once</em> on every path: the four not-found branches present and return,
- * the happy path presents the entered scene after commit, and any unhandled failure routes to
- * {@code presentError}.
+ * <p>The interaction presents <em>once</em> on every path: the subcase presents the two not-found outcomes;
+ * the no-such-exit and dangling-target branches present and return; the happy path presents the entered
+ * scene after commit; any unhandled failure routes to {@code presentError}.
  */
 @ExtendWith(MockitoExtension.class)
 class MoveUseCaseTest {
@@ -43,13 +47,13 @@ class MoveUseCaseTest {
     @Mock
     private MovePresenterOutputPort presenter;
     @Mock
-    private PlayerOperationsOutputPort playerOps;
-    @Mock
     private PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     @Mock
     private SceneRepositoryOperationsOutputPort sceneOps;
     @Mock
     private TransactionOperationsOutputPort txOps;
+    @Mock
+    private OrientPlayerSubcaseInputPort orientPlayerSubcase;
 
     @InjectMocks
     private MoveUseCase useCase;
@@ -57,10 +61,7 @@ class MoveUseCaseTest {
     @Test
     void movesThePlayerThroughTheExitAndPresentsTheEnteredSceneAfterCommit() {
         Scene courtyard = scene("scn2", "Courtyard");
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gateTo("scn2")));
+        orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard));
         runTransactionAndFireAfterCommit();
 
@@ -78,10 +79,7 @@ class MoveUseCaseTest {
 
     @Test
     void matchesTheExitCaseInsensitively() {
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gateTo("scn2")));
+        orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
         runTransactionAndFireAfterCommit();
 
@@ -92,51 +90,29 @@ class MoveUseCaseTest {
     }
 
     @Test
-    void presentsPlayerNotFoundWhenNoPlayerIsPersisted() {
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+    void presentsNothingWhenTheSubcaseHasAlreadyPresented() {
+        when(orientPlayerSubcase.playerGetsBearings()).thenThrow(new SubcaseAlreadyPresented());
 
         useCase.playerMovesThrough("east");
 
-        verify(presenter).presentPlayerNotFound(new PlayerId("plr1"));
-        verify(sceneOps, never()).findScene(any());
-        verifyNoWriteOrScene();
-    }
-
-    @Test
-    void presentsCurrentSceneNotFoundWhenThePlayersSceneIsMissing() {
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn9")));
-        when(sceneOps.findScene(new SceneId("scn9"))).thenReturn(Optional.empty());
-
-        useCase.playerMovesThrough("east");
-
-        verify(presenter).presentCurrentSceneNotFound(new SceneId("scn9"));
-        verifyNoWriteOrScene();
+        verifyNoInteractions(presenter, playerRepositoryOps, sceneOps, txOps);
     }
 
     @Test
     void presentsNoSuchExitWhenTheCurrentSceneHasNoSuchExit() {
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gateTo("scn2")));
+        orientedAt("plr1", gateTo("scn2"));
 
         useCase.playerMovesThrough("north");
 
         verify(presenter).presentNoSuchExit("north");
         // The exit didn't resolve, so the target is never looked up and nothing is written.
-        verify(sceneOps, never()).findScene(new SceneId("scn2"));
+        verify(sceneOps, never()).findScene(any());
         verifyNoWriteOrScene();
     }
 
     @Test
     void presentsTargetSceneNotFoundWhenTheExitLeadsNowhere() {
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gateTo("scn2")));
+        orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.empty());
 
         useCase.playerMovesThrough("east");
@@ -146,23 +122,21 @@ class MoveUseCaseTest {
     }
 
     @Test
-    void routesAMalformedPlayerIdToTheCatchAll() {
-        // 'bogus' lacks the 'plr' prefix — PlayerId construction fails inside the use case.
-        when(playerOps.currentPlayerId()).thenReturn("bogus");
+    void routesAnUnexpectedSubcaseFailureToTheCatchAll() {
+        PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
+        when(orientPlayerSubcase.playerGetsBearings()).thenThrow(boom);
 
         useCase.playerMovesThrough("east");
 
-        verify(presenter).presentError(any(IllegalArgumentException.class));
-        verifyNoInteractions(playerRepositoryOps, sceneOps, txOps);
+        verify(presenter).presentError(boom);
+        verify(presenter, never()).presentScene(any());
+        verifyNoWriteOrScene();
     }
 
     @Test
     void routesAPersistenceFailureToTheCatchAll() {
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
-                .thenReturn(Optional.of(player("plr1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gateTo("scn2")));
+        orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
         runTransactionPropagatingErrors();
@@ -175,11 +149,18 @@ class MoveUseCaseTest {
 
     // --- fixtures -----------------------------------------------------------------------------------
 
+    /** Stub the orient subcase to return the player standing in the given current scene. */
+    private void orientedAt(String playerId, Scene currentScene) {
+        when(orientPlayerSubcase.playerGetsBearings())
+                .thenReturn(new OrientPlayerResult(
+                        player(playerId, currentScene.getId().getValue()), currentScene));
+    }
+
     private static Player player(String id, String currentScene) {
         return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
     }
 
-    /** The player's current scene, with a single "east" exit to the given target. */
+    /** The player's current scene (scn1), with a single "east" exit to the given target. */
     private static Scene gateTo(String targetId) {
         return Scene.builder()
                 .id(new SceneId("scn1"))
