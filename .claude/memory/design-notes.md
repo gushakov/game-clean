@@ -653,17 +653,55 @@ tests, where before the logic was only reachable through the use-case test. That
 for side-effect-free functions: safe to call, trivial to test. (Promotion candidate for the methodology —
 flagged, not promoted, per Prompt-4 discipline.)
 
+**The spawn loop resolved — the whole stochastic policy pushed onto the model, fed suppliers.** `[thread #1]`
+`[thread #2]` The spawn roll loop is now pushed down. The use case had been driving the algorithm itself — `item.getTemplate().getSpawnRule()`,
+then a `maxTries` loop interleaving `isHitBy`/`pickScene` with the randomness and id-generator *port* calls.
+The fix is the **batch form**: `SpawnRule.rollPlacements(DoubleSupplier)` owns the entire placement policy (the
+attempt count, the hit and scene decisions, *and* the draw-ordering — one draw per attempt, a second only on a
+hit, knowledge that had leaked into the use case); `ItemTemplate.spawnInto(Supplier<ItemId>, DoubleSupplier)`
+turns each placement into a valid `Item`, pulling an id *only for an actual placement* (no eager minting for
+misses); the use-case-private `AuthoredItem` forwards `spawnInto` one level, exactly as it forwards
+`candidateScenesNotIn`. `spawnItems` collapses to a loop that adapts the two output ports to suppliers
+(`idGeneratorOps::generateItemId`, `randomnessOps::nextDouble`) and collects — pure orchestration.
+
+This is game-clean's instance of the now-promoted doctrine: the computation lives in the domain, fed values
+and JDK suppliers, never ports; the use case keeps the orchestration (§3's boundary currency one layer in —
+values/suppliers inward, valid model out). The general rule — functional core / imperative shell, the home
+test, value-by-default / supplier-only-when-the-core-owns-the-cardinality, and why the instability objection
+*dissolves* rather than relocates — lives canonically in `clean-ddd-core` → *Where inter-aggregate business
+rules live*, promoted out of this project and not restated here. `SpawnRule` needed a `DoubleSupplier` for
+exactly the cardinality the rule names — one draw per attempt, a second only on a hit, a count the domain owns
+— so a *value* would not do here, unlike the day-of-week in the module's `customer.buy` example. The
+`maxTries` leak closes; the "rolls run outside the transaction" property is untouched, since the use case
+still chooses *where* to call `spawnInto`.
+
+**Why `AuthoredItem` is *not* promoted to the model.** It looks like it embodies a Domain-Entity rule once it
+has `spawnInto`, but it does not — it *forwards* to `ItemTemplate`, which already is the domain model, and a
+forwarder is a client of a rule, not its owner. `AuthoredItem` is the *application* half: the pairing of a
+domain template with its `authoredId` — a seed-file handle used only for the unknown-spawn-scene diagnostic and
+discarded the moment spawning succeeds (instances get generated `ItemId`s, never the handle). So it stays in
+the use-case layer. The promotion test is **not** "does it carry behaviour" but "**does the domain need this
+thing's identity/lifecycle**" — and item templates are still transient (no aggregate references "the kind",
+nothing is looked up by it). The named trigger to watch (§2 emergence): a respawn timer ("scene X respawns
+`itm1` every N ticks") or stacked inventory ("3× `itm1`") would make the *template* a referenced, persistent
+thing — *then* it earns an `ItemKindId`, the authored handle graduates into that id, and the use-case wrapper
+dissolves. Until a domain reference exists, promoting would invent an identity on speculation.
+
+**Batch over per-attempt — why the seam is the whole kind, not a single roll.** A per-attempt
+`spawn(id, hitRoll, sceneRoll)` was the tempting shape, but it keeps `maxTries` in a use-case loop
+(re-fragmenting the one policy `SpawnRule` deliberately unifies) and mints an id for every attempt including
+misses. The batch `spawnInto` encapsulates the whole policy and mints only on a hit. The testability
+dividend: `SpawnRule.rollPlacements` and
+`ItemTemplate.spawnInto` get direct unit tests (a fixed draw-sequence pins the draw-ordering; a throwing
+id-supplier proves a miss mints nothing), where before the spawn logic was reachable only through the
+use-case test.
+
 **Deferred and parked.**
 - The derived `Set<SceneId>` of "scenes that exist in the world being built" is reconstructed for *both* the
   exit and the spawn checks — an **implicit concept** (Evans: *make implicit concepts explicit*). A
   `KnownScenes` / `SceneCatalog` VO with `contains` / `unknownAmong` would unify both resolvers, but minting
   it on two uses spends entropy the parameter already covers; held until a *third* resolver appears or until
   "scene existence" grows behaviour (resolving to actual `Scene`s, world-wide dangling reports).
-- The *spawn roll loop* (`spawnItems`) still reaches `template.getSpawnRule()` for `maxTries`/`isHitBy`/
-  `pickScene`. That is a **different animal** — orchestration that interleaves non-deterministic *port* calls
-  with domain decisions, legitimately the use case's. Pushing it down cleanly would mean feeding the template
-  **function suppliers** (`DoubleSupplier`, `Supplier<ItemId>`), not ports, so it owns spawning end-to-end
-  without importing infrastructure. Open question, deliberately not yet resolved.
 
 ---
 

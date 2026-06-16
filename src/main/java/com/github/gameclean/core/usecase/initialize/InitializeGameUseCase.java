@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.initialize;
 
 import com.github.gameclean.core.model.item.Chance;
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.ItemTemplate;
 import com.github.gameclean.core.model.item.SpawnRule;
 import com.github.gameclean.core.model.player.Player;
@@ -26,6 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.DoubleSupplier;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -234,14 +237,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     private List<Item> spawnItems(List<AuthoredItem> authoredItems) {
         List<Item> spawned = new ArrayList<>();
         for (AuthoredItem item : authoredItems) {
-            ItemTemplate template = item.getTemplate();
-            SpawnRule rule = template.getSpawnRule();
-            for (int attempt = 0; attempt < rule.getMaxTries(); attempt++) {
-                if (rule.isHitBy(randomnessOps.nextDouble())) {
-                    SceneId location = rule.pickScene(randomnessOps.nextDouble());
-                    spawned.add(template.instanceAt(idGeneratorOps.generateItemId(), location));
-                }
-            }
+            spawned.addAll(item.spawnInto(idGeneratorOps::generateItemId, randomnessOps::nextDouble));
         }
         return spawned;
     }
@@ -249,8 +245,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     /**
      * Use-case-private pairing of an item's authoring handle (used only for diagnostics — e.g. reporting an
      * unknown spawn scene) with its always-valid {@link ItemTemplate}. The handle is not a domain identity,
-     * so it stays out of the model. It forwards {@link #candidateScenesNotIn} to the template so the
-     * resolution loop tells the holder rather than reaching through it into the template and rule.
+     * so it stays out of the model. It forwards {@link #candidateScenesNotIn} and {@link #spawnInto} to the
+     * template one level, so the use case tells the holder rather than reaching through it into the template
+     * and rule: the application keeps only the orchestration (looping authored items, adapting the randomness
+     * and id-generator ports to suppliers, collecting), while the whole spawn policy stays on the model.
      */
     @Value
     private static class AuthoredItem {
@@ -259,6 +257,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
 
         List<SceneId> candidateScenesNotIn(Set<SceneId> knownSceneIds) {
             return template.candidateScenesNotIn(knownSceneIds);
+        }
+
+        List<Item> spawnInto(Supplier<ItemId> ids, DoubleSupplier draws) {
+            return template.spawnInto(ids, draws);
         }
     }
 }
