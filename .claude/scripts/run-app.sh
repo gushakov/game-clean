@@ -17,7 +17,14 @@
 #   3. ~/.jdks/openjdk-21*       IntelliJ-managed JDKs (no username hardcoded; $HOME expands)
 #   4. java on PATH
 #
-# Any arguments are forwarded to the application.
+# World selection:
+#   --world <name> | -w <name> | --world=<name>
+#       Choose which authored world to seed. A bare <name> (e.g. "scenes2.yaml") is taken
+#       as classpath:world/<name>; a value containing a scheme (e.g. "file:/abs/my.yaml")
+#       is used verbatim. Maps to the Spring property game.world.seed-location. Omit it to
+#       keep the default, classpath:world/scenes.yaml.
+#
+# Any remaining arguments are forwarded to the application (e.g. other --game.* overrides).
 set -euo pipefail
 
 # game-clean's configuration is fully bundled in the jar (application.yaml). Ignore any
@@ -26,6 +33,25 @@ set -euo pipefail
 unset SPRING_CONFIG_ADDITIONAL_LOCATION
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+
+# Parse a leading --world option (anywhere in the args); forward everything else to the app.
+world=""
+app_args=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --world|-w) world="${2:-}"; shift 2 ;;
+        --world=*)  world="${1#*=}"; shift ;;
+        *)          app_args+=("$1"); shift ;;
+    esac
+done
+
+seed_args=()
+if [[ -n "${world}" ]]; then
+    # A scheme (classpath:/file:/…) ⇒ use verbatim; a bare name ⇒ a file under classpath world/.
+    [[ "${world}" == *:* ]] && seed_location="${world}" || seed_location="classpath:world/${world}"
+    seed_args+=("--game.world.seed-location=${seed_location}")
+    echo "World: ${seed_location}"
+fi
 
 java_major() {
     # First -version line; "21.0.2" -> 21, legacy "1.8.0_x" -> 1 (rejected below).
@@ -67,4 +93,4 @@ fi
 
 echo "Running ${jar##*/} on $("${java_bin}" -version 2>&1 | head -1)"
 cd "${project_root}"
-exec "${java_bin}" -jar "${jar}" "$@"
+exec "${java_bin}" -jar "${jar}" "${seed_args[@]}" "${app_args[@]}"

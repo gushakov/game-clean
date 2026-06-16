@@ -163,6 +163,9 @@ primitives and defers model construction to the use case. Why isn't one of them 
 a **driven** (output) port. The YAML seed is a **driving** (input) adapter feeding the use
 case's input port — a peer of the future terminal command adapter, *not* of the persistence
 port. Compared like-for-like (driven↔driven, driving↔driving) the symmetry is intact.
+(**Revised** — the seed's classification was later flipped from *driving* to *pulled driven*;
+see *The parked caveat, realized* at the end of this section. The boundary-currency rule below
+is unaffected: only the seed's hexagon side changed, not what crosses it.)
 
 **And the asymmetry is *required* by the always-valid invariant, not a stylistic wart.**
 Input data *may be invalid* — human-authored YAML can carry a blank name, a dangling exit
@@ -188,17 +191,42 @@ The rule, in one line: **invalid-capable carrier inward, valid model outward.**
   inter-aggregate (the two-pass exit-target resolution, §4) both inside the use case,
   rather than split across infra and core.
 
-**Testability is the clincher.** With `*Entry` on the input port you can unit-test the use
-case against a blank-named scene or a dangling target and assert the domain error, because
-the DTO can *represent* that bad state. A `List<Scene>`-returning seed port couldn't even
-construct the bad fixture — the gate would be untestable at the use-case level.
+**Testability is the clincher.** With the `*Entry` carrier crossing the boundary you can unit-test
+the use case against a blank-named scene or a dangling target and assert the domain error, because the
+DTO can *represent* that bad state. A `List<Scene>`-returning seed port couldn't even construct the bad
+fixture — the gate would be untestable at the use-case level. (This leverage is independent of the
+seed's hexagon side: after the flip to a pulled driven port, the same bad fixture is supplied by
+*stubbing the source port* — see *The parked caveat, realized*.)
 
-**Parked caveat.** The one place "driven ports return models" gets real tension is a driven
-port sourcing *untrusted external* data (a future `WeatherOutputPort` over a third-party API
-— external like YAML, yet pulled like persistence). DDD's answer is an **Anti-Corruption
-Layer** inside that adapter, owning the foreign→domain translation and still returning
-models. The seed sidesteps this by being *pushed* (driving), where primitives-inward is
-already settled.
+**The parked caveat, realized — the seed became a *pulled* driven port.** This caveat once read
+"the one place 'driven ports return models' gets real tension is a driven port sourcing *untrusted
+external* data (a future `WeatherOutputPort` — external like YAML, yet pulled like persistence); the
+seed *sidesteps* this by being **pushed** (driving)." That sidestep was reversed, and the reversal is
+*more* faithful, not less. The authored seed is now **pulled** by `InitializeGame` through
+`GameSeedSourceOperationsOutputPort` as its first checkpoint, with the YAML machinery behind the
+adapter. The tell that the original "seed is driving, peer of the terminal" reading was wrong: the
+seed file does not *initiate* anything. The human at the terminal initiates (`look`); the seed is a
+*resource the system fetches* to fulfil a startup goal it was already told to pursue — and "fetched,
+not initiating" is exactly what a driven port models. This also makes the use case truly *drive* the
+interaction: loading the world is the use case's own first step, not logic stranded in a seeder adapter
+outside it.
+
+What it realizes is a **third boundary shape**, distinct from both §3 poles: a *driven port that
+returns an invalid-capable carrier* (`GameSeed` / the `*Entry` DTOs), **not** a valid model.
+Persistence returns valid models because its data is valid *by provenance*; this port sources untrusted
+authored data whose validation is *deliberately deferred* to the use-case gate, so an always-valid
+model cannot be its return type — the constructor would throw before the gate. The boundary-currency
+rule is untouched (**invalid-capable carrier inward, valid model outward**): the carrier merely arrives
+as a *return value* now, not a pushed argument. DDD's ACL answer for untrusted sources still applies in
+spirit — the adapter owns the foreign→domain *sourcing* — but it returns the carrier, not a model,
+because rejecting bad authored input *as a presented outcome* is the whole point. Two §3 dividends
+survive the flip intact: the **single validity gate** (VOs built only in the use case) and the
+**testability clincher** — the bad-fixture test now *stubs the source port* to return a blank-named
+scene instead of passing it as an argument, equally expressible. The cost: §3's clean
+driven-returns-models / driving-pushes-DTOs symmetry now carries a documented exception — which is
+exactly the kind of finding this showcase exists to surface. The decisive consequence elsewhere: with
+the seed pulled *inside* the use case, a seed-source failure is **presented** (caught at the outermost
+checkpoint), uniform with a persistence fault, rather than failing startup from an adapter — see §6.
 
 ## 4. Use cases as first-class interactions
 
@@ -484,10 +512,10 @@ If the core sequenced them, it would be reaching *out* to start its own driving 
 reversing the hexagon. The core must never know its driving adapters exist, let alone order
 them. So **boot-time ordering of driving adapters is a composition-root / infrastructure
 responsibility**, sitting *beside* the composition root, not inside `core`. Expressing it as
-two `@Order`-annotated `ApplicationRunner`s dissolved that responsibility into framework SPI —
-an emergent property of Spring sorting runners by magic-constant precedence, reconstructable
-only by reading two files and knowing the SPI — so we pulled it into one named runner whose
-body *is* the order.
+two `@Order`-annotated `ApplicationRunner`s was the first shape; we then pulled it into one
+named runner whose body — `gameSeeder.seed(); consoleSession.start();` — *was* the order, to
+keep the sequence readable in one place rather than dissolved across two files and Spring's
+runner-sorting SPI.
 
 **The wrong turn, and the distinction it forced.** That runner then grew to fire *two business
 interactions* in turn — seed the world (`ConstructWorld`), then seed the player
@@ -500,19 +528,43 @@ case reports its outcome to its presenter, so once the runner called the first o
 the unidirectional-flow contract, **renounced the right to know whether it succeeded** — yet it
 then made a second, outcome-dependent call on blind assumption. The tell that the dependency
 belonged in the core: it was already a domain read inside the player step (`findScene`). The
-fix re-sorts the two concerns — the world→player business sequence collapses into one
-`InitializeGame` use case (§4), where the precondition gates on a visible outcome; the runner
-reverts to pure lifecycle, `gameSeeder.seed()` (one inward, fire-and-forget call) then
-`consoleSession.start()`, both injected as singletons, no `ObjectProvider`. The §6 principle
-survives intact; it had merely been over-extended to cover business sequencing it never
-licensed.
+fix re-sorts the two concerns: the world→player→items business sequence collapses into one
+`InitializeGame` use case (§4), where the preconditions gate on a visible outcome; the runner
+keeps only lifecycle.
 
-A consequence worth noting: with one idempotent seed step, the per-adapter enable flags stay
-simple — seeding is triggered only by the orchestrator, gated with the console by one
-`game.terminal.enabled` switch. **Forward fit:** when Phase 3 adds an independent clock and an
-outbox relay, their ordered start — and the *reverse-order* shutdown the design requires
-(`Terminal.close()` must run last) — belong here too, as further explicit lines rather than
-scattered `SmartLifecycle` phase numbers (which would only be `@Order` magic by another name).
+**Then the same unidirectional logic came for the runner body itself.** With business
+sequencing gone, the runner was just `gameSeeder.seed(); consoleSession.start();` — defended by
+a comment ("we use the return only for lifecycle, never a business decision"). But an imperative
+body of two inward fire-and-forgets is *itself* a unidirectional smell: control visibly returns
+from the first call, so it is a place where an outcome-dependent branch on the seeding result
+*could* be inserted — forbidden by the contract, prevented only by a promise. Two things tipped
+the balance to acting on it. First, the §3 seed-source flip makes `seed()` **always** return
+normally (a source failure is now *presented*, not thrown), so the return-of-control is
+permanent and load-bearing, not incidental. Second — the principle — **removing the *affordance*
+beats forbidding the *misuse*.** So the body is gone: `BootSequence` is now a `@Configuration`
+declaring two `@Order`-ed `ApplicationRunner` beans (`@Order(1)` seed, `@Order(2)` console),
+co-located, each an independent inward fire. No body, no return site, no branch point; the
+framework sequences them — which is exactly where driving-adapter *lifecycle* ordering belongs.
+
+This **re-trades** the earlier "one named runner, body-is-order" decision, knowingly. That
+decision ranked *imperative visibility* first and rejected `@Order` runners for dissolving the
+order into SPI across two files. The re-trade ranks **unidirectional flow above imperative
+visibility**, and recovers visibility differently: both runners sit in one `@Configuration`,
+with small explicit `@Order(1)`/`@Order(2)` integers (not magic precedence constants) and a
+class javadoc stating the order in prose. The old objection is thereby paid down to its
+irreducible minimum — a reader need only know that Spring runs `ApplicationRunner`s in `@Order`
+order (unchanged on Boot 4; see `spring-boot-4-notes.md`). The seeder stays a thin driving
+adapter — pull the prototype input port, fire `systemInitializesGame()`, use no return — the
+system-actor peer of `ConsoleSession`. The per-adapter enable flags stay simple: the config and
+both runners share the one `game.terminal.enabled` guard with `ConsoleSession`, so a test slice
+gets neither runner — never seeding implicitly, blocking on a console, or grabbing a system
+terminal.
+
+**Forward fit:** when Phase 3 adds an independent clock and an outbox relay, their ordered start
+— and the *reverse-order* shutdown the design requires (`Terminal.close()` must run last) —
+belong here too, as further `@Order`-ed runner beans co-located in this config (or their
+`SmartLifecycle` equivalent where start and stop must pair), so the boot order stays one
+readable declaration.
 
 ## 7. The presentation layer (JLine), and one terminal for two adapters
 

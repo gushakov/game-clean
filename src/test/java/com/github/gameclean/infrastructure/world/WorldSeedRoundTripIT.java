@@ -3,7 +3,7 @@ package com.github.gameclean.infrastructure.world;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
-import com.github.gameclean.core.usecase.initialize.SceneEntry;
+import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.infrastructure.persistence.scene.SceneDbEntityMapper;
 import com.github.gameclean.infrastructure.persistence.scene.SceneDbEntityMapperImpl;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;

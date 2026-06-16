@@ -83,10 +83,13 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
 - **Use case shape** — input port (`{Name}InputPort`, all interactions `void`), framework-free
   `{Name}UseCase` (`@RequiredArgsConstructor`, `@FieldDefaults(makeFinal, PRIVATE)`, ports as
   `presenter` + `*Ops` fields), and a co-located `{Name}PresenterOutputPort extends
-  ErrorHandlingPresenterOutputPort` (base lives in `core/port/`). Input crosses as `*Entry` DTOs
-  **in the use-case package** when it has structure (`InitializeGame`/`SceneEntry`), or as a bare
-  primitive when it is a single value (`Look`/`look(String playerId)` — no DTO); value objects are
-  constructed inside the use case, never by adapters.
+  ErrorHandlingPresenterOutputPort` (base lives in `core/port/`). Input crosses as primitives, never
+  domain types: a *driving* command adapter pushes a bare value when it is a single value
+  (`Look`/`look(String playerId)` — no DTO) or `*Entry` DTOs when it has structure; `InitializeGame`
+  instead takes **no argument** and **pulls** its `GameSeed`/`*Entry` carriers from
+  `GameSeedSourceOperationsOutputPort` (those DTOs live in `core/port/seed/`, the output-port contract,
+  not the use-case package — design-notes §3). Either way, value objects are constructed inside the use
+  case, never by adapters.
 - **Read-only use cases take no transaction.** `Look` (`core/usecase/explore/`) reads through the
   persistence ports and presents directly — no `TransactionOperationsOutputPort` collaborator at all,
   no after-commit hook. Outcomes (missing player, dangling current scene) are reached by
@@ -115,25 +118,30 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
 - **Persistence adapter** — `Spring{Aggregate}RepositoryAdapter` (`@Component`): emptiness via
   `repository.count() == 0`, writes via `JdbcAggregateTemplate.insert(mapper.toDbEntity(...))` (insert
   — ids are assigned); infra exceptions wrapped in `PersistenceOperationsError`.
-- **Game seeding** — `infrastructure/world/GameSeeder` (plain singleton, *not* an `ApplicationRunner`)
-  reads `world/scenes.yaml` via `SceneYamlReader` and the configured starting scene, and fires
-  `InitializeGame` via `seed()` (one `getBean` prototype pull). Idempotent (the use case's seed-if-empty
-  and create-if-absent guards), so it is invoked unconditionally by `BootSequence` on every interactive
-  boot. Replaces the former `WorldSeeder` + `PlayerSeeder` pair; the world→player order is now internal
-  to the use case (design-notes §4/§6). Presenter `LoggingInitializeGamePresenter` logs both phases to
-  file.
+- **Game seeding** — split into a *driven source adapter* and a *thin driving adapter*.
+  `infrastructure/world/YamlGameSeedSource` implements `GameSeedSourceOperationsOutputPort`: it reads
+  `world/scenes.yaml` via `GameSeedYamlReader` + the configured starting scene and returns the `GameSeed`,
+  wrapping any `IOException` in `GameSeedSourceOperationsError` (presented, not fail-fast). The use case
+  *pulls* that as Checkpoint 1. `infrastructure/world/GameSeeder` (plain singleton, *not* an
+  `ApplicationRunner`) is now logic-free: it fires `InitializeGame` via `seed()` (one `getBean` prototype
+  pull, no return used). Idempotent (the use case's seed-if-empty / create-if-absent / spawn-if-none
+  guards), so it is invoked unconditionally by `BootSequence`'s ordered runner on every interactive boot.
+  Replaces the former `WorldSeeder` + `PlayerSeeder` pair; the world→player→items order is internal to the
+  use case (design-notes §3/§4/§6). Presenter `LoggingInitializeGamePresenter` logs the outcome to file.
 
 ## Boot orchestration, config catalog, and the terminal shell
 
 Established by the JLine entry-point work (issue #6).
 
-- **`BootSequence`** (`infrastructure/`, the *sole* `ApplicationRunner`) orders two driving adapters as
-  one readable statement: `gameSeeder.seed()` then `consoleSession.start()`. Boot-time *ordering* of
-  driving adapters is a composition-root concern; *business sequencing* (the world→player precondition)
-  is not — it lives inside `InitializeGame`, not here (design-notes §6). The two steps are injected
-  directly as singletons (no `ObjectProvider`). Gated with the terminal beans by `game.terminal.enabled`,
-  so test slices get no runner — they never seed implicitly, block on a console, or grab a system
-  terminal. There is no longer a `construct-on-startup` flag.
+- **`BootSequence`** (`infrastructure/`, a `@Configuration`) declares two `@Order`-ed `ApplicationRunner`
+  beans — `@Order(1)` fires `gameSeeder.seed()`, `@Order(2)` fires `consoleSession.start()` — co-located so
+  the order is one readable declaration. **No imperative `seed(); start();` body**: each runner is an
+  independent inward fire, which removes the return-of-control site an outcome-dependent branch could creep
+  into (unidirectional flow > imperative visibility; design-notes §6). Boot-time *ordering* of driving
+  adapters is a composition-root concern; *business sequencing* (world→player→items) is not — it lives
+  inside `InitializeGame`. Class-level `@ConditionalOnProperty(game.terminal.enabled)` gates both runners,
+  so test slices get neither — they never seed implicitly, block on a console, or grab a system terminal.
+  (`@Order` on `ApplicationRunner` beans is unchanged on Boot 4 — see `spring-boot-4-notes.md`.)
 - **Two adapters, one terminal** — `TerminalConfig` declares the JLine `Terminal` + `LineReader` as
   shared singleton *infrastructure resources* (`@Bean(destroyMethod = "close")` on the terminal), guarded
   by `game.terminal.enabled`. The driving `ConsoleSession` and the driven `TerminalScenePresenter` both
@@ -158,10 +166,12 @@ Established by the JLine entry-point work (issue #6).
   `src/test/resources/logback-test.xml` restores console logging for the build (takes precedence on the
   test classpath). `logs/` is git-ignored.
 - **Test seam** — `InitializeGameIT` (`@SpringBootTest`, terminal off) drives the `InitializeGame` use
-  case through the composition root with explicitly-read seed entries and asserts the **persisted state**
-  (the presenter is `new`ed, not a mockable bean) over two runs to prove idempotency; `BootSequenceTest`
-  (unit, mocked steps) pins the seed-before-start order. (`GameSeederIT` was dropped as redundant with
-  `InitializeGameIT`; the thin `GameSeeder.seed()` glue — YAML read + `getBean` pull — has no dedicated IT.)
+  case through the composition root by firing the no-arg `systemInitializesGame()` — the use case now
+  *pulls* the seed itself through the real `YamlGameSeedSource`, so the test no longer reads entries — and
+  asserts the **persisted state** (the presenter is `new`ed, not a mockable bean) over two runs to prove
+  idempotency. `BootSequenceTest` (unit) pins each `@Order`-ed runner firing only its own adapter and that
+  seeding's `@Order` precedes the console's (read by reflection). `InitializeGameUseCaseTest` additionally
+  covers the seed-source failure path (stubbed to throw → `presentError`).
 
 ## Recipe — running and driving the terminal app
 
@@ -249,7 +259,11 @@ Flyway migration results — never to read or mutate business data.
 - Input crosses the boundary as primitives / `*Entry` DTOs; Value Objects are constructed
   **inside** the use case, never by adapters.
 - **Boundary currency (driven vs driving).** Driven (output) ports trade in **domain models** — the
-  adapter hides its own `*DbEntity`/DTO and owns the mapping (persistence is the exemplar; a future
-  untrusted-external source would interpose an Anti-Corruption Layer and still return models).
-  Driving adapters carry the primitive `*Entry` DTOs above, leaving VO construction to the use case.
-  Rationale (the always-valid model can't carry unvalidated input): design-notes §3 (boundary currency).
+  adapter hides its own `*DbEntity`/DTO and owns the mapping (persistence is the exemplar). Driving
+  command adapters carry primitives / `*Entry` DTOs, leaving VO construction to the use case. **Third
+  shape (the realized caveat):** an *untrusted-external source* pulled like persistence — the
+  `GameSeedSourceOperationsOutputPort` over YAML — is a **driven port that returns an invalid-capable
+  carrier** (`GameSeed`/`*Entry`), *not* a model, precisely because validation is deferred to the
+  use-case gate; the ACL still owns the foreign→domain sourcing, but returns the carrier. The
+  boundary-currency rule (invalid-capable carrier inward, valid model outward) is unchanged — the carrier
+  just arrives as a return value. Rationale: design-notes §3 (boundary currency, *The parked caveat, realized*).

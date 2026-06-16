@@ -3,32 +3,52 @@ package com.github.gameclean.infrastructure;
 import com.github.gameclean.infrastructure.terminal.ConsoleSession;
 import com.github.gameclean.infrastructure.world.GameSeeder;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
+import org.springframework.core.annotation.Order;
 
-import static org.mockito.Mockito.inOrder;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * The startup ordering is the whole point of {@link BootSequence}, so it gets a direct, framework-free
- * test: with both steps mocked, {@code run} must seed the game <em>before</em> it starts the player
- * session. This pins the lifecycle invariant in one fast unit test rather than leaving it to be inferred
- * from Spring's runner-sorting behaviour.
+ * test. {@code BootSequence} no longer holds an imperative {@code seed(); start();} body — it declares two
+ * {@code @Order}ed {@link org.springframework.boot.ApplicationRunner} beans — so the test pins two things:
+ * each runner fires its own driving adapter (and nothing else), and the {@code @Order} values place seeding
+ * before the console. There is deliberately no "control returns from seeding" assertion to make: the two
+ * fires are independent, which is the unidirectional point of the new shape.
  *
- * <p>The world→player business sequence now lives inside the {@code InitializeGame} use case, fired by
- * {@link GameSeeder} — so this test concerns itself only with the two driving adapters' lifecycle order,
- * not with how the world and player are sequenced within the seed.
+ * <p>The world→player business sequence lives inside the {@code InitializeGame} use case, fired by
+ * {@link GameSeeder} — so this test concerns itself only with the two driving adapters' lifecycle order.
  */
 class BootSequenceTest {
 
+    private final BootSequence bootSequence = new BootSequence();
+
     @Test
-    void seedsTheGameBeforeStartingTheSession() throws Exception {
+    void seedRunnerFiresOnlyTheSeeder() throws Exception {
         GameSeeder gameSeeder = mock(GameSeeder.class);
+
+        bootSequence.seedTheGame(gameSeeder).run(null);
+
+        verify(gameSeeder).seed();
+    }
+
+    @Test
+    void consoleRunnerFiresOnlyTheConsole() throws Exception {
         ConsoleSession consoleSession = mock(ConsoleSession.class);
 
-        new BootSequence(gameSeeder, consoleSession).run(null);
+        bootSequence.openTheConsole(consoleSession).run(null);
 
-        InOrder order = inOrder(gameSeeder, consoleSession);
-        order.verify(gameSeeder).seed();
-        order.verify(consoleSession).start();
+        verify(consoleSession).start();
+    }
+
+    @Test
+    void seedingIsOrderedBeforeTheConsole() throws Exception {
+        int seedOrder = BootSequence.class
+                .getDeclaredMethod("seedTheGame", GameSeeder.class).getAnnotation(Order.class).value();
+        int consoleOrder = BootSequence.class
+                .getDeclaredMethod("openTheConsole", ConsoleSession.class).getAnnotation(Order.class).value();
+
+        assertThat(seedOrder).isLessThan(consoleOrder);
     }
 }

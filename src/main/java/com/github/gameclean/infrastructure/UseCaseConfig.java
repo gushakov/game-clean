@@ -6,6 +6,7 @@ import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutp
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
+import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.LookUseCase;
@@ -47,6 +48,7 @@ public class UseCaseConfig {
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public InitializeGameInputPort initializeGameUseCase(
+            GameSeedSourceOperationsOutputPort seedSourceOps,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
@@ -55,8 +57,8 @@ public class UseCaseConfig {
             RandomnessOperationsOutputPort randomnessOps,
             TransactionOperationsOutputPort txOps) {
         return new InitializeGameUseCase(
-                new LoggingInitializeGamePresenter(), playerOps, playerRepositoryOps, sceneOps,
-                itemOps, idGeneratorOps, randomnessOps, txOps);
+                new LoggingInitializeGamePresenter(), seedSourceOps, playerOps, playerRepositoryOps,
+                sceneOps, itemOps, idGeneratorOps, randomnessOps, txOps);
     }
 
     @Bean

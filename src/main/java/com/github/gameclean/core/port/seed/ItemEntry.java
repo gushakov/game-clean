@@ -1,12 +1,13 @@
-package com.github.gameclean.core.usecase.initialize;
+package com.github.gameclean.core.port.seed;
 
 import lombok.Value;
 
 /**
  * Parsed shape of a single authored item — its descriptions and its {@link SpawnEntry spawn rule} — a
- * flat, immutable carrier of primitives holding no domain types. Part of the {@code InitializeGame}
- * input-port contract; the {@link com.github.gameclean.core.model.item.ItemTemplate} value object is
- * constructed inside the use case (the validity gate).
+ * flat, immutable carrier of primitives holding no domain types. Part of the
+ * {@link GameSeedSourceOperationsOutputPort} return contract; the
+ * {@link com.github.gameclean.core.model.item.ItemTemplate} value object is constructed inside the use
+ * case (the validity gate).
  *
  * <p>The {@code id} is the <em>authoring handle</em> used in the seed file and in diagnostics (e.g.
  * reporting that an item spawns into an unknown scene); it is deliberately <em>not</em> an item instance

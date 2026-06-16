@@ -85,6 +85,17 @@ resolve. Field-level usage is otherwise unchanged.
 `spring-boot` / the slimmed `spring-boot-autoconfigure`, not a relocated feature module. `ApplicationRunner`
 and `ObjectProvider` likewise unchanged. (Confirmed building `WorldSeedRunner`/`WorldSeedProperties`.)
 
+## Ordering `ApplicationRunner` beans is unchanged — still `@Order`/`Ordered` **[doc]**
+
+Boot 4.1 keeps the 3.x idiom verbatim: when several `ApplicationRunner`/`CommandLineRunner` beans must
+run in a defined order, implement `org.springframework.core.Ordered` or annotate with
+`org.springframework.core.annotation.@Order` (lower value first); `SpringApplication.callRunners()` sorts
+by `AnnotationAwareOrderComparator`. **There is no new Boot 4 mechanism** for "declare a runnable bean and
+run it in order" — no replacement abstraction was introduced. `@Order` works on `@Bean`-produced runner
+methods too (the bean it produces is what gets ordered). Used in `BootSequence` to declare the two boot
+runners (`@Order(1)` seed, `@Order(2)` console) in one config class. (Confirmed against the Boot 4.1
+*Spring Application* reference; runner ordering exercised by `BootSequenceTest`.)
+
 ## Unchanged / carried over from 3.x (so you don't misattribute)
 
 - `@AutoConfiguration` + `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`

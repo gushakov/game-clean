@@ -14,6 +14,13 @@ import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutp
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
+import com.github.gameclean.core.port.seed.ExitEntry;
+import com.github.gameclean.core.port.seed.GameSeed;
+import com.github.gameclean.core.port.seed.GameSeedSourceOperationsError;
+import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
+import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.SceneEntry;
+import com.github.gameclean.core.port.seed.SpawnEntry;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +46,10 @@ import static org.mockito.Mockito.*;
  * single interaction are covered together: world construction, player placement and item spawning, plus the
  * precondition that a world which fails to construct stops the interaction before any player or item.
  *
+ * <p>The use case <em>pulls</em> its seed, so every test stubs {@code seedSourceOps.loadGameSeed()} with the
+ * authored fixture and then fires the no-argument {@code systemInitializesGame()}. A seed-source failure is
+ * presented like any other infrastructure fault, via the outermost checkpoint.
+ *
  * <p>The interaction presents <em>once</em>: every happy combination (world seeded or already present,
  * player created or already present, items spawned or already spawned) ends in the single
  * {@code presentGameInitialized} success, so the tests assert that one outcome rather than per-phase
@@ -52,6 +63,8 @@ class InitializeGameUseCaseTest {
 
     @Mock
     private InitializeGamePresenterOutputPort presenter;
+    @Mock
+    private GameSeedSourceOperationsOutputPort seedSourceOps;
     @Mock
     private PlayerOperationsOutputPort playerOps;
     @Mock
@@ -74,12 +87,13 @@ class InitializeGameUseCaseTest {
 
     @Test
     void seedsAnEmptyWorldCreatesThePlayerAndPresentsGameInitializedAfterCommit() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
+        useCase.systemInitializesGame();
 
         assertScenesSavedInOrder("scn1", "scn2");
         assertPlayerSaved("plr1", "scn1");
@@ -88,12 +102,13 @@ class InitializeGameUseCaseTest {
 
     @Test
     void addsThePlayerToAnAlreadySeededWorldAndPresentsGameInitialized() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
+        useCase.systemInitializesGame();
 
         verify(sceneOps, never()).saveScene(any());
         assertPlayerSaved("plr1", "scn1");
@@ -102,13 +117,14 @@ class InitializeGameUseCaseTest {
 
     @Test
     void writesNothingButStillPresentsGameInitializedWhenWorldAndPlayerAlreadyExist() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
+        useCase.systemInitializesGame();
 
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
@@ -119,6 +135,7 @@ class InitializeGameUseCaseTest {
 
     @Test
     void spawnsItemsByTheRollsAndPresentsThem() {
+        givenSeed(seed(twoConnectedScenes(), "scn1", item("itm1", 1, 1, 1, "scn1", "scn2")));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
@@ -128,8 +145,7 @@ class InitializeGameUseCaseTest {
         when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(
-                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 1, 1, "scn1", "scn2")));
+        useCase.systemInitializesGame();
 
         ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
         verify(itemOps).saveItem(saved.capture());
@@ -144,6 +160,7 @@ class InitializeGameUseCaseTest {
 
     @Test
     void doesNotReSpawnItemsWhenItemsAlreadyExist() {
+        givenSeed(seed(twoConnectedScenes(), "scn1", item("itm1", 1, 1, 1, "scn1")));
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
@@ -154,8 +171,7 @@ class InitializeGameUseCaseTest {
         when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(
-                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 1, 1, "scn1")));
+        useCase.systemInitializesGame();
 
         verify(itemOps, never()).saveItem(any());
         @SuppressWarnings("unchecked")
@@ -166,11 +182,11 @@ class InitializeGameUseCaseTest {
 
     @Test
     void rejectsAnItemWithAnInvalidChanceAndDoesNotInitialize() {
+        // Denominator 0 — Chance construction fails the intra-aggregate validity gate.
+        givenSeed(seed(twoConnectedScenes(), "scn1", item("itm1", 1, 0, 1, "scn1")));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
 
-        // Denominator 0 — Chance construction fails the intra-aggregate validity gate.
-        useCase.systemInitializesGame(
-                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 0, 1, "scn1")));
+        useCase.systemInitializesGame();
 
         verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
         verifyNothingInitialized();
@@ -178,11 +194,11 @@ class InitializeGameUseCaseTest {
 
     @Test
     void rejectsAnItemSpawningIntoAnUnknownSceneAndDoesNotInitialize() {
+        // scn9 is a well-formed id but no authored scene defines it — an inter-aggregate failure.
+        givenSeed(seed(twoConnectedScenes(), "scn1", item("itm1", 1, 2, 1, "scn9")));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
 
-        // scn9 is a well-formed id but no authored scene defines it — an inter-aggregate failure.
-        useCase.systemInitializesGame(
-                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 2, 1, "scn9")));
+        useCase.systemInitializesGame();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, List<SceneId>>> captor = ArgumentCaptor.forClass(Map.class);
@@ -199,8 +215,9 @@ class InitializeGameUseCaseTest {
         // id without the 'scn' prefix — SceneId construction fails the intra-aggregate validity gate
         List<SceneEntry> entries = List.of(
                 new SceneEntry("bogus", "Old Gate", "A gate.", "A weathered stone archway.", List.of()));
+        givenSeed(seed(entries, "scn1"));
 
-        useCase.systemInitializesGame(seed(entries, "scn1"));
+        useCase.systemInitializesGame();
 
         verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
         verifyNothingInitialized();
@@ -212,8 +229,9 @@ class InitializeGameUseCaseTest {
         List<SceneEntry> entries = List.of(
                 new SceneEntry("scn1", "Old Gate", "A gate.", "A weathered stone archway.",
                         List.of(new ExitEntry("east", "scn9"))));
+        givenSeed(seed(entries, "scn1"));
 
-        useCase.systemInitializesGame(seed(entries, "scn1"));
+        useCase.systemInitializesGame();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<SceneId, List<Exit>>> captor = ArgumentCaptor.forClass(Map.class);
@@ -227,9 +245,10 @@ class InitializeGameUseCaseTest {
     @Test
     void rejectsAMalformedPlayerIdAndDoesNotInitialize() {
         // 'bogus' lacks the 'plr' prefix — PlayerId construction fails the validity gate.
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
         when(playerOps.currentPlayerId()).thenReturn("bogus");
 
-        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
+        useCase.systemInitializesGame();
 
         verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
         verifyNothingInitialized();
@@ -239,11 +258,25 @@ class InitializeGameUseCaseTest {
     void rejectsAStartingSceneNotAmongTheAuthoredScenes() {
         // scn9 is a well-formed id but no authored scene defines it — an inter-aggregate failure,
         // resolved against the in-memory world rather than the (as-yet-unseeded) store.
+        givenSeed(seed(twoConnectedScenes(), "scn9"));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
 
-        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn9"));
+        useCase.systemInitializesGame();
 
         verify(presenter).presentStartingSceneUnknown(new SceneId("scn9"));
+        verifyNothingInitialized();
+    }
+
+    // --- a seed-source failure is presented like any infrastructure fault -----------------------
+
+    @Test
+    void presentsAnErrorWhenTheSeedCannotBeLoaded() {
+        GameSeedSourceOperationsError boom = new GameSeedSourceOperationsError("seed resource missing");
+        when(seedSourceOps.loadGameSeed()).thenThrow(boom);
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentError(boom);
         verifyNothingInitialized();
     }
 
@@ -251,13 +284,14 @@ class InitializeGameUseCaseTest {
 
     @Test
     void presentsAnErrorWhenASceneCannotBeSaved() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(sceneOps).saveScene(any());
         runTransactionsPropagatingErrors();
 
-        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
+        useCase.systemInitializesGame();
 
         verify(presenter).presentError(boom);
         verify(presenter, never()).presentGameInitialized(any(), any(), any());
@@ -265,6 +299,7 @@ class InitializeGameUseCaseTest {
 
     @Test
     void presentsAnErrorWhenThePlayerCannotBeSaved() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
@@ -272,13 +307,18 @@ class InitializeGameUseCaseTest {
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
         runTransactionsPropagatingErrors();
 
-        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
+        useCase.systemInitializesGame();
 
         verify(presenter).presentError(boom);
         verify(presenter, never()).presentGameInitialized(any(), any(), any());
     }
 
     // --- fixtures -------------------------------------------------------------------------------
+
+    /** Stub the source port to yield the given authored seed — the use case pulls it as Checkpoint 1. */
+    private void givenSeed(GameSeed gameSeed) {
+        when(seedSourceOps.loadGameSeed()).thenReturn(gameSeed);
+    }
 
     private static GameSeed seed(List<SceneEntry> scenes, String startingSceneId, ItemEntry... items) {
         return new GameSeed(scenes, startingSceneId, List.of(items));

@@ -1,10 +1,10 @@
 package com.github.gameclean.infrastructure.world;
 
-import com.github.gameclean.core.usecase.initialize.ExitEntry;
-import com.github.gameclean.core.usecase.initialize.GameSeed;
-import com.github.gameclean.core.usecase.initialize.ItemEntry;
-import com.github.gameclean.core.usecase.initialize.SceneEntry;
-import com.github.gameclean.core.usecase.initialize.SpawnEntry;
+import com.github.gameclean.core.port.seed.ExitEntry;
+import com.github.gameclean.core.port.seed.GameSeed;
+import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.SceneEntry;
+import com.github.gameclean.core.port.seed.SpawnEntry;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -18,12 +18,12 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Reads the authored seed YAML and assembles the {@link GameSeed} input carrier for {@code InitializeGame}.
- * A deliberately dumb boundary translator: it parses YAML into plain maps/lists and hand-maps them to the
- * {@link SceneEntry} / {@link ExitEntry} / {@link ItemEntry} / {@link SpawnEntry} DTOs (which live in
- * {@code core.usecase.initialize}, the input-port contract). It knows nothing of the domain model — no
- * {@code Scene}, no {@code ItemId} — so the validity gate stays where it belongs (the domain constructors,
- * driven by the use case).
+ * Reads the authored seed YAML and assembles the {@link GameSeed} carrier. A deliberately dumb boundary
+ * translator: it parses YAML into plain maps/lists and hand-maps them to the {@link SceneEntry} /
+ * {@link ExitEntry} / {@link ItemEntry} / {@link SpawnEntry} DTOs (which live in {@code core.port.seed},
+ * the seed-source port's return contract). It knows nothing of the domain model — no {@code Scene}, no
+ * {@code ItemId} — so the validity gate stays where it belongs (the domain constructors, driven by the
+ * use case).
  *
  * <p>It does, however, normalize the <em>authoring syntax</em> the way a parser should: a {@code "scn2, scn3"}
  * spawn-scene list is split into entries, and a {@code "12/50"} chance fraction is split into its numerator
