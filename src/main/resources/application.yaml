@@ -1,3 +1,25 @@
 spring:
   application:
     name: game-clean
+  # The startup banner would print over the JLine console; logging is routed to a file
+  # (logback-spring.xml) for the same reason, leaving the terminal to JLine alone.
+  main:
+    banner-mode: off
+  # Local development datasource — the Dockerized Postgres from docker-compose.yaml. These are
+  # throwaway local credentials (the same ones committed in src/test/resources/application.yaml),
+  # not secrets. Flyway autoconfigures and migrates the schema once a datasource is present.
+  datasource:
+    url: jdbc:postgresql://localhost:5432/gamecleandb
+    username: postgres
+    password: postgres
+
+game:  # all game.* properties are catalogued in GameConfigurationProperties
+  # Where the authored world seed lives (consumed by GameSeeder, fed to the InitializeGame use case).
+  world:
+    seed-location: classpath:world/scenes.yaml
+  # The interactive runtime: BootSequence seeds the game (world + player) then runs the JLine console
+  # (TerminalConfig + ConsoleSession + the terminal presenters). Enabled here so the app is playable;
+  # left unset in test profiles so @SpringBootTest slices never seed implicitly, block on a console,
+  # or try to grab a system terminal.
+  terminal:
+    enabled: true

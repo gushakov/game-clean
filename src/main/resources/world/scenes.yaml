@@ -1,0 +1,90 @@
+# Authored world seed — a small, connected scene graph.
+#
+# This is data, not schema: it flows into the world *through the domain* (the
+# InitializeGame use case constructs and validates the aggregates), never
+# via Flyway, which owns DDL only.
+#
+# Ids are authored short keys (the body the SceneId value object carries, e.g.
+# "scn1"); exit `target`s reference other scenes by that id. Targets may point
+# *forward* to scenes defined later in this file — resolution is order-independent
+# because exit.target_scene_id carries no foreign key, and whether every target
+# resolves is a use-case rule (two-pass validation), not a parse-time concern here.
+
+scenes:
+  - id: scn1
+    name: Old Gate
+    shortDescription: A weathered stone archway.
+    fullDescription: >
+      The gate's iron hinges have long since rusted shut against the open sky.
+      A path runs north into a courtyard; a low door breaks the east wall.
+    exits:
+      - name: north
+        target: scn2      # forward reference — scn2 is defined below
+      - name: east
+        target: scn3      # forward reference
+
+  - id: scn2
+    name: Courtyard
+    shortDescription: A grass-cracked courtyard.
+    fullDescription: >
+      Weeds push between the flagstones of what was once a drilling yard. Stone
+      stairs spiral up to a watchtower; the gate stands open to the south.
+    exits:
+      - name: south
+        target: scn1      # back-edge, closing the loop with the gate
+      - name: up
+        target: scn4      # forward reference
+
+  - id: scn3
+    name: Armoury
+    shortDescription: A plundered armoury.
+    fullDescription: >
+      Empty weapon racks line the walls and a film of dust covers the floor.
+      The only way out is back west through the gate.
+    exits:
+      - name: west
+        target: scn1      # back-edge
+
+  - id: scn4
+    name: Watchtower
+    shortDescription: A windswept watchtower.
+    fullDescription: >
+      From the parapet the whole ruined keep is laid out below. A narrow stair
+      descends back down into the courtyard.
+    exits:
+      - name: down
+        target: scn2      # back-edge
+
+# Authored items. Each is a *template*: its `spawn` rule places 0..max instances
+# into randomly chosen candidate scenes (one chance roll per try). Instances are
+# minted fresh generated ids at seed time; the `id` here is only an authoring
+# handle. Spawning is idempotent — a restart never re-rolls.
+items:
+  - id: itm1
+    shortDescription: A rusty dagger.
+    fullDescription: >
+      A plain iron dagger, rusty but looks like it can still be used. There is an
+      inscription in an unknown language running down the blade.
+    spawn:
+      scenes: scn2, scn3   # scenes where the item can spawn
+      chance: 12/50        # chance of spawning on each try
+      max: 3               # maximum number of spawn tries
+
+  - id: itm2
+    shortDescription: A tarnished silver ring.
+    fullDescription: >
+      A slim band of tarnished silver, its surface worn smooth. It is warm to the
+      touch, though nothing here could have warmed it.
+    spawn:
+      scenes: scn3, scn4
+      chance: 1/2
+      max: 2
+
+  - id: itm3
+    shortDescription: A handful of copper coins.
+    fullDescription: >
+      A few dull copper coins, the kind that once bought bread at the gate market.
+    spawn:
+      scenes: scn1
+      chance: 40/50
+      max: 4

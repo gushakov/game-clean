@@ -1,0 +1,12 @@
+# No datasource here: integration tests (*IT) run against an ephemeral Postgres container that
+# AbstractPostgresIT starts, and Spring Boot's @ServiceConnection wires the datasource from it — so
+# there is no hardcoded localhost:5432, and tests never touch the docker-compose play DB. Flyway
+# migrates the fresh container at context startup exactly as in production.
+spring:
+  flyway:
+    enabled: true
+
+# game.terminal.enabled is intentionally left unset for tests: with it off, BootSequence (and the
+# ConsoleSession / Terminal it drives) is absent, so @SpringBootTest contexts never seed implicitly,
+# never block on a console, and never grab a system terminal. Tests that need the seeding path drive
+# the InitializeGame use case directly (see InitializeGameIT).
