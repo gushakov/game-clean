@@ -13,8 +13,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  *
  * <p>{@code main} only refreshes the context; it does <em>not</em> contain the startup logic. What
  * happens at boot — construct the world, then open it to the player — is owned by
- * {@link BootSequence}, the single {@code ApplicationRunner} that states that order explicitly. Look
- * there for the startup choreography, not here.
+ * {@link BootSequence}, the {@code @Configuration} that declares the two {@code @Order}-ed
+ * {@code ApplicationRunner} beans stating that order explicitly. Look there for the startup
+ * choreography, not here.
  *
  * <p>The single {@link GameConfigurationProperties} catalog of all {@code game.*} properties is
  * registered here, centrally, rather than from whichever feature bean happens to consume it.

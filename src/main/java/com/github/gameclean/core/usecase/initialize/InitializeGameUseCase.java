@@ -16,6 +16,11 @@ import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutp
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
+import com.github.gameclean.core.port.seed.GameSeed;
+import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
+import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.SceneEntry;
+import com.github.gameclean.core.port.seed.SpawnEntry;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -32,9 +37,16 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * Brings a fresh game into a playable starting state: constructs the authored world, places the single
- * player, and spawns the authored items. Implementation of {@link InitializeGameInputPort}; framework-free,
- * wired by the composition root, exercised in isolation against mocked ports.
+ * Brings a fresh game into a playable starting state: pulls the authored seed, constructs the authored
+ * world, places the single player, and spawns the authored items. Implementation of
+ * {@link InitializeGameInputPort}; framework-free, wired by the composition root, exercised in isolation
+ * against mocked ports.
+ *
+ * <p><b>The use case pulls its own input.</b> The seed is not pushed in by a driving adapter; the use case
+ * fetches it as Checkpoint 1 through {@link GameSeedSourceOperationsOutputPort} (an adapter behind that
+ * port owns the YAML parsing). So loading the world is the interaction's own first step — the application
+ * logic is driven from here, not from a seeder. A source failure has no special branch: it propagates to
+ * the single outermost {@code catch} and is presented, uniform with a persistence fault.
  *
  * <p><b>One interaction, one runtime presentation.</b> Constructing the world, placing the player and
  * spawning items are three <em>phases</em> of a single system-actor goal, not three interactions: a player
@@ -67,6 +79,7 @@ import java.util.stream.Collectors;
 public class InitializeGameUseCase implements InitializeGameInputPort {
 
     InitializeGamePresenterOutputPort presenter;
+    GameSeedSourceOperationsOutputPort seedSourceOps;
     PlayerOperationsOutputPort playerOps;
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     SceneRepositoryOperationsOutputPort sceneOps;
@@ -76,11 +89,16 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     TransactionOperationsOutputPort txOps;
 
     @Override
-    public void systemInitializesGame(GameSeed seed) {
+    public void systemInitializesGame() {
         try {
             // Initiating actor: the system at startup — no security assertion is required.
 
-            // Checkpoint 1 — construct the scene aggregates (intra-aggregate validity gate).
+            // Checkpoint 1 — pull the authored seed. Loading the world is the use case's own first step,
+            // not logic stranded in a driving adapter; a source failure (missing/broken seed) propagates
+            // to the outermost catch and is presented, uniform with a persistence fault.
+            GameSeed seed = seedSourceOps.loadGameSeed();
+
+            // Checkpoint 2 — construct the scene aggregates (intra-aggregate validity gate).
             List<Scene> scenes;
             try {
                 scenes = buildScenes(seed.getScenes());
@@ -89,14 +107,14 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 2 — inter-aggregate rule: every exit target resolves to an authored scene.
+            // Checkpoint 3 — inter-aggregate rule: every exit target resolves to an authored scene.
             Map<SceneId, List<Exit>> unresolvedExitsByScene = findUnresolvedExits(scenes);
             if (!unresolvedExitsByScene.isEmpty()) {
                 presenter.presentErrorWhenExitTargetUnknown(unresolvedExitsByScene);
                 return;
             }
 
-            // Checkpoint 3 — construct the player value objects and aggregate (validity gate). The acting
+            // Checkpoint 4 — construct the player value objects and aggregate (validity gate). The acting
             // player's id is ambient (pulled from playerOps); the starting scene is the authored carrier.
             PlayerId playerId;
             SceneId startingScene;
@@ -110,7 +128,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 4 — inter-aggregate rule: the starting scene resolves to an authored scene.
+            // Checkpoint 5 — inter-aggregate rule: the starting scene resolves to an authored scene.
             // Resolved against the in-memory world (like the exit check), not the store: on a first run
             // the scenes are not persisted yet, so a store lookup here would be a false negative.
             if (scenes.stream().noneMatch(scene -> scene.getId().equals(startingScene))) {
@@ -118,7 +136,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 5 — construct the item templates from the authored items (validity gate). Each
+            // Checkpoint 6 — construct the item templates from the authored items (validity gate). Each
             // template validates its descriptions and its spawn rule (valid chance, non-negative tries, at
             // least one candidate scene) up front, independent of how the spawn later rolls.
             List<AuthoredItem> authoredItems;
@@ -129,7 +147,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 6 — inter-aggregate rule: every item's candidate spawn scenes resolve to an
+            // Checkpoint 7 — inter-aggregate rule: every item's candidate spawn scenes resolve to an
             // authored scene. Resolved in-memory against the world being built, like the exit check.
             Map<String, List<SceneId>> unknownSpawnScenes = findUnknownSpawnScenes(authoredItems, scenes);
             if (!unknownSpawnScenes.isEmpty()) {
@@ -137,11 +155,11 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 7 — roll and place the item instances. Non-deterministic, but a pure in-memory
+            // Checkpoint 8 — roll and place the item instances. Non-deterministic, but a pure in-memory
             // construction with no persistence side effect, so it runs outside the transaction.
             List<Item> spawnedItems = spawnItems(authoredItems);
 
-            // Checkpoint 8 — one outcome, one atomic unit. A single transaction seeds the world if it is
+            // Checkpoint 9 — one outcome, one atomic unit. A single transaction seeds the world if it is
             // still empty, creates the player if none exists yet, and spawns items if none were spawned yet;
             // holding all three read-then-write guards in one transaction stops a concurrent initialization
             // from double-seeding, double-creating or double-spawning. Exactly one after-commit presentation

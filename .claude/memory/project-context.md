@@ -45,12 +45,13 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
   `item/`), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
-  `port/id/`, `port/randomness/`), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
+  `port/id/`, `port/randomness/`, `port/seed/` — the latter holds the seed-source port and the
+  `GameSeed`/`*Entry` carriers it returns), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
   a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog). Sub-packages:
-  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (`GameSeedYamlReader` + `GameSeeder`),
+  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine
   `TerminalConfig` + `ConsoleSession` + presenters), `infrastructure/id/` (NanoID generator adapter),
   `infrastructure/randomness/` (JDK randomness adapter).
@@ -62,32 +63,35 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 Game initialization **complete** — one `InitializeGame` use case (world + player), seeded at startup end-to-end:
 
 - **Domain** — `Scene` aggregate with `Exit`/`SceneId` (`core/model/scene/`); ArchUnit hexagonal guard.
-- **Use case** — `InitializeGame` (`core/usecase/initialize/`): input port
-  `initialize(List<SceneEntry>, String startingSceneId)`, `InitializeGameUseCase`, co-located presenter
-  port, and the `*Entry` input DTOs (the input-port contract). Base presenter
-  `ErrorHandlingPresenterOutputPort` in `core/port/`. Two **phases** as private subfunctions: world
-  construction (two-pass build-then-resolve outside a tx; seed-if-empty + per-scene save in one
-  `doInTransaction`) then player placement (validity gate + starting-scene resolve outside a tx;
-  create-if-absent in one `doInTransaction`); present after each commit; a world that fails to construct
-  stops before any player is created.
+- **Use case** — `InitializeGame` (`core/usecase/initialize/`): **no-arg** input port
+  `systemInitializesGame()`, `InitializeGameUseCase`, co-located presenter port. It **pulls** the authored
+  seed as Checkpoint 1 via `GameSeedSourceOperationsOutputPort`; the `GameSeed` + `*Entry` carriers it
+  returns live in `core/port/seed/` (the output-port contract). Base presenter
+  `ErrorHandlingPresenterOutputPort` in `core/port/`. Three **phases** (world → player → items) converging
+  on one `presentGameInitialized`; a seed/world that fails stops the interaction before any write, and a
+  seed-source failure is presented like a persistence fault (design-notes §3/§4/§6).
 - **Ports** — `SceneRepositoryOperationsOutputPort` (persistence), `TransactionOperationsOutputPort`
-  (tx); both unchecked errors.
+  (tx), `GameSeedSourceOperationsOutputPort` (`core/port/seed/`, pulls the authored seed); all unchecked
+  errors (`PersistenceOperationsError`, `GameSeedSourceOperationsError`).
 - **Persistence** — Flyway schema (`scene`/`exit`), Spring Data JDBC `*DbEntity`s, MapStruct mapper, and
   `SpringSceneRepositoryAdapter` implementing the port (`infrastructure/persistence/scene/`). Local
   Postgres service + schema-only read-only MCP.
 - **Transactions** — `SpringTransactionAdapter` + `TransactionConfig` (`infrastructure/transaction/`).
-- **Game seeding** — `GameSeeder` (`infrastructure/world/`, plain singleton) reads `world/scenes.yaml`
-  via `SceneYamlReader` and the configured starting scene, and fires `InitializeGame` through
-  `ApplicationContext.getBean` (cargo-clean idiom) — replacing the former `WorldSeeder` + `PlayerSeeder`
-  pair. Presenter `LoggingInitializeGamePresenter` logs both phases.
+- **Game seeding** — `YamlGameSeedSource` (`infrastructure/world/`, driven adapter behind
+  `GameSeedSourceOperationsOutputPort`) reads `world/scenes.yaml` via `GameSeedYamlReader` + the configured
+  starting scene and returns the `GameSeed`. `GameSeeder` is now a **thin driving adapter**: pull the
+  prototype `InitializeGameInputPort` (cargo-clean `getBean` idiom) and fire `systemInitializesGame()`, no
+  return used. Presenter `LoggingInitializeGamePresenter` logs the outcome.
 - **Composition root** — `UseCaseConfig` (`infrastructure/`).
 
 Interactive terminal shell **complete** (issue #6) — one process, JLine owning the console:
 
-- **Boot orchestration** — `BootSequence` (the *sole* `ApplicationRunner`, `infrastructure/`) orders two
-  driving adapters: `gameSeeder.seed()` then `consoleSession.start()`. Both injected as singletons. Gated
-  (with the terminal beans) by `game.terminal.enabled`. The world→player business sequence lives inside
-  the use case, not here (design-notes §6).
+- **Boot orchestration** — `BootSequence` (`infrastructure/`, a `@Configuration`) declares two
+  `@Order`-ed `ApplicationRunner` beans — `@Order(1)` `gameSeeder.seed()`, `@Order(2)`
+  `consoleSession.start()` — each an independent inward fire (no imperative `seed(); start();` body, which
+  removes the return-of-control affordance the unidirectional rule forbids). Class-level
+  `@ConditionalOnProperty(game.terminal.enabled)` gates both runners. Business sequencing lives inside the
+  use case, not here (design-notes §6).
 - **Two adapters, one terminal** — `TerminalConfig` declares shared singleton `Terminal`/`LineReader`
   *resources*; the driving `ConsoleSession` (blocking `look`/`bye` loop; `look` loads `scn1` directly via
   the Spring Data repo + mapper — **spike**, bypassing the clean port) and the driven
@@ -168,8 +172,9 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
   short/full descriptions. Plus VOs `Chance` (probability), `SpawnRule` (chance + maxTries + ≥1 candidate
   scene; `isHitBy`/`pickScene`/`candidateScenesNotIn`), `ItemTemplate` (descriptions + rule; `instanceAt`,
   `candidateScenesNotIn`). `Scene.exitsWithTargetNotIn` added for symmetry. (design-notes §2, §10.)
-- **Use case** — folded into `InitializeGame` as a **third phase** (world → player → items): input bundled in
-  a `GameSeed` carrier (`SceneEntry`/`ItemEntry`/`SpawnEntry`); spawn rolls (chance per try, uniform scene
+- **Use case** — folded into `InitializeGame` as a **third phase** (world → player → items): input **pulled**
+  as a `GameSeed` carrier (`core/port/seed/`: `SceneEntry`/`ItemEntry`/`SpawnEntry`) via
+  `GameSeedSourceOperationsOutputPort`; spawn rolls (chance per try, uniform scene
   pick, semantics (a) = up to `max` tries) run outside the tx; a third `itemsAlreadySpawned` guard joins
   seed-if-empty/create-if-absent in the single transaction. `presentGameInitialized(scenes, playerId, items)`
   reports items spawned *this run*; new `presentItemSpawnSceneUnknown` stripe. (design-notes §4.)
@@ -182,7 +187,7 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
   MapStruct mapper + Spring Data repo (`findBySceneId`) + `SpringItemRepositoryAdapter`; `JNanoIdGenerator`
   (`infrastructure/id/`, JNanoId `com.aventrix.jnanoid:jnanoid:2.0.0` — not in the Boot BOM, version pinned),
   `JdkRandomnessAdapter` (`infrastructure/randomness/`). `SceneYamlReader` renamed `GameSeedYamlReader`
-  (parses scenes + items, assembles `GameSeed`).
+  (parses scenes + items, assembles `GameSeed`), now invoked by `YamlGameSeedSource` behind the seed port.
 
-Tests: 108 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: NPCs, the
+Tests: 122 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: NPCs, the
 `look <target>` / `take` use cases, async/event processing.

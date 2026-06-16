@@ -3,11 +3,11 @@ package com.github.gameclean.infrastructure.world;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
-import com.github.gameclean.core.usecase.initialize.ExitEntry;
-import com.github.gameclean.core.usecase.initialize.GameSeed;
-import com.github.gameclean.core.usecase.initialize.ItemEntry;
-import com.github.gameclean.core.usecase.initialize.SceneEntry;
-import com.github.gameclean.core.usecase.initialize.SpawnEntry;
+import com.github.gameclean.core.port.seed.ExitEntry;
+import com.github.gameclean.core.port.seed.GameSeed;
+import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.SceneEntry;
+import com.github.gameclean.core.port.seed.SpawnEntry;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
