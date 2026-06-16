@@ -4,9 +4,11 @@ import com.github.gameclean.core.model.scene.SceneId;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.DoubleSupplier;
 
 /**
  * How — and how often, and where — an item populates the world: a Value Object bundling the spawn
@@ -14,9 +16,11 @@ import java.util.Set;
  * Always-valid: a non-null chance, a non-negative number of tries, and at least one candidate scene (a
  * rule that could spawn nowhere is meaningless). Equality by value.
  *
- * <p>It owns the two <em>pure</em> decisions the spawn algorithm delegates to the domain — whether a draw
- * hits ({@link #isHitBy}) and which candidate scene a draw selects ({@link #pickScene}) — while the
- * randomness itself comes from a port, so the use case orchestrating it stays deterministic under test.
+ * <p>It owns the <em>whole</em> stochastic placement policy: the two pure per-attempt decisions — whether a
+ * draw hits ({@link #isHitBy}) and which candidate scene a draw selects ({@link #pickScene}) — and the loop
+ * that runs up to {@code maxTries} attempts ({@link #rollPlacements}). The randomness is supplied as a plain
+ * {@link DoubleSupplier}, never a port, so the use case adapts its randomness output port to that supplier
+ * and the rule stays framework-free and deterministic under test.
  *
  * <p>The candidate scene ids are {@link SceneId} value objects (well-formed by construction); whether each
  * resolves to an authored scene is an inter-aggregate world-consistency rule checked by the initialization
@@ -62,6 +66,32 @@ public class SpawnRule {
             index = candidateScenes.size() - 1;
         }
         return candidateScenes.get(index);
+    }
+
+    /**
+     * Rolls this rule's placements from a source of random draws: makes up to {@code maxTries} attempts, each
+     * consuming one draw to decide whether it hits ({@link #isHitBy}) and, on a hit, a second draw to choose
+     * the scene ({@link #pickScene}). The returned list holds one {@link SceneId} per successful attempt, in
+     * attempt order (so the same scene may appear more than once), and is empty when no attempt hits.
+     *
+     * <p>The draw <em>source</em> is a {@link DoubleSupplier}, not a randomness port: the use case adapts its
+     * randomness output port to this supplier, so the rule owns the entire placement policy (count, hit
+     * decision, scene choice, draw ordering) end-to-end while staying framework-free and deterministic under
+     * test (supply a fixed sequence of draws). Pulling the draws here — rather than letting the use case
+     * interleave them — keeps "an attempt consumes one draw, a hit a second" the rule's own knowledge.
+     *
+     * @param draws a source of uniform random draws in {@code [0, 1)}
+     * @return the scenes that receive an instance, one per hit, in attempt order
+     */
+    public List<SceneId> rollPlacements(DoubleSupplier draws) {
+        Objects.requireNonNull(draws, "draw source must not be null");
+        List<SceneId> placements = new ArrayList<>();
+        for (int attempt = 0; attempt < maxTries; attempt++) {
+            if (isHitBy(draws.getAsDouble())) {
+                placements.add(pickScene(draws.getAsDouble()));
+            }
+        }
+        return placements;
     }
 
     /**
