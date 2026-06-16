@@ -1,0 +1,166 @@
+# Alternate authored world seed — "The Tide-Wreck Coast", a fog-bound fishing hamlet
+# and the sea caves beneath it. A larger graph than scenes.yaml, kept as a *separate*
+# world so the curated scenes.yaml (which the tests pin) stays untouched.
+#
+# Load it instead of the default by passing the world to the launcher:
+#   .claude/scripts/run-app.sh --world scenes2.yaml
+# (which sets game.world.seed-location=classpath:world/scenes2.yaml). The entry scene is
+# scn1, matching the default game.player.starting-scene-id, so no other config is needed.
+#
+# Same rules as scenes.yaml: data flows in through the InitializeGame use case (the
+# validity gate), ids are authored short keys, exit `target`s reference scenes by id and
+# may point forward, and items are rare templates spawned idempotently at seed time.
+
+scenes:
+  - id: scn1
+    name: Harbor Steps
+    shortDescription: Weed-slick stone steps rising from the water.
+    fullDescription: >
+      Green-black steps climb out of a sea that breathes against them. Fog sits on the
+      water like a lid. A market lane runs north; a tarred wharf stretches east.
+    exits:
+      - name: north
+        target: scn2
+      - name: east
+        target: scn3
+
+  - id: scn2
+    name: Fish Market
+    shortDescription: A shuttered fish market.
+    fullDescription: >
+      Empty trestle tables still smell of brine and old catch. Gulls have the run of
+      the place now. Lanes lead back south, west into a row of cottages, and north to
+      a leaning chapel.
+    exits:
+      - name: south
+        target: scn1
+      - name: west
+        target: scn4
+      - name: north
+        target: scn5
+
+  - id: scn3
+    name: Salt Wharf
+    shortDescription: A tarred wharf over black water.
+    fullDescription: >
+      Mooring rings rust along a wharf whose planks flex underfoot. West are the harbor
+      steps; north, a squat lighthouse holds the headland.
+    exits:
+      - name: west
+        target: scn1
+      - name: north
+        target: scn6
+
+  - id: scn4
+    name: Net-Menders' Row
+    shortDescription: A row of net-menders' cottages.
+    fullDescription: >
+      Half-mended nets hang stiff with salt between the doorways. The only way back is
+      east to the market.
+    exits:
+      - name: east
+        target: scn2
+
+  - id: scn5
+    name: The Drowned Chapel
+    shortDescription: A chapel half-claimed by the tide.
+    fullDescription: >
+      Brackish water stands ankle-deep down the nave; the altar is furred with weed.
+      A broken flagstone opens onto a stair going down. The market lies back south.
+    exits:
+      - name: south
+        target: scn2
+      - name: down
+        target: scn8
+
+  - id: scn6
+    name: Lighthouse Base
+    shortDescription: The foot of a squat lighthouse.
+    fullDescription: >
+      The lighthouse door has rotted off its frame. A spiral stair winds up to the
+      lantern room; another, cruder stair drops away below. The wharf is back south.
+    exits:
+      - name: south
+        target: scn3
+      - name: up
+        target: scn7
+      - name: down
+        target: scn8
+
+  - id: scn7
+    name: Lantern Room
+    shortDescription: The lighthouse lantern room.
+    fullDescription: >
+      The great lens is shattered, but the view over the fog-bound coast is total. The
+      only way is back down.
+    exits:
+      - name: down
+        target: scn6
+
+  - id: scn8
+    name: Smugglers' Stair
+    shortDescription: A crude stair cut into the rock.
+    fullDescription: >
+      Hand-cut steps sweat with seawater, worn by boots that meant not to be seen. They
+      climb to the chapel and the lighthouse, and descend toward the sound of surf.
+    exits:
+      - name: up
+        target: scn6
+      - name: north
+        target: scn5
+      - name: down
+        target: scn9
+
+  - id: scn9
+    name: Sea Cave
+    shortDescription: A booming sea cave.
+    fullDescription: >
+      Each swell drives air into the cave with a hollow boom. The smugglers' stair rises
+      behind you; a low gap leads west into a quieter grotto.
+    exits:
+      - name: up
+        target: scn8
+      - name: west
+        target: scn10
+
+  - id: scn10
+    name: Tide Pool Grotto
+    shortDescription: A still grotto of tide pools.
+    fullDescription: >
+      Beyond the cave's roar lies a vault of clear tide pools, the water lit from below
+      by some pale, drifting glow. The booming cave is back east.
+    exits:
+      - name: east
+        target: scn9
+
+# Authored items — deliberately rare (low spawn chance), scattered through the coast.
+items:
+  - id: itm1
+    shortDescription: A barnacled brass compass.
+    fullDescription: >
+      A heavy brass compass crusted with tiny barnacles. The needle turns slowly,
+      settling on no north you can trust.
+    spawn:
+      scenes: scn3, scn6
+      chance: 1/12
+      max: 2
+
+  - id: itm2
+    shortDescription: A scrimshaw charm.
+    fullDescription: >
+      A sliver of whalebone scratched with a fish-tailed figure, threaded on a frayed
+      cord. Sailors carried these against drowning.
+    spawn:
+      scenes: scn9, scn10
+      chance: 1/15
+      max: 1
+
+  - id: itm3
+    shortDescription: A corroded harbor key.
+    fullDescription: >
+      A long iron key eaten thin by salt. Whatever it locked is almost certainly under
+      water by now.
+    spawn:
+      scenes: scn5, scn8
+      chance: 1/10
+      max: 2
