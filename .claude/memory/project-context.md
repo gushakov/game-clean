@@ -33,6 +33,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 | Mapping | MapStruct |
 | Id generation | NanoID (`com.aventrix.jnanoid:jnanoid` 2.0.0) behind `IdGeneratorOperationsOutputPort` — not in the Boot BOM, version pinned |
 | UX | JLine (terminal), `org.jline:jline` 4.1.3 aggregate jar — **decided** (see design-notes) |
+| IT isolation | Testcontainers (`org.testcontainers:testcontainers-postgresql`, BOM-managed at 2.0.5 by Boot 4) — ephemeral Postgres per `mvn verify` |
 
 ## Repo workflow
 
@@ -101,8 +102,9 @@ Interactive terminal shell **complete** (issue #6) — one process, JLine owning
 - **Logging** — `logback-spring.xml` routes logs to `./logs` (no console appender) so JLine owns the
   terminal; banner off. `logback-test.xml` restores console logging for the build.
 - **Run** — `.claude/scripts/run-app.sh` (discovers JDK 21+, runs the fat jar); `java -jar` only, never
-  `spring-boot:run` (Maven would force a dumb terminal). **Running the app seeds the shared IT DB** —
-  reset the volume before `mvn verify` (see extended context).
+  `spring-boot:run` (Maven would force a dumb terminal). Running the app seeds the `docker-compose` play
+  DB, which is now **fully decoupled** from the ITs (Testcontainers — see below), so no volume reset is
+  needed before `mvn verify`.
 
 `Look` vertical + `Player` aggregate **complete** (issue #8) — the first player-facing use case:
 
@@ -189,5 +191,7 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
   `JdkRandomnessAdapter` (`infrastructure/randomness/`). `SceneYamlReader` renamed `GameSeedYamlReader`
   (parses scenes + items, assembles `GameSeed`), now invoked by `YamlGameSeedSource` behind the seed port.
 
-Tests: 122 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: NPCs, the
-`look <target>` / `take` use cases, async/event processing.
+Tests: 122 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
+and from prior runs; issue #17). Not yet: NPCs, the `look <target>` / `take` use cases, async/event
+processing.

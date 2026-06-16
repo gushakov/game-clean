@@ -3,6 +3,7 @@ package com.github.gameclean.infrastructure.persistence.player;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
@@ -26,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(PlayerDbEntityMapperImpl.class)
-class PlayerRoundTripIT {
+class PlayerRoundTripIT extends AbstractPostgresIT {
 
     @Autowired
     private PlayerSpringDataRepository repository;

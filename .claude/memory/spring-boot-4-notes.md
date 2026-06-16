@@ -54,6 +54,35 @@ missing schema (`relation "scene" does not exist` at first write). Fix: add
 - Unchanged from 3.x: `@DataJdbcTest` is `@Transactional` and **rolls back by
   default**; for a real DB use `@AutoConfigureTestDatabase(replace = NONE)`. Flyway
   DDL still commits regardless of the test rollback.
+- **The `@DataJdbcTest` slice includes `FlywayAutoConfiguration`** (and, with
+  `spring-boot-testcontainers` present, `ServiceConnectionAutoConfiguration`) **[hit]**.
+  Confirmed by reading the slice's `ImportsContextCustomizer` key list at runtime and by
+  Flyway migrating a *pristine* Testcontainers Postgres from scratch
+  (`flyway_schema_history … does not exist yet` then a clean migrate). This had been
+  load-bearing-by-accident before issue #17: against the shared compose DB the schema
+  already existed, so whether the slice ran Flyway never mattered. On an ephemeral
+  container it does, and it works with no extra `@ImportAutoConfiguration`.
+
+## Testcontainers 2.0 — Boot 4 pins it, and the artifact ids were all renamed **[hit]**
+
+*Issue #17, the surprise that cost a build cycle.* In Boot 3.x the BOM imported
+`testcontainers-bom` at a 1.x version, so `org.testcontainers:postgresql` and
+`org.testcontainers:junit-jupiter` resolved unversioned. **Boot 4.0.6's
+`spring-boot-dependencies` pins `testcontainers.version` to `2.0.5`** and imports the
+2.0 BOM — and **Testcontainers 2.0 renamed every module artifactId with a
+`testcontainers-` prefix**, keeping the `org.testcontainers` groupId:
+
+- `org.testcontainers:postgresql` → **`org.testcontainers:testcontainers-postgresql`**
+- `org.testcontainers:junit-jupiter` → **`org.testcontainers:testcontainers-junit-jupiter`**
+- (same for `mysql`, `mongodb`, … — see the `testcontainers-bom` 2.0.5 module list)
+
+With the *old* ids, the BOM no longer manages them, so Maven fails the POM parse with
+`'dependencies.dependency.version' … is missing` (not a "not found" — the coordinates
+simply aren't in the 2.0 BOM). Fix: use the new `testcontainers-` artifactIds; the
+version stays BOM-managed, no pin needed. **Package names are unchanged** —
+`org.testcontainers.containers.PostgreSQLContainer` and
+`org.springframework.boot.testcontainers.service.connection.@ServiceConnection` still
+import as before, so only the `pom.xml` coordinates move.
 
 ## Baseline jumps **[doc]**
 
