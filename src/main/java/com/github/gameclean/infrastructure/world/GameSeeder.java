@@ -1,7 +1,7 @@
 package com.github.gameclean.infrastructure.world;
 
+import com.github.gameclean.core.usecase.initialize.GameSeed;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
-import com.github.gameclean.core.usecase.initialize.SceneEntry;
 import com.github.gameclean.infrastructure.GameConfigurationProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,13 +11,12 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
 
 /**
  * The single boot-time driving (primary) adapter for the system actor: it reads the authored seed and
- * the configured starting scene, then fires
- * {@link InitializeGameInputPort#systemInitializesGame(List, String)} to
- * bring a fresh game — world plus player — into being through the domain. It replaces the former
+ * the configured starting scene, assembles the {@link GameSeed}, then fires
+ * {@link InitializeGameInputPort#systemInitializesGame(GameSeed)} to
+ * bring a fresh game — world, player and items — into being through the domain. It replaces the former
  * {@code WorldSeeder} + {@code PlayerSeeder} pair: the world→player order they used to imply by being
  * invoked in sequence is now a single use-case interaction, so one adapter fires one interaction.
  *
@@ -40,7 +39,7 @@ import java.util.List;
 @Slf4j
 public class GameSeeder {
 
-    private final SceneYamlReader reader;
+    private final GameSeedYamlReader reader;
     private final ApplicationContext applicationContext;
     private final GameConfigurationProperties properties;
 
@@ -48,11 +47,11 @@ public class GameSeeder {
         Resource seed = properties.getWorld().getSeedLocation();
         String startingSceneId = properties.getPlayer().getStartingSceneId();
         log.info("[GameSeed] Initializing the game from {} with starting scene {}", seed, startingSceneId);
-        List<SceneEntry> entries;
+        GameSeed gameSeed;
         try (InputStream in = seed.getInputStream()) {
-            entries = reader.read(in);
+            gameSeed = reader.read(in, startingSceneId);
         }
         InitializeGameInputPort initializeGame = applicationContext.getBean(InitializeGameInputPort.class);
-        initializeGame.systemInitializesGame(entries, startingSceneId);
+        initializeGame.systemInitializesGame(gameSeed);
     }
 }

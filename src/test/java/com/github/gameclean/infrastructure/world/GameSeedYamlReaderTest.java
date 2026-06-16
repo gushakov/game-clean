@@ -4,7 +4,10 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.initialize.ExitEntry;
+import com.github.gameclean.core.usecase.initialize.GameSeed;
+import com.github.gameclean.core.usecase.initialize.ItemEntry;
 import com.github.gameclean.core.usecase.initialize.SceneEntry;
+import com.github.gameclean.core.usecase.initialize.SpawnEntry;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
@@ -17,21 +20,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * Spike test for the YAML → domain edge: it proves the authored world seed parses into
- * {@link SceneEntry} DTOs and that those entries construct <em>valid</em> {@link Scene} aggregates.
+ * Spike test for the YAML → domain edge: it proves the authored seed parses into the {@code *Entry} DTOs
+ * (scenes, exits, items and their spawn rules) and that the scene entries construct <em>valid</em>
+ * {@link Scene} aggregates.
  *
- * <p>The entry → aggregate mapping lives <em>in the test</em>, not in the reader: constructing the
- * {@link SceneId} / {@link Exit} value objects is the use case's job (a rule we are deferring), and
- * the reader must stay free of domain types. The test therefore plays the part the
- * {@code InitializeGame} use case plays. DB-free, so it runs under Surefire.
+ * <p>The entry → aggregate mapping lives <em>in the test</em>, not in the reader: constructing the value
+ * objects is the use case's job, and the reader must stay free of domain types. The reader does, however,
+ * own the authoring-syntax split (a {@code "scn2, scn3"} list, a {@code "12/50"} fraction), which the item
+ * assertions below pin. DB-free, so it runs under Surefire.
  */
-class SceneYamlReaderTest {
+class GameSeedYamlReaderTest {
 
-    private final SceneYamlReader reader = new SceneYamlReader();
+    private final GameSeedYamlReader reader = new GameSeedYamlReader();
 
     @Test
     void readsAllAuthoredScenesInOrderWithTheirExits() {
-        List<SceneEntry> scenes = readSeed();
+        List<SceneEntry> scenes = readSeed().getScenes();
 
         assertThat(scenes).extracting(SceneEntry::getId)
                 .containsExactly("scn1", "scn2", "scn3", "scn4");
@@ -45,15 +49,37 @@ class SceneYamlReaderTest {
     }
 
     @Test
+    void readsAuthoredItemsWithTheirSpawnRulesSplittingTheAuthoringSyntax() {
+        List<ItemEntry> items = readSeed().getItems();
+
+        assertThat(items).extracting(ItemEntry::getId).containsExactly("itm1", "itm2", "itm3");
+
+        ItemEntry dagger = items.getFirst();
+        assertThat(dagger.getShortDescription()).isEqualTo("A rusty dagger.");
+        assertThat(dagger.getFullDescription()).isNotBlank();
+
+        SpawnEntry spawn = dagger.getSpawn();
+        assertThat(spawn.getScenes()).containsExactly("scn2", "scn3");   // "scn2, scn3" split into a list
+        assertThat(spawn.getChanceNumerator()).isEqualTo(12);            // "12/50" split into a fraction
+        assertThat(spawn.getChanceDenominator()).isEqualTo(50);
+        assertThat(spawn.getMax()).isEqualTo(3);
+    }
+
+    @Test
+    void carriesTheConfiguredStartingSceneIdThrough() {
+        assertThat(readSeed().getStartingSceneId()).isEqualTo("scn1");
+    }
+
+    @Test
     void entriesConstructValidSceneAggregatesWiringTheGraphAsAuthored() {
-        List<SceneEntry> entries = readSeed();
+        List<SceneEntry> entries = readSeed().getScenes();
 
         // The mapping the use case will own: primitives in, value objects + aggregates out.
-        assertThatCode(() -> entries.forEach(SceneYamlReaderTest::toScene))
+        assertThatCode(() -> entries.forEach(GameSeedYamlReaderTest::toScene))
                 .doesNotThrowAnyException();
 
         Map<SceneId, Scene> world = entries.stream()
-                .map(SceneYamlReaderTest::toScene)
+                .map(GameSeedYamlReaderTest::toScene)
                 .collect(Collectors.toMap(Scene::getId, Function.identity()));
 
         assertThat(world).hasSize(4);
@@ -71,10 +97,10 @@ class SceneYamlReaderTest {
                 scene.getExits().forEach(exit -> assertThat(world).containsKey(exit.getTarget())));
     }
 
-    private List<SceneEntry> readSeed() {
+    private GameSeed readSeed() {
         try (InputStream in = getClass().getResourceAsStream("/world/scenes.yaml")) {
             assertThat(in).as("world/scenes.yaml on the classpath").isNotNull();
-            return reader.read(in);
+            return reader.read(in, "scn1");
         } catch (Exception e) {
             throw new IllegalStateException("failed to read world seed", e);
         }

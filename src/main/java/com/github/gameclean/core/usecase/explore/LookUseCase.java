@@ -1,6 +1,8 @@
 package com.github.gameclean.core.usecase.explore;
 
+import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
+import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerResult;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcaseInputPort;
 import lombok.AccessLevel;
@@ -17,8 +19,10 @@ import lombok.experimental.FieldDefaults;
  *
  * <p>The shared opening — resolve the ambient player and the scene they stand in — is delegated to the
  * {@link OrientPlayerSubcaseInputPort orient subcase} that {@code look} and {@code move} both reuse. On
- * success the subcase <em>returns</em> the player and their current scene, and {@code look} simply
- * presents that scene. On a missing player or a dangling current-scene reference the subcase has already
+ * success the subcase <em>returns</em> the player and their current scene; {@code look} then fetches the
+ * items lying in that scene (the items are not part of the shared prologue — they belong to the scene each
+ * use case presents, which for {@code look} is the current one) and presents the scene with them. On a
+ * missing player or a dangling current-scene reference the subcase has already
  * presented the outcome and says so by throwing {@link SubcaseAlreadyPresented}, which a dedicated
  * checkpoint swallows as a no-op — the presentation has happened, the interaction is over. Anything else
  * unexpected (a malformed configured id, a persistence fault) propagates to the outermost {@code catch}
@@ -30,12 +34,14 @@ public class LookUseCase implements LookInputPort {
 
     LookPresenterOutputPort presenter;
     OrientPlayerSubcaseInputPort orientPlayerSubcase;
+    ItemRepositoryOperationsOutputPort itemOps;
 
     @Override
     public void playerLooksAround() {
         try {
             OrientPlayerResult playerInScene = orientPlayerSubcase.playerGetsBearings();
-            presenter.presentScene(playerInScene.getScene());
+            Scene scene = playerInScene.getScene();
+            presenter.presentScene(scene, itemOps.findItemsInScene(scene.getId()));
 
         } catch (SubcaseAlreadyPresented e) {
             // The orient subcase already presented its outcome (missing player or dangling scene); no-op.

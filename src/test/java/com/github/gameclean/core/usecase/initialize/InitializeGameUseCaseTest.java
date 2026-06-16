@@ -1,14 +1,19 @@
 package com.github.gameclean.core.usecase.initialize;
 
+import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
+import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,21 +29,23 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
  * Interaction tests for {@link InitializeGameUseCase} in isolation — every output port is mocked and the
- * use case is exercised directly through its input port (no Spring, no database). The two phases of the
- * single interaction are covered together: world construction then player placement, plus the
- * precondition that a world which fails to construct stops the interaction before any player is created.
+ * use case is exercised directly through its input port (no Spring, no database). The three phases of the
+ * single interaction are covered together: world construction, player placement and item spawning, plus the
+ * precondition that a world which fails to construct stops the interaction before any player or item.
  *
  * <p>The interaction presents <em>once</em>: every happy combination (world seeded or already present,
- * player created or already present) ends in the single {@code presentGameInitialized} success, so the
- * tests assert that one outcome rather than per-phase presentations. The transaction port is stubbed to
- * run its action inline and to fire after-commit callbacks immediately, so the single post-commit
- * presentation is observable; the persistence-failure cases instead let the action's error propagate,
- * exactly as the real adapter would.
+ * player created or already present, items spawned or already spawned) ends in the single
+ * {@code presentGameInitialized} success, so the tests assert that one outcome rather than per-phase
+ * presentations. Spawning is non-deterministic, so the randomness port is stubbed with a fixed sequence of
+ * draws and the id generator with fixed ids, making placements reproducible. The transaction port is stubbed
+ * to run its action inline and fire after-commit callbacks immediately; the persistence-failure cases instead
+ * let the action's error propagate, exactly as the real adapter would.
  */
 @ExtendWith(MockitoExtension.class)
 class InitializeGameUseCaseTest {
@@ -51,6 +58,12 @@ class InitializeGameUseCaseTest {
     private PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     @Mock
     private SceneRepositoryOperationsOutputPort sceneOps;
+    @Mock
+    private ItemRepositoryOperationsOutputPort itemOps;
+    @Mock
+    private IdGeneratorOperationsOutputPort idGeneratorOps;
+    @Mock
+    private RandomnessOperationsOutputPort randomnessOps;
     @Mock
     private TransactionOperationsOutputPort txOps;
 
@@ -66,11 +79,11 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
 
         assertScenesSavedInOrder("scn1", "scn2");
         assertPlayerSaved("plr1", "scn1");
-        assertGameInitializedPresentedFor("plr1", "scn1", "scn2");
+        assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
     }
 
     @Test
@@ -80,11 +93,11 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
 
         verify(sceneOps, never()).saveScene(any());
         assertPlayerSaved("plr1", "scn1");
-        assertGameInitializedPresentedFor("plr1", "scn1", "scn2");
+        assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
     }
 
     @Test
@@ -95,11 +108,88 @@ class InitializeGameUseCaseTest {
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         runTransactionsAndFireAfterCommit();
 
-        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
 
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
-        assertGameInitializedPresentedFor("plr1", "scn1", "scn2");
+        assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
+    }
+
+    // --- item spawning --------------------------------------------------------------------------
+
+    @Test
+    void spawnsItemsByTheRollsAndPresentsThem() {
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        // One item over two candidate scenes, always-hit chance, one try: hit (0.0 < 1), then pick draw
+        // 0.6 selects candidate index (int)(0.6 * 2) = 1, i.e. scn2.
+        when(randomnessOps.nextDouble()).thenReturn(0.0, 0.6);
+        when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
+        runTransactionsAndFireAfterCommit();
+
+        useCase.systemInitializesGame(
+                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 1, 1, "scn1", "scn2")));
+
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps).saveItem(saved.capture());
+        assertThat(saved.getValue().getId()).isEqualTo(new ItemId("itmAAA"));
+        assertThat(saved.getValue().getLocation()).isEqualTo(new SceneId("scn2"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Item>> presentedItems = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(anyList(), eq(new PlayerId("plr1")), presentedItems.capture());
+        assertThat(presentedItems.getValue()).extracting(i -> i.getId().getValue()).containsExactly("itmAAA");
+    }
+
+    @Test
+    void doesNotReSpawnItemsWhenItemsAlreadyExist() {
+        when(sceneOps.worldIsEmpty()).thenReturn(false);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
+                .thenReturn(Optional.of(player("plr1", "scn1")));
+        when(itemOps.itemsAlreadySpawned()).thenReturn(true);
+        // The rolls still happen (outside the transaction), but the guard means nothing is saved.
+        when(randomnessOps.nextDouble()).thenReturn(0.0, 0.0);
+        when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
+        runTransactionsAndFireAfterCommit();
+
+        useCase.systemInitializesGame(
+                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 1, 1, "scn1")));
+
+        verify(itemOps, never()).saveItem(any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Item>> presentedItems = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(anyList(), eq(new PlayerId("plr1")), presentedItems.capture());
+        assertThat(presentedItems.getValue()).isEmpty();
+    }
+
+    @Test
+    void rejectsAnItemWithAnInvalidChanceAndDoesNotInitialize() {
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        // Denominator 0 — Chance construction fails the intra-aggregate validity gate.
+        useCase.systemInitializesGame(
+                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 0, 1, "scn1")));
+
+        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsAnItemSpawningIntoAnUnknownSceneAndDoesNotInitialize() {
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        // scn9 is a well-formed id but no authored scene defines it — an inter-aggregate failure.
+        useCase.systemInitializesGame(
+                seed(twoConnectedScenes(), "scn1", item("itm1", 1, 2, 1, "scn9")));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, List<SceneId>>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentItemSpawnSceneUnknown(captor.capture());
+        assertThat(captor.getValue()).containsOnlyKeys("itm1");
+        assertThat(captor.getValue().get("itm1")).containsExactly(new SceneId("scn9"));
+        verifyNothingInitialized();
     }
 
     // --- a world that fails to construct stops the interaction before any player ----------------
@@ -110,7 +200,7 @@ class InitializeGameUseCaseTest {
         List<SceneEntry> entries = List.of(
                 new SceneEntry("bogus", "Old Gate", "A gate.", "A weathered stone archway.", List.of()));
 
-        useCase.systemInitializesGame(entries, "scn1");
+        useCase.systemInitializesGame(seed(entries, "scn1"));
 
         verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
         verifyNothingInitialized();
@@ -123,7 +213,7 @@ class InitializeGameUseCaseTest {
                 new SceneEntry("scn1", "Old Gate", "A gate.", "A weathered stone archway.",
                         List.of(new ExitEntry("east", "scn9"))));
 
-        useCase.systemInitializesGame(entries, "scn1");
+        useCase.systemInitializesGame(seed(entries, "scn1"));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<SceneId, List<Exit>>> captor = ArgumentCaptor.forClass(Map.class);
@@ -139,7 +229,7 @@ class InitializeGameUseCaseTest {
         // 'bogus' lacks the 'plr' prefix — PlayerId construction fails the validity gate.
         when(playerOps.currentPlayerId()).thenReturn("bogus");
 
-        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
 
         verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
         verifyNothingInitialized();
@@ -151,7 +241,7 @@ class InitializeGameUseCaseTest {
         // resolved against the in-memory world rather than the (as-yet-unseeded) store.
         when(playerOps.currentPlayerId()).thenReturn("plr1");
 
-        useCase.systemInitializesGame(twoConnectedScenes(), "scn9");
+        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn9"));
 
         verify(presenter).presentStartingSceneUnknown(new SceneId("scn9"));
         verifyNothingInitialized();
@@ -167,10 +257,10 @@ class InitializeGameUseCaseTest {
         doThrow(boom).when(sceneOps).saveScene(any());
         runTransactionsPropagatingErrors();
 
-        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentGameInitialized(any(), any());
+        verify(presenter, never()).presentGameInitialized(any(), any(), any());
     }
 
     @Test
@@ -182,13 +272,17 @@ class InitializeGameUseCaseTest {
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
         runTransactionsPropagatingErrors();
 
-        useCase.systemInitializesGame(twoConnectedScenes(), "scn1");
+        useCase.systemInitializesGame(seed(twoConnectedScenes(), "scn1"));
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentGameInitialized(any(), any());
+        verify(presenter, never()).presentGameInitialized(any(), any(), any());
     }
 
     // --- fixtures -------------------------------------------------------------------------------
+
+    private static GameSeed seed(List<SceneEntry> scenes, String startingSceneId, ItemEntry... items) {
+        return new GameSeed(scenes, startingSceneId, List.of(items));
+    }
 
     private static List<SceneEntry> twoConnectedScenes() {
         return List.of(
@@ -198,6 +292,12 @@ class InitializeGameUseCaseTest {
                 new SceneEntry("scn2", "Courtyard", "A grass-cracked courtyard.",
                         "Weeds push between the flagstones of a drilling yard.",
                         List.of(new ExitEntry("west", "scn1"))));
+    }
+
+    private static ItemEntry item(String id, int chanceNumerator, int chanceDenominator, int max,
+                                  String... candidateScenes) {
+        return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.",
+                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max));
     }
 
     private static Player player(String id, String currentScene) {
@@ -242,18 +342,23 @@ class InitializeGameUseCaseTest {
         assertThat(captor.getValue().getCurrentScene().getValue()).isEqualTo(expectedScene);
     }
 
-    private void assertGameInitializedPresentedFor(String expectedPlayerId, String... expectedSceneIds) {
+    private void assertGameInitializedPresentedWithNoItems(String expectedPlayerId, String... expectedSceneIds) {
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Scene>> captor = ArgumentCaptor.forClass(List.class);
-        verify(presenter).presentGameInitialized(captor.capture(), eq(new PlayerId(expectedPlayerId)));
-        assertThat(captor.getValue()).extracting(scene -> scene.getId().getValue())
+        ArgumentCaptor<List<Scene>> scenesCaptor = ArgumentCaptor.forClass(List.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Item>> itemsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(
+                scenesCaptor.capture(), eq(new PlayerId(expectedPlayerId)), itemsCaptor.capture());
+        assertThat(scenesCaptor.getValue()).extracting(scene -> scene.getId().getValue())
                 .containsExactly(expectedSceneIds);
+        assertThat(itemsCaptor.getValue()).isEmpty();
     }
 
     private void verifyNothingInitialized() {
         verify(txOps, never()).doInTransaction(anyBoolean(), any());
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
-        verify(presenter, never()).presentGameInitialized(any(), any());
+        verify(itemOps, never()).saveItem(any());
+        verify(presenter, never()).presentGameInitialized(any(), any(), any());
     }
 }

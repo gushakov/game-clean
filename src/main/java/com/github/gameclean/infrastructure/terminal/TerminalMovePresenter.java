@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -8,6 +9,8 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.List;
 
 /**
  * Secondary (driven) adapter rendering the {@code Move} use case's outcomes to the shared JLine console —
@@ -25,8 +28,8 @@ public class TerminalMovePresenter implements MovePresenterOutputPort {
     Console console;
 
     @Override
-    public void presentScene(Scene scene) {
-        sceneRenderer.renderScene(scene);
+    public void presentScene(Scene scene, List<Item> itemsOnGround) {
+        sceneRenderer.renderScene(scene, itemsOnGround);
     }
 
     @Override

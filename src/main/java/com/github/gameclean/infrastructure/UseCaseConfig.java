@@ -1,8 +1,11 @@
 package com.github.gameclean.infrastructure;
 
+import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
+import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.LookUseCase;
@@ -47,9 +50,13 @@ public class UseCaseConfig {
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
+            ItemRepositoryOperationsOutputPort itemOps,
+            IdGeneratorOperationsOutputPort idGeneratorOps,
+            RandomnessOperationsOutputPort randomnessOps,
             TransactionOperationsOutputPort txOps) {
         return new InitializeGameUseCase(
-                new LoggingInitializeGamePresenter(), playerOps, playerRepositoryOps, sceneOps, txOps);
+                new LoggingInitializeGamePresenter(), playerOps, playerRepositoryOps, sceneOps,
+                itemOps, idGeneratorOps, randomnessOps, txOps);
     }
 
     @Bean
@@ -59,10 +66,11 @@ public class UseCaseConfig {
             Console console,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
-            SceneRepositoryOperationsOutputPort sceneOps) {
+            SceneRepositoryOperationsOutputPort sceneOps,
+            ItemRepositoryOperationsOutputPort itemOps) {
         TerminalLookPresenter presenter = new TerminalLookPresenter(sceneRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
-        return new LookUseCase(presenter, orient);
+        return new LookUseCase(presenter, orient, itemOps);
     }
 
     @Bean
@@ -73,9 +81,10 @@ public class UseCaseConfig {
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
+            ItemRepositoryOperationsOutputPort itemOps,
             TransactionOperationsOutputPort txOps) {
         TerminalMovePresenter presenter = new TerminalMovePresenter(sceneRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
-        return new MoveUseCase(presenter, playerRepositoryOps, sceneOps, txOps, orient);
+        return new MoveUseCase(presenter, playerRepositoryOps, sceneOps, itemOps, txOps, orient);
     }
 }

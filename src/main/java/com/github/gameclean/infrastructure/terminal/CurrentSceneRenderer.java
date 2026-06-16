@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
@@ -12,6 +13,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -33,8 +35,11 @@ public class CurrentSceneRenderer {
 
     private final Console console;
 
-    /** Renders a scene: its name, full description, and the sorted list of exit names. */
-    public void renderScene(Scene scene) {
+    /**
+     * Renders a scene: its name, full description, the sorted list of exit names, and — when any lie on the
+     * ground — the items present, each on its own line by short description.
+     */
+    public void renderScene(Scene scene, List<Item> itemsOnGround) {
         AttributedStringBuilder sb = new AttributedStringBuilder();
         sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW).bold())
                 .append(scene.getName())
@@ -46,6 +51,7 @@ public class CurrentSceneRenderer {
                 .append("Exits: ")
                 .style(AttributedStyle.DEFAULT)
                 .append(exitNames(scene));
+        appendItemsOnGround(sb, itemsOnGround);
         console.write(sb);
     }
 
@@ -57,6 +63,25 @@ public class CurrentSceneRenderer {
     /** The player's recorded current scene resolves to nothing. */
     public void renderCurrentSceneNotFound(SceneId sceneId) {
         console.printError("You seem to be nowhere — scene '%s' does not exist.".formatted(sceneId.getValue()));
+    }
+
+    /**
+     * Appends the items on the ground, each on its own line, sorted by short description for a stable
+     * display order (the persisted collection is unordered, and several instances may share a description).
+     * Nothing is appended when the ground is empty — the line appears only when there is something to see.
+     */
+    private static void appendItemsOnGround(AttributedStringBuilder sb, List<Item> itemsOnGround) {
+        if (itemsOnGround.isEmpty()) {
+            return;
+        }
+        sb.append(System.lineSeparator())
+                .style(AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN))
+                .append("On the ground:")
+                .style(AttributedStyle.DEFAULT);
+        itemsOnGround.stream()
+                .map(Item::getShortDescription)
+                .sorted(Comparator.naturalOrder())
+                .forEach(description -> sb.append(System.lineSeparator()).append("  ").append(description));
     }
 
     /** Exit names, sorted for a stable display order (the persisted collection is unordered). */

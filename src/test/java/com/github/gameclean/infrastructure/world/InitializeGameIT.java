@@ -1,7 +1,8 @@
 package com.github.gameclean.infrastructure.world;
 
+import com.github.gameclean.core.usecase.initialize.GameSeed;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
-import com.github.gameclean.core.usecase.initialize.SceneEntry;
+import com.github.gameclean.infrastructure.persistence.item.ItemSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.player.PlayerSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -42,37 +43,45 @@ class InitializeGameIT {
     @Autowired
     private PlayerSpringDataRepository playerRepository;
 
-    private final SceneYamlReader reader = new SceneYamlReader();
+    @Autowired
+    private ItemSpringDataRepository itemRepository;
+
+    private final GameSeedYamlReader reader = new GameSeedYamlReader();
 
     @AfterEach
     void cleanUp() {
+        itemRepository.deleteAll();
         playerRepository.deleteById(SEEDED_PLAYER_ID);
         SEED_IDS.forEach(sceneRepository::deleteById);
     }
 
     @Test
-    void initializesTheWorldAndPlayerThenStaysIdempotentOnASecondRun() throws Exception {
-        List<SceneEntry> entries = readSeed();
+    void initializesTheWorldPlayerAndItemsThenStaysIdempotentOnASecondRun() throws Exception {
+        GameSeed seed = readSeed();
 
-        // first run against an empty game: the four authored scenes are seeded and the player placed ...
-        initializeGame.systemInitializesGame(entries, "scn1");
+        // first run against an empty game: the four authored scenes are seeded, the player placed, and the
+        // authored items spawned (a random count, but deterministically idempotent) ...
+        initializeGame.systemInitializesGame(seed);
 
         assertThat(sceneRepository.count()).isEqualTo(4);
         assertThat(sceneRepository.findById("scn2")).isPresent();
         assertThat(playerRepository.findById(SEEDED_PLAYER_ID)).isPresent()
                 .get().satisfies(player -> assertThat(player.getCurrentSceneId()).isEqualTo("scn1"));
+        long itemsAfterFirstRun = itemRepository.count();
 
-        // ... a second run finds both already present and writes no duplicate rows.
-        initializeGame.systemInitializesGame(entries, "scn1");
+        // ... a second run finds world, player and items already present and writes no duplicate rows —
+        // notably the spawn is not re-rolled, so the item count is unchanged.
+        initializeGame.systemInitializesGame(seed);
 
         assertThat(sceneRepository.count()).isEqualTo(4);
         assertThat(playerRepository.count()).isEqualTo(1);
+        assertThat(itemRepository.count()).isEqualTo(itemsAfterFirstRun);
     }
 
-    private List<SceneEntry> readSeed() throws Exception {
+    private GameSeed readSeed() throws Exception {
         try (InputStream in = getClass().getResourceAsStream("/world/scenes.yaml")) {
             assertThat(in).as("world/scenes.yaml on the classpath").isNotNull();
-            return reader.read(in);
+            return reader.read(in, "scn1");
         }
     }
 }

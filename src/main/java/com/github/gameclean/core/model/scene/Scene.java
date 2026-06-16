@@ -60,6 +60,23 @@ public class Scene {
                 .findFirst();
     }
 
+    /**
+     * The exits of this scene whose target resolves to none of the given known scene ids — this scene's
+     * contribution to the inter-aggregate world-consistency check the initialization use case performs.
+     * Expressed in identities ({@link SceneId}), so the scene never reaches into other scene aggregates: the
+     * use case asks each scene about its own exits rather than reading them out and filtering. A
+     * side-effect-free function returning the dangling exits — empty when every target resolves.
+     *
+     * @param knownSceneIds the identities of the scenes that actually exist in the world being built
+     * @return this scene's exits with an unresolved target, in declaration order
+     */
+    public List<Exit> exitsWithTargetNotIn(Set<SceneId> knownSceneIds) {
+        Objects.requireNonNull(knownSceneIds, "known scene ids must not be null");
+        return exits.stream()
+                .filter(exit -> !knownSceneIds.contains(exit.getTarget()))
+                .toList();
+    }
+
     private static String requireNonBlank(String value, String what) {
         if (Objects.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
             throw new IllegalArgumentException(what + " must not be blank");

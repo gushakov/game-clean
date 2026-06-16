@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.world;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
@@ -24,10 +25,10 @@ import java.util.Map;
 public class LoggingInitializeGamePresenter implements InitializeGamePresenterOutputPort {
 
     @Override
-    public void presentGameInitialized(List<Scene> scenes, PlayerId playerId) {
-        log.info("[InitializeGame] Game ready: {} scene(s) {} — player {} placed.",
+    public void presentGameInitialized(List<Scene> scenes, PlayerId playerId, List<Item> spawnedItems) {
+        log.info("[InitializeGame] Game ready: {} scene(s) {} — player {} placed — {} item(s) spawned.",
                 scenes.size(), scenes.stream().map(scene -> scene.getId().getValue()).toList(),
-                playerId.getValue());
+                playerId.getValue(), spawnedItems.size());
     }
 
     @Override
@@ -41,6 +42,13 @@ public class LoggingInitializeGamePresenter implements InitializeGamePresenterOu
     public void presentStartingSceneUnknown(SceneId startingSceneId) {
         log.warn("[InitializeGame] Configured starting scene {} resolves to no authored scene.",
                 startingSceneId.getValue());
+    }
+
+    @Override
+    public void presentItemSpawnSceneUnknown(Map<String, List<SceneId>> unknownSpawnScenesByItem) {
+        unknownSpawnScenesByItem.forEach((itemId, scenes) -> log.warn(
+                "[InitializeGame] Item {} spawns into unknown scene(s) {}",
+                itemId, scenes.stream().map(SceneId::getValue).toList()));
     }
 
     @Override

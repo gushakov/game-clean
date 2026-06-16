@@ -54,3 +54,37 @@ scenes:
     exits:
       - name: down
         target: scn2      # back-edge
+
+# Authored items. Each is a *template*: its `spawn` rule places 0..max instances
+# into randomly chosen candidate scenes (one chance roll per try). Instances are
+# minted fresh generated ids at seed time; the `id` here is only an authoring
+# handle. Spawning is idempotent — a restart never re-rolls.
+items:
+  - id: itm1
+    shortDescription: A rusty dagger.
+    fullDescription: >
+      A plain iron dagger, rusty but looks like it can still be used. There is an
+      inscription in an unknown language running down the blade.
+    spawn:
+      scenes: scn2, scn3   # scenes where the item can spawn
+      chance: 12/50        # chance of spawning on each try
+      max: 3               # maximum number of spawn tries
+
+  - id: itm2
+    shortDescription: A tarnished silver ring.
+    fullDescription: >
+      A slim band of tarnished silver, its surface worn smooth. It is warm to the
+      touch, though nothing here could have warmed it.
+    spawn:
+      scenes: scn3, scn4
+      chance: 1/2
+      max: 2
+
+  - id: itm3
+    shortDescription: A handful of copper coins.
+    fullDescription: >
+      A few dull copper coins, the kind that once bought bread at the gate market.
+    spawn:
+      scenes: scn1
+      chance: 40/50
+      max: 4

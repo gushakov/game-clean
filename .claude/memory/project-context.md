@@ -31,6 +31,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 | Migrations | Flyway — **no ORM** |
 | Persistence access | Spring Data JDBC + MapStruct (per persistence module) |
 | Mapping | MapStruct |
+| Id generation | NanoID (`com.aventrix.jnanoid:jnanoid` 2.0.0) behind `IdGeneratorOperationsOutputPort` — not in the Boot BOM, version pinned |
 | UX | JLine (terminal), `org.jline:jline` 4.1.3 aggregate jar — **decided** (see design-notes) |
 
 ## Repo workflow
@@ -42,16 +43,17 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 
 ## Package layout (Clean DDD)
 
-- `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared),
-  `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`),
-  `usecase/{summarygoal}/` (use-case class + its input and presenter ports; a reusable **subcase**
-  gets its own peer package, e.g. `usecase/orient/`).
+- `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
+  `item/`), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
+  `port/id/`, `port/randomness/`), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog). Sub-packages:
-  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (YAML seed + `WorldSeeder`),
+  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (`GameSeedYamlReader` + `GameSeeder`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine
-  `TerminalConfig` + `ConsoleSession` + `TerminalScenePresenter`).
+  `TerminalConfig` + `ConsoleSession` + presenters), `infrastructure/id/` (NanoID generator adapter),
+  `infrastructure/randomness/` (JDK randomness adapter).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
 
@@ -158,5 +160,29 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
 - **Tests** — `OrientPlayerSubcaseTest` covers the prologue outcomes; `Look`/`Move` unit tests mock the
   subcase; `InitializeGameIT` asserts persisted state (the presenter is no longer a mockable bean).
 
-Tests: 83 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: anything
-beyond scenes + player (NPCs/items), the `look <target>` use case, async/event processing.
+`Item` seeding vertical **complete** (issue #19) — items spawned into scenes at init, shown on the ground when
+`look`/`move` present a scene (the project's first stochastic interaction and first runtime-generated id):
+
+- **Domain** — `Item` aggregate (`core/model/item/`): `ItemId` (prefix `itm`; reconstitution ctor +
+  `fromGeneratedBody`), `location` (`SceneId` reference — items are their own aggregate, not held by `Scene`),
+  short/full descriptions. Plus VOs `Chance` (probability), `SpawnRule` (chance + maxTries + ≥1 candidate
+  scene; `isHitBy`/`pickScene`/`candidateScenesNotIn`), `ItemTemplate` (descriptions + rule; `instanceAt`,
+  `candidateScenesNotIn`). `Scene.exitsWithTargetNotIn` added for symmetry. (design-notes §2, §10.)
+- **Use case** — folded into `InitializeGame` as a **third phase** (world → player → items): input bundled in
+  a `GameSeed` carrier (`SceneEntry`/`ItemEntry`/`SpawnEntry`); spawn rolls (chance per try, uniform scene
+  pick, semantics (a) = up to `max` tries) run outside the tx; a third `itemsAlreadySpawned` guard joins
+  seed-if-empty/create-if-absent in the single transaction. `presentGameInitialized(scenes, playerId, items)`
+  reports items spawned *this run*; new `presentItemSpawnSceneUnknown` stripe. (design-notes §4.)
+- **Ports** — `ItemRepositoryOperationsOutputPort` (`findItemsInScene`/`saveItem`/`itemsAlreadySpawned`),
+  `IdGeneratorOperationsOutputPort.generateItemId()` (returns valid `ItemId`), `RandomnessOperationsOutputPort.nextDouble()`.
+- **Presentation** — items belong to the *presented* scene, fetched per use case (`look` current, `move`
+  target), **not** in `orient`; `presentScene(Scene, List<Item>)` on the shared port, `CurrentSceneRenderer`
+  appends an "On the ground:" list. (design-notes §4.)
+- **Persistence / infra** — Flyway `V3__create_item.sql` (`item`; no FK on `scene_id`), `ItemDbEntity` +
+  MapStruct mapper + Spring Data repo (`findBySceneId`) + `SpringItemRepositoryAdapter`; `JNanoIdGenerator`
+  (`infrastructure/id/`, JNanoId `com.aventrix.jnanoid:jnanoid:2.0.0` — not in the Boot BOM, version pinned),
+  `JdkRandomnessAdapter` (`infrastructure/randomness/`). `SceneYamlReader` renamed `GameSeedYamlReader`
+  (parses scenes + items, assembles `GameSeed`).
+
+Tests: 108 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, real Postgres). Not yet: NPCs, the
+`look <target>` / `take` use cases, async/event processing.

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -91,6 +92,24 @@ class SceneTest {
         Scene scene = validScene().build();
         assertThat(scene.exitNamed("west")).isEmpty();
         assertThat(scene.exitNamed(null)).isEmpty();
+    }
+
+    @Test
+    void reports_exits_whose_target_is_not_among_the_known_scenes() {
+        Scene scene = validScene().exits(List.of(
+                new Exit("east", new SceneId("scn2")),
+                new Exit("north", new SceneId("scn9")))).build();
+
+        // scn2 resolves, scn9 does not.
+        List<Exit> dangling = scene.exitsWithTargetNotIn(Set.of(new SceneId("scn1"), new SceneId("scn2")));
+
+        assertThat(dangling).extracting(Exit::getName).containsExactly("north");
+    }
+
+    @Test
+    void reports_no_dangling_exits_when_every_target_resolves() {
+        Scene scene = validScene().build(); // single east -> scn2
+        assertThat(scene.exitsWithTargetNotIn(Set.of(new SceneId("scn2")))).isEmpty();
     }
 
     @Test
