@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.seed.SceneEntry;
+import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import com.github.gameclean.infrastructure.persistence.scene.SceneDbEntityMapper;
 import com.github.gameclean.infrastructure.persistence.scene.SceneDbEntityMapperImpl;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
@@ -33,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(SceneDbEntityMapperImpl.class)
-class WorldSeedRoundTripIT {
+class WorldSeedRoundTripIT extends AbstractPostgresIT {
 
     @Autowired
     private SceneSpringDataRepository repository;

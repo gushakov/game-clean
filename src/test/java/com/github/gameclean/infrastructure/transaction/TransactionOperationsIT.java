@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.transaction;
 
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import com.github.gameclean.infrastructure.persistence.scene.SceneDbEntity;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -23,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * guarantee need in order to be observable.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class TransactionOperationsIT {
+class TransactionOperationsIT extends AbstractPostgresIT {
 
     private static final String ROLLBACK_TEST_ID = "scntxrollbacktest";
 

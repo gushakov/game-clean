@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
+import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import com.github.gameclean.infrastructure.persistence.item.ItemSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.player.PlayerSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
@@ -29,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * deleting a scene removes its owned exits with it.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class InitializeGameIT {
+class InitializeGameIT extends AbstractPostgresIT {
 
     private static final List<String> SEED_IDS = List.of("scn1", "scn2", "scn3", "scn4");
     private static final String SEEDED_PLAYER_ID = "plr1";

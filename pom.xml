@@ -105,6 +105,24 @@
             <version>1.4.2</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- Integration tests run against an ephemeral, throwaway Postgres owned by the test run
+             (see AbstractPostgresIT), isolating *IT from the docker-compose play DB and from prior
+             runs. Version is managed by the Spring Boot BOM (testcontainers-bom). Note the
+             Testcontainers 2.0 artifactId prefix: the module is `testcontainers-postgresql`, not the
+             pre-2.0 `postgresql`. We drive the container's lifecycle directly (static singleton in
+             AbstractPostgresIT), so the `testcontainers-junit-jupiter` module is intentionally absent. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Bridges a Testcontainers container to Spring Boot's @ServiceConnection auto-wiring. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

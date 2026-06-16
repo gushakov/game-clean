@@ -48,11 +48,19 @@ Established by the scenes persistence spike, repeated verbatim for the player ag
 - **Unit tests** = `*Test`, run by Surefire in the `test` phase, **DB-free** (domain + use cases
   with mocked ports). The 27 model/arch tests are here.
 - **Integration tests** = `*IT`, run by Failsafe in the `verify` phase (Failsafe execution is
-  wired explicitly in `pom.xml`), against the **real Dockerized Postgres** — `@DataJdbcTest`
-  + `@AutoConfigureTestDatabase(replace = NONE)`, datasource in `src/test/resources/application.yaml`
-  (superuser role, since it writes). `@DataJdbcTest` rolls back each test; Flyway DDL still commits.
-  Slice tests live under `infrastructure/...` so they find `@SpringBootApplication`.
-- So `mvn test` stays DB-free; `mvn verify` needs the container up.
+  wired explicitly in `pom.xml`), against an **ephemeral Testcontainers Postgres owned by the test
+  run** — `@DataJdbcTest` + `@AutoConfigureTestDatabase(replace = NONE)` for the slices,
+  `@SpringBootTest` for the two commit-observing ITs. Every IT extends
+  `infrastructure/AbstractPostgresIT`, which starts one **singleton** `PostgreSQLContainer`
+  (`postgres:15.12`, matching `docker-compose.yaml`) and wires the datasource via Boot's
+  `@ServiceConnection` — no hardcoded `localhost:5432`, no datasource in
+  `src/test/resources/application.yaml`. `@DataJdbcTest` rolls back each test; the two
+  `@SpringBootTest` ITs commit and clean up in `@AfterEach` (kept as intra-run order-independence
+  insurance). Flyway migrates the fresh container at context startup. Slice tests live under
+  `infrastructure/...` so they find `@SpringBootApplication`.
+- So `mvn test` stays DB-free; `mvn verify` needs only **Docker** up (it no longer uses the
+  `docker-compose` play DB — see the Testcontainers isolation note below). Each `mvn verify` gets a
+  pristine container, so the old "reset the volume first" ritual is retired (issue #17).
 
 ## Transactions (explicit demarcation, no blanket `@Transactional`)
 
@@ -73,8 +81,8 @@ caught at the use case's outermost checkpoint; there is deliberately no `rollbac
 - Deliberately **leaner than `cargo-clean`'s** legacy adapter: dropped its `*WithResult`
   after-commit/rollback variants (broken `AtomicReference` timing), its `rollback()`, and its
   `CacheManager` coupling. Rationale in design-notes §5 (Explicit transaction demarcation).
-- Tested by `TransactionOperationsIT` (`@SpringBootTest`, real DB, no test-managed rollback) — the
-  one IT that is **not** a `@DataJdbcTest` slice, because commit/rollback must be observable.
+- Tested by `TransactionOperationsIT` (`@SpringBootTest`, ephemeral Testcontainers Postgres, no
+  test-managed rollback) — **not** a `@DataJdbcTest` slice, because commit/rollback must be observable.
 
 ## Use cases, composition root, and the startup seeder
 
@@ -195,11 +203,16 @@ The app reads from a TTY; to drive it without one (Claude sessions, CI smoke che
 - Use this for **adapter smoke checks** and the wall-clock / concurrency exploration of thread `#3`; test
   game *logic* via JUnit on the use-case layer. See the testability stance in `design-notes.md`.
 
-> **Gotcha — running the app pollutes the IT database.** `run-app.sh` seeds `scn1`–`scn4` into the
-> *same* Dockerized Postgres the `*IT`s use, and the seed **commits** (it is not test-rolled-back). A
-> subsequent `mvn verify` then collides — e.g. `SceneRoundTripIT` hits a duplicate `scn1`,
-> `ConstructWorldIT`'s "seeds then skips" no longer starts empty. **Reset the volume before verifying:**
-> `docker compose down -v && docker compose up -d`.
+> **Testcontainers isolation (issue #17) — the play DB and the test DB are now fully decoupled.**
+> `*IT`s run against an ephemeral Testcontainers Postgres (`AbstractPostgresIT`), **not** the
+> `docker-compose` `gameclean-db`. So `run-app.sh` seeding `scn1`–`scn4` into the compose DB no longer
+> affects `mvn verify` at all, and each verify run gets a pristine container — the former "reset the
+> volume before verifying" ritual is gone. The compose DB stays purely for *playing* the game
+> (`run-app.sh`) and for schema inspection via the read-only MCP; it is no longer where tests write.
+> `mvn verify` needs **Docker** running (Testcontainers reaches the daemon directly); a transient
+> "Could not find a valid Docker environment" at container start surfaces as a `NoClassDefFoundError:
+> Could not initialize class AbstractPostgresIT` across all ITs (the static-singleton init failing) —
+> retry, it is a daemon-connectivity flake, not a test failure.
 
 > **Note — exit order.** Spring Data JDBC returns the `@MappedCollection` exits unordered (no `ORDER BY`).
 > `TerminalScenePresenter` therefore **sorts exit names alphabetically at render time** — exit ordering is
