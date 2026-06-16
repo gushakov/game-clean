@@ -124,6 +124,31 @@ when `look` finally forced it into existence it was minted with a *single* field
 current position (a `SceneId` reference) — because that is all `look` reads. No inventory,
 stats, or name appeared on speculation; they wait for the interaction that demands them.
 
+**Items: the speculation finally cashed in — three VOs and a generator, each pulled by one vertical.**
+`[thread #1]` Adding *items found on the ground* forced exactly the model the earlier interactions had
+refused to invent, and each piece arrived with a concrete demand behind it, not on a hunch. The **probability
+VO** this section had parked became `Chance` the moment spawning needed odds. `SpawnRule` (chance + tries +
+≥1 candidate scene) and `ItemTemplate` (descriptions + rule) followed — and `ItemTemplate` is the sharp
+case: it exists not for tidiness but because a blank description must fail the validity gate *regardless of
+how the random spawn rolls fall*; validating it on the template, up front, closes a gap where an invalid
+item might otherwise never be exercised. The **id generator** the `SceneId`/`PlayerId` javadocs had long
+promised ("owned solely by the generator adapter") had never actually existed, because authored/configured
+ids (`scn1`, `plr1`) are never generated; item *instances* are the first identity the system itself mints —
+one template spawns several — so the generator finally has a consumer, landing exactly where this section
+predicted: the prefix in the VO (`ItemId.fromGeneratedBody`), the body alphabet (NanoID) private to the
+adapter, one knower, no drift. That also retires parked alternative (a): authored ids are not
+generated-shape, so a shared `IdFormat` still earns nothing.
+
+**The item aggregate boundary — by identity, not containment.** `[thread #1]` `[thread #3]` An item is its
+*own* aggregate, not a child of `Scene`. The test is invariants: there is no scene↔item consistency rule that
+must hold inside one transaction (a scene is not made invalid by what lies on its floor), and an item's
+location is mobile — on the ground now, in a player's or NPC's possession once `take` arrives. So `Item`
+references *where it is* by `SceneId`, exactly as `Player` references `currentScene` and `Exit` its target;
+"the items in a scene" is a *query* against that reference, never a collection the scene holds. Containing
+items inside `Scene` would both invent a false invariant and force every pickup to rewrite the whole scene
+aggregate — the contention seed of `[thread #3]`. Minted minimal, like `Player`: id, location, two
+descriptions, nothing speculative.
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -239,6 +264,21 @@ keeps the rule from over-reaching: a `doAfterCommit(present)` and a domain-event
 triggers a *different* interaction, is allowed (that is the §8 event spine); the invariant governs
 an interaction's own forward `present*` calls, not the causal chain it may set in motion.
 
+**A third phase, and the use case turns stochastic without losing its testability.** `[thread #2]` `[thread #3]`
+Seeding *items* is a third phase of the same `InitializeGame` interaction — world → player → items — for the
+same reason player-placement was the second: world→items is a *domain precondition* (items need scenes to
+spawn into), checked in-memory against the world being built, exactly like the exit-target and starting-scene
+resolutions. It folds into the one success (`presentGameInitialized`) and the one atomic unit: a third
+idempotency guard, **spawn-if-none**, joins seed-if-empty and create-if-absent inside the single
+`doInTransaction`, so a restart never re-rolls. What is *new* is that the phase is **non-deterministic**, and
+the resolution is the lesson: the entropy is an **output port** (`RandomnessOperationsOutputPort`), so the
+use case stays deterministic under test (stub the draws) even though production spawns at random — the random
+rolls run *outside* the transaction (a pure in-memory construction with no persistence effect), and only the
+saves sit inside it. Two *distinct* randomness roles are kept on two ports, not conflated: opaque **identity**
+(`IdGeneratorOperationsOutputPort`) and domain **dice** (`RandomnessOperationsOutputPort`). The single success
+also carries the items *spawned this run* (empty on an idempotent re-run) — generated effects, reported
+distinctly from the authored scenes, which are the full world on every path.
+
 **Read-only and read-write interactions over one shared scene presentation.** `[thread #2]`
 `Look` (read-only) and `move` (read-write, the first interaction to *update* an aggregate) both
 operate *from the acting player's current scene*, reaching their outcomes by **branch-and-present**
@@ -253,6 +293,19 @@ port extends it with the two outcomes peculiar to moving (no-such-exit, dangling
 `look`'s port turns out to *be* the cluster exactly (kept as an empty marker for symmetry). The
 lesson: **outcome-sharing tracks the shared prologue, not the use case** — any later interaction
 grounded in the current scene (`look <target>`, `take`) joins the same cluster.
+
+**Items sharpen the prologue's edge: a scene's *contents* track the scene each use case presents, not the
+prologue.** `[thread #2]` `[thread #4]` The obvious move when items arrived was to fold "the items on the
+ground" into the `orient` result alongside player + scene. It is wrong, and the reason draws the boundary of
+the shared prologue precisely. The prologue resolves *where the acting player stands* — and `look` presents
+*that* scene, but `move` presents the scene it *enters*, a different scene whose items `orient` (which
+resolved the origin) cannot supply. So items are not part of the prologue; they belong to **whichever scene
+the use case presents**, and each use case fetches them for that scene (`look` the current, `move` the
+target) through the shared `ItemRepository` port and the shared `presentScene(scene, items)` renderer
+capability. The prologue stays exactly *player + location*; presentation-content (scene + its items) is the
+per-use-case part. `take` will confirm the split from the other side: it needs the current scene's items but
+**presents none of them**, so it reuses the same fetch without the rendering — the contents are an input to
+its logic, not an outcome.
 
 This split sharpens the project's headline finding into **three orthogonal axes of sharing**, each
 resolved by its own mechanism. The *port vocabulary* is shared — by interface extension, with **no
@@ -565,6 +618,52 @@ language ever grows real grammar (multi-token noun phrases, quoting, preposition
 disambiguation), is a change confined to this one adapter and costs the core and the controller
 nothing. **Defer the tool, keep the seam tool-ready** — the same emergence discipline applied
 to a build decision rather than to the model.
+
+## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
+
+This refines §4. An **inter-aggregate consistency rule** (every exit target resolves to an authored scene;
+every item's candidate spawn scenes resolve) is the *use case's* responsibility — it is not on any single
+entity, and it yields a domain *outcome*, presented. But "owning the rule" is not the same as "computing it,"
+and conflating them produces a Law-of-Demeter train wreck. The first cut of the item check read:
+
+> `item.getTemplate().getSpawnRule().getCandidateScenes().stream().filter(id -> !known.contains(id))`
+
+The use case was walking the model's **internal composition** (an item *has-a* template *has-a* rule *has-a*
+candidate list) to do work *about* that data. The smell is structural coupling: the use case knows how an
+`ItemTemplate` is built, not just what it can answer.
+
+**The fix is Tell-Don't-Ask with a side-effect-free function on the model.** The VO answers about its own
+state — `SpawnRule.candidateScenesNotIn(known)`, `Scene.exitsWithTargetNotIn(known)` — delegated outward so a
+caller never reaches *through* a holder (`ItemTemplate` and the use-case-private `AuthoredItem` each forward
+one level). The use case keeps only what is genuinely its job: assemble the known-id set, collect the
+unresolved across items, and **present** the outcome. Orchestration stays in the use case; the per-object
+computation moves to the object that owns the data.
+
+**The crux — identity is the decoupling seam, so "this couples `ItemTemplate` to `Scene`" is a false alarm.**
+The fear is real *only if the parameter is `Set<Scene>`*. It is `Set<SceneId>` — identities the rule already
+holds (its candidates *are* `SceneId`s) — so no new dependency is introduced, and the VO never touches the
+`Scene` aggregate. This is the §2/§3 rule paying off twice: aggregates reference one another **by identity**,
+and an aggregate reasoning about another *through identities it already holds* collaborates without coupling.
+The use case computes the world's identity-set; each VO answers against it; no object ever holds another
+aggregate's instance.
+
+**Consequences.** Entropy stays flat — no new type, behaviour merely relocated onto an existing VO — and
+*testability rises*: the relocated SEFFs (`candidateScenesNotIn`, `exitsWithTargetNotIn`) get direct unit
+tests, where before the logic was only reachable through the use-case test. That is Evans's standing argument
+for side-effect-free functions: safe to call, trivial to test. (Promotion candidate for the methodology —
+flagged, not promoted, per Prompt-4 discipline.)
+
+**Deferred and parked.**
+- The derived `Set<SceneId>` of "scenes that exist in the world being built" is reconstructed for *both* the
+  exit and the spawn checks — an **implicit concept** (Evans: *make implicit concepts explicit*). A
+  `KnownScenes` / `SceneCatalog` VO with `contains` / `unknownAmong` would unify both resolvers, but minting
+  it on two uses spends entropy the parameter already covers; held until a *third* resolver appears or until
+  "scene existence" grows behaviour (resolving to actual `Scene`s, world-wide dangling reports).
+- The *spawn roll loop* (`spawnItems`) still reaches `template.getSpawnRule()` for `maxTries`/`isHitBy`/
+  `pickScene`. That is a **different animal** — orchestration that interleaves non-deterministic *port* calls
+  with domain decisions, legitimately the use case's. Pushing it down cleanly would mean feeding the template
+  **function suppliers** (`DoubleSupplier`, `Supplier<ItemId>`), not ports, so it owns spawning end-to-end
+  without importing infrastructure. Open question, deliberately not yet resolved.
 
 ---
 

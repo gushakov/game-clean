@@ -1,9 +1,12 @@
 package com.github.gameclean.core.usecase.orient;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
+
+import java.util.List;
 
 /**
  * Presenter (driven) output port of the {@link OrientPlayerSubcase orient} subcase: the outcomes of
@@ -25,8 +28,13 @@ import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
  */
 public interface OrientPlayerPresenterOutputPort extends ErrorHandlingPresenterOutputPort {
 
-    /** Happy path: render the scene the player is currently in (for {@code move}, the scene just entered). */
-    void presentScene(Scene scene);
+    /**
+     * Happy path: render the scene being presented (the current scene for {@code look}, the scene just
+     * entered for {@code move}) together with the items lying on its ground — empty if none. The items are
+     * those located in <em>that</em> scene, fetched by each use case for the scene it presents, since the
+     * presented scene differs between {@code look} (current) and {@code move} (target).
+     */
+    void presentScene(Scene scene, List<Item> itemsOnGround);
 
     /** No player is persisted for the given id — there is no acting player to locate. */
     void presentPlayerNotFound(PlayerId playerId);

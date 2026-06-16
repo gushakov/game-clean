@@ -1,9 +1,11 @@
 package com.github.gameclean.core.usecase.explore;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
@@ -14,6 +16,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -28,6 +31,10 @@ import java.util.Optional;
  * the dedicated checkpoint swallows that signal as a no-op. (Earlier this prologue was inline-duplicated
  * to avoid a subcase that "presents on failure and continues on success"; the guarded-prologue subcase
  * dissolves that straddle — each invocation either presents-and-throws or returns-without-presenting.)
+ *
+ * <p>It presents the scene the player <em>enters</em>, so it fetches the items on that target scene's
+ * ground (not the current scene's) — the items belong to the presented scene, which is why they are
+ * resolved per use case rather than in the shared {@code orient} prologue.
  *
  * <p>Unlike {@code look}, {@code move} <b>writes</b>: it records the player's new position. The reads and
  * the validity checks all run <em>outside</em> any transaction; a single
@@ -45,6 +52,7 @@ public class MoveUseCase implements MoveInputPort {
     MovePresenterOutputPort presenter;
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     SceneRepositoryOperationsOutputPort sceneOps;
+    ItemRepositoryOperationsOutputPort itemOps;
     TransactionOperationsOutputPort txOps;
     OrientPlayerSubcaseInputPort orientPlayerSubcase;
 
@@ -69,13 +77,17 @@ public class MoveUseCase implements MoveInputPort {
                 return;
             }
 
+            // The items on the ground in the scene being entered — fetched for the *target* scene (what the
+            // player will see), not the current one. A read, so it runs outside the transaction.
+            List<Item> itemsInEntered = itemOps.findItemsInScene(targetId);
+
             // One write, one atomic unit. Record the new position; present the entered scene only once the
             // move has committed, and end the interaction there — nothing runs past a presentation.
             Player moved = playerInScene.getPlayer().moveTo(targetId);
             Scene entered = targetScene.get();
             txOps.doInTransaction(false, () -> {
                 playerRepositoryOps.savePlayer(moved);
-                txOps.doAfterCommit(() -> presenter.presentScene(entered));
+                txOps.doAfterCommit(() -> presenter.presentScene(entered, itemsInEntered));
             });
             return;
 
