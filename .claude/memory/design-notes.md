@@ -90,9 +90,38 @@ any database exists, which is the whole point of the dependency rule.
 ## 2. The always-valid model, and where validation lives
 
 **Principle.** Domain entities and VOs are immutable and *always-valid*: a constructor
-either yields a fully-legal object or throws. Validation is JDK-only (`requireNonNull`
-+ explicit `IllegalArgumentException`); equality is by id for aggregate roots, by value
-for VOs. (Exact Lombok shape → `project-context-extended.md`.)
+either yields a fully-legal object or throws. The throw is a single named domain type,
+`InvalidDomainObjectError` (in `core/model/`), raised through the small `DomainValidation`
+helper rather than a raw `NullPointerException`/`IllegalArgumentException`; equality is by id
+for aggregate roots, by value for VOs. (Exact Lombok shape → `project-context-extended.md`.)
+
+**Why a *named* construction failure — and what it deliberately does not cover.** The
+always-valid model makes construction *the* validity gate, so the gate's failure deserves a
+domain-meaningful type, not a JDK exception each caller must remember to translate. This
+**reverses an earlier "validation is JDK-only" stance**: every constructor and static factory
+now throws `InvalidDomainObjectError`, and the use-case gate catches *that one type* —
+`InitializeGame`'s three construction checkpoints went from
+`catch (IllegalArgumentException | NullPointerException)` to `catch (InvalidDomainObjectError)`.
+The payoff is the §6 principle applied to validation — *remove the affordance* (an untranslated
+JDK exception leaking past the gate) rather than forbid the misuse — plus a sharper catch: a
+stray `NullPointerException` bug inside a construction block now falls through to `presentError`
+instead of being mislabelled "invalid parameters". The boundary is drawn on purpose:
+**construction throws the named type; behaviour-method argument guards stay plain
+`Objects.requireNonNull`/NPE** (`Scene.exitsWithTargetNotIn`, `SpawnRule.rollPlacements`,
+`ItemTemplate.spawnInto`), because a null collaborator handed to a side-effect-free function is
+a *caller* programming error, not invalid domain *input*. Two failure categories, two signals.
+
+**Reconstitution shares the one gate — by choice, not accident.** `[thread #2]` The persistence
+mappers rebuild VOs and aggregates through the same constructors, so a corrupt stored row now
+throws `InvalidDomainObjectError` too, riding the use case's outermost `catch` to `presentError`
+exactly as the old raw exception did. We weighed rewrapping reads into a distinct
+`PersistenceOperationsError` — to keep "bad authored input" (a presented invalid-input outcome)
+separate from "corrupt persisted data" (an integrity fault) — and **deferred it**: the read-path
+failure is presented generically regardless, the aggregate rebuild is MapStruct-generated (so the
+wrap is not a one-liner), and one construction gate is the simpler invariant until a real need to
+tell the two apart appears. `InvalidDomainObjectError` is unchecked, like
+`PersistenceOperationsError` (§5), so it composes through the transaction template and triggers
+rollback on the rare construction that runs inside one.
 
 **The "single source of truth" conundrum — and its resolution.** An always-valid id VO
 appears to need to validate the very character pattern that the *infrastructure* id

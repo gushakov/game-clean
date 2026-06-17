@@ -1,11 +1,10 @@
 package com.github.gameclean.core.model.player;
 
+import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.scene.SceneId;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-
-import java.util.Objects;
 
 /**
  * The player — the aggregate root of the player aggregate.
@@ -32,8 +31,8 @@ public class Player {
 
     @Builder
     public Player(PlayerId id, SceneId currentScene) {
-        this.id = Objects.requireNonNull(id, "player id must not be null");
-        this.currentScene = Objects.requireNonNull(currentScene, "player current scene must not be null");
+        this.id = DomainValidation.requireNonNull(id, "player id must not be null");
+        this.currentScene = DomainValidation.requireNonNull(currentScene, "player current scene must not be null");
     }
 
     /**

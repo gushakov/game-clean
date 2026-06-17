@@ -1,11 +1,11 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-
-import java.util.Objects;
 
 /**
  * A thing that can be found in the world — the aggregate root of the item aggregate.
@@ -38,15 +38,15 @@ public class Item {
 
     @Builder
     public Item(ItemId id, SceneId location, String shortDescription, String fullDescription) {
-        this.id = Objects.requireNonNull(id, "item id must not be null");
-        this.location = Objects.requireNonNull(location, "item location must not be null");
+        this.id = DomainValidation.requireNonNull(id, "item id must not be null");
+        this.location = DomainValidation.requireNonNull(location, "item location must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
         this.fullDescription = requireNonBlank(fullDescription, "item full description");
     }
 
     private static String requireNonBlank(String value, String what) {
-        if (Objects.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
-            throw new IllegalArgumentException(what + " must not be blank");
+        if (DomainValidation.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
+            throw new InvalidDomainObjectError(what + " must not be blank");
         }
         return value;
     }

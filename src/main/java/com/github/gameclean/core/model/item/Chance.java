@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 
@@ -23,13 +24,13 @@ public class Chance {
 
     public Chance(int numerator, int denominator) {
         if (denominator <= 0) {
-            throw new IllegalArgumentException("chance denominator must be positive, got " + denominator);
+            throw new InvalidDomainObjectError("chance denominator must be positive, got " + denominator);
         }
         if (numerator < 0) {
-            throw new IllegalArgumentException("chance numerator must not be negative, got " + numerator);
+            throw new InvalidDomainObjectError("chance numerator must not be negative, got " + numerator);
         }
         if (numerator > denominator) {
-            throw new IllegalArgumentException(
+            throw new InvalidDomainObjectError(
                     "chance numerator %d must not exceed denominator %d".formatted(numerator, denominator));
         }
         this.numerator = numerator;

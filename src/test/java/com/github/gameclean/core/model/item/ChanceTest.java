@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
@@ -21,22 +22,22 @@ class ChanceTest {
 
     @Test
     void rejects_a_zero_denominator() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new Chance(1, 0));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new Chance(1, 0));
     }
 
     @Test
     void rejects_a_negative_denominator() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new Chance(1, -2));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new Chance(1, -2));
     }
 
     @Test
     void rejects_a_negative_numerator() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new Chance(-1, 2));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new Chance(-1, 2));
     }
 
     @Test
     void rejects_a_numerator_greater_than_the_denominator() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new Chance(3, 2));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new Chance(3, 2));
     }
 
     @Test

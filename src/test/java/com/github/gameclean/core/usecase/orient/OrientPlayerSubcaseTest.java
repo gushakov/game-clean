@@ -1,5 +1,6 @@
 package com.github.gameclean.core.usecase.orient;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
@@ -89,7 +90,7 @@ class OrientPlayerSubcaseTest {
         // 'bogus' lacks the 'plr' prefix — PlayerId construction fails the validity gate.
         when(playerOps.currentPlayerId()).thenReturn("bogus");
 
-        assertThatThrownBy(subcase::playerGetsBearings).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(subcase::playerGetsBearings).isInstanceOf(InvalidDomainObjectError.class);
 
         verifyNoInteractions(presenter, playerRepositoryOps, sceneOps);
     }

@@ -1,5 +1,6 @@
 package com.github.gameclean.core.usecase.initialize;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.Player;
@@ -188,7 +189,7 @@ class InitializeGameUseCaseTest {
 
         useCase.systemInitializesGame();
 
-        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
         verifyNothingInitialized();
     }
 
@@ -219,7 +220,7 @@ class InitializeGameUseCaseTest {
 
         useCase.systemInitializesGame();
 
-        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
         verifyNothingInitialized();
     }
 
@@ -250,7 +251,7 @@ class InitializeGameUseCaseTest {
 
         useCase.systemInitializesGame();
 
-        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
         verifyNothingInitialized();
     }
 

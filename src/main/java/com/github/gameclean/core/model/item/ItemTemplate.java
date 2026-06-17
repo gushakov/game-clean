@@ -1,5 +1,7 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -35,7 +37,7 @@ public class ItemTemplate {
     public ItemTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule) {
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
         this.fullDescription = requireNonBlank(fullDescription, "item full description");
-        this.spawnRule = Objects.requireNonNull(spawnRule, "item spawn rule must not be null");
+        this.spawnRule = DomainValidation.requireNonNull(spawnRule, "item spawn rule must not be null");
     }
 
     /**
@@ -90,8 +92,8 @@ public class ItemTemplate {
     }
 
     private static String requireNonBlank(String value, String what) {
-        if (Objects.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
-            throw new IllegalArgumentException(what + " must not be blank");
+        if (DomainValidation.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
+            throw new InvalidDomainObjectError(what + " must not be blank");
         }
         return value;
     }
