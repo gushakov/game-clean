@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.junit.jupiter.api.Test;
 
@@ -42,18 +43,18 @@ class ItemTemplateTest {
     @Test
     void rejects_a_blank_short_description() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
-        assertThatIllegalArgumentException().isThrownBy(() -> new ItemTemplate("  ", FULL, rule));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new ItemTemplate("  ", FULL, rule));
     }
 
     @Test
     void rejects_a_blank_full_description() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
-        assertThatIllegalArgumentException().isThrownBy(() -> new ItemTemplate(SHORT, "  ", rule));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new ItemTemplate(SHORT, "  ", rule));
     }
 
     @Test
     void rejects_a_null_spawn_rule() {
-        assertThatNullPointerException().isThrownBy(() -> new ItemTemplate(SHORT, FULL, null));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new ItemTemplate(SHORT, FULL, null));
     }
 
     @Test
@@ -82,6 +83,8 @@ class ItemTemplateTest {
     @Test
     void rejects_a_null_id_source() {
         ItemTemplate template = template(1, 1, 1, "scn1");
+        // A null collaborator to a behaviour method is a caller bug, not invalid domain construction —
+        // it stays a plain NullPointerException, unlike the value-object constructors above.
         assertThatNullPointerException().isThrownBy(() -> template.spawnInto(null, draws(0.0, 0.0)));
     }
 }

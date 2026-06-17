@@ -1,9 +1,9 @@
 package com.github.gameclean.core.model.scene;
 
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-
-import java.util.Objects;
 
 /**
  * Identity of a {@link Scene} — a Value Object wrapping an authored id of the form
@@ -25,20 +25,20 @@ public class SceneId {
     private final String value;
 
     public SceneId(String value) {
-        String trimmed = Objects.requireNonNull(value, "scene id must not be null").strip();
+        String trimmed = DomainValidation.requireNonNull(value, "scene id must not be null").strip();
         if (trimmed.isEmpty()) {
-            throw new IllegalArgumentException("scene id must not be blank");
+            throw new InvalidDomainObjectError("scene id must not be blank");
         }
         if (!trimmed.startsWith(PREFIX)) {
-            throw new IllegalArgumentException(
+            throw new InvalidDomainObjectError(
                     "scene id must start with prefix '%s', got '%s'".formatted(PREFIX, trimmed));
         }
         if (trimmed.length() == PREFIX.length()) {
-            throw new IllegalArgumentException(
+            throw new InvalidDomainObjectError(
                     "scene id must have a non-empty body after prefix '%s', got '%s'".formatted(PREFIX, trimmed));
         }
         if (trimmed.codePoints().anyMatch(Character::isWhitespace)) {
-            throw new IllegalArgumentException(
+            throw new InvalidDomainObjectError(
                     "scene id must be a single token without whitespace, got '%s'".formatted(trimmed));
         }
         this.value = trimmed;

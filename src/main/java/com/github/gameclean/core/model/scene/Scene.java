@@ -1,5 +1,7 @@
 package com.github.gameclean.core.model.scene;
 
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -34,11 +36,11 @@ public class Scene {
 
     @Builder
     public Scene(SceneId id, String name, String shortDescription, String fullDescription, List<Exit> exits) {
-        this.id = Objects.requireNonNull(id, "scene id must not be null");
+        this.id = DomainValidation.requireNonNull(id, "scene id must not be null");
         this.name = requireNonBlank(name, "scene name");
         this.shortDescription = requireNonBlank(shortDescription, "scene short description");
         this.fullDescription = requireNonBlank(fullDescription, "scene full description");
-        this.exits = List.copyOf(Objects.requireNonNull(exits, "scene exits must not be null"));
+        this.exits = List.copyOf(DomainValidation.requireNonNull(exits, "scene exits must not be null"));
         requireUniqueExitNames(this.exits);
     }
 
@@ -78,8 +80,8 @@ public class Scene {
     }
 
     private static String requireNonBlank(String value, String what) {
-        if (Objects.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
-            throw new IllegalArgumentException(what + " must not be blank");
+        if (DomainValidation.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
+            throw new InvalidDomainObjectError(what + " must not be blank");
         }
         return value;
     }
@@ -88,7 +90,7 @@ public class Scene {
         Set<String> names = new HashSet<>();
         for (Exit exit : exits) {
             if (!names.add(exit.getName())) {
-                throw new IllegalArgumentException(
+                throw new InvalidDomainObjectError(
                         "duplicate exit name '%s' within scene".formatted(exit.getName()));
             }
         }

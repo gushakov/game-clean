@@ -1,5 +1,6 @@
 package com.github.gameclean.core.usecase.initialize;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.item.Chance;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
@@ -102,7 +103,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<Scene> scenes;
             try {
                 scenes = buildScenes(seed.getScenes());
-            } catch (IllegalArgumentException | NullPointerException e) {
+            } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
                 return;
             }
@@ -123,7 +124,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 playerId = new PlayerId(playerOps.currentPlayerId());
                 startingScene = new SceneId(seed.getStartingSceneId());
                 player = Player.builder().id(playerId).currentScene(startingScene).build();
-            } catch (IllegalArgumentException | NullPointerException e) {
+            } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
                 return;
             }
@@ -142,7 +143,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<AuthoredItem> authoredItems;
             try {
                 authoredItems = buildAuthoredItems(seed.getItems());
-            } catch (IllegalArgumentException | NullPointerException e) {
+            } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
                 return;
             }
@@ -227,7 +228,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         for (ItemEntry entry : entries) {
             SpawnEntry spawn = entry.getSpawn();
             if (spawn == null) {
-                throw new IllegalArgumentException(
+                throw new InvalidDomainObjectError(
                         "item '%s' has no spawn rule".formatted(entry.getId()));
             }
             Chance chance = new Chance(spawn.getChanceNumerator(), spawn.getChanceDenominator());

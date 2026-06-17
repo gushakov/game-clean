@@ -1,5 +1,7 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -35,15 +37,15 @@ public class SpawnRule {
     private final List<SceneId> candidateScenes;
 
     public SpawnRule(Chance chance, int maxTries, List<SceneId> candidateScenes) {
-        this.chance = Objects.requireNonNull(chance, "spawn chance must not be null");
+        this.chance = DomainValidation.requireNonNull(chance, "spawn chance must not be null");
         if (maxTries < 0) {
-            throw new IllegalArgumentException("spawn max tries must not be negative, got " + maxTries);
+            throw new InvalidDomainObjectError("spawn max tries must not be negative, got " + maxTries);
         }
         this.maxTries = maxTries;
         this.candidateScenes = List.copyOf(
-                Objects.requireNonNull(candidateScenes, "spawn candidate scenes must not be null"));
+                DomainValidation.requireNonNull(candidateScenes, "spawn candidate scenes must not be null"));
         if (this.candidateScenes.isEmpty()) {
-            throw new IllegalArgumentException("spawn rule must have at least one candidate scene");
+            throw new InvalidDomainObjectError("spawn rule must have at least one candidate scene");
         }
     }
 

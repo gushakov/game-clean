@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.scene;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -33,27 +34,27 @@ class SceneTest {
 
     @Test
     void rejects_a_null_id() {
-        assertThatNullPointerException().isThrownBy(() -> validScene().id(null).build());
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> validScene().id(null).build());
     }
 
     @Test
     void rejects_a_blank_name() {
-        assertThatIllegalArgumentException().isThrownBy(() -> validScene().name("  ").build());
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> validScene().name("  ").build());
     }
 
     @Test
     void rejects_a_blank_short_description() {
-        assertThatIllegalArgumentException().isThrownBy(() -> validScene().shortDescription("").build());
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> validScene().shortDescription("").build());
     }
 
     @Test
     void rejects_a_blank_full_description() {
-        assertThatIllegalArgumentException().isThrownBy(() -> validScene().fullDescription("").build());
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> validScene().fullDescription("").build());
     }
 
     @Test
     void rejects_null_exits() {
-        assertThatNullPointerException().isThrownBy(() -> validScene().exits(null).build());
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> validScene().exits(null).build());
     }
 
     @Test
@@ -61,7 +62,7 @@ class SceneTest {
         List<Exit> exits = List.of(
                 new Exit("east", new SceneId("scn2")),
                 new Exit("east", new SceneId("scn3")));
-        assertThatIllegalArgumentException().isThrownBy(() -> validScene().exits(exits).build());
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> validScene().exits(exits).build());
     }
 
     @Test

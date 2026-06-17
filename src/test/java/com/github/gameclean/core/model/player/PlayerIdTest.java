@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.player;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
@@ -18,22 +19,22 @@ class PlayerIdTest {
 
     @Test
     void rejects_null() {
-        assertThatNullPointerException().isThrownBy(() -> new PlayerId(null));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new PlayerId(null));
     }
 
     @Test
     void rejects_blank() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new PlayerId("   "));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new PlayerId("   "));
     }
 
     @Test
     void rejects_a_missing_prefix() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new PlayerId("abc123"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new PlayerId("abc123"));
     }
 
     @Test
     void rejects_a_prefix_with_an_empty_body() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new PlayerId("plr"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new PlayerId("plr"));
     }
 
     @Test
@@ -43,7 +44,7 @@ class PlayerIdTest {
 
     @Test
     void rejects_internal_whitespace() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new PlayerId("plr 1"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new PlayerId("plr 1"));
     }
 
     @Test

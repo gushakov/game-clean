@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.junit.jupiter.api.Test;
 
@@ -32,18 +33,18 @@ class SpawnRuleTest {
 
     @Test
     void rejects_a_negative_max_tries() {
-        assertThatIllegalArgumentException().isThrownBy(() -> rule(1, 2, -1, "scn1"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> rule(1, 2, -1, "scn1"));
     }
 
     @Test
     void rejects_an_empty_candidate_scene_list() {
-        assertThatIllegalArgumentException()
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> new SpawnRule(new Chance(1, 2), 1, List.of()));
     }
 
     @Test
     void rejects_a_null_chance() {
-        assertThatNullPointerException()
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> new SpawnRule(null, 1, List.of(new SceneId("scn1"))));
     }
 
@@ -113,6 +114,8 @@ class SpawnRuleTest {
 
     @Test
     void rejects_a_null_draw_source() {
+        // A null collaborator to a behaviour method is a caller bug, not invalid domain construction —
+        // it stays a plain NullPointerException, unlike the constructor invariants above.
         assertThatNullPointerException().isThrownBy(() -> rule(1, 1, 1, "scn1").rollPlacements(null));
     }
 }

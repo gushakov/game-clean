@@ -1,9 +1,9 @@
 package com.github.gameclean.core.model.player;
 
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-
-import java.util.Objects;
 
 /**
  * Identity of a {@link Player} — a Value Object wrapping an authored id of the form
@@ -24,20 +24,20 @@ public class PlayerId {
     private final String value;
 
     public PlayerId(String value) {
-        String trimmed = Objects.requireNonNull(value, "player id must not be null").strip();
+        String trimmed = DomainValidation.requireNonNull(value, "player id must not be null").strip();
         if (trimmed.isEmpty()) {
-            throw new IllegalArgumentException("player id must not be blank");
+            throw new InvalidDomainObjectError("player id must not be blank");
         }
         if (!trimmed.startsWith(PREFIX)) {
-            throw new IllegalArgumentException(
+            throw new InvalidDomainObjectError(
                     "player id must start with prefix '%s', got '%s'".formatted(PREFIX, trimmed));
         }
         if (trimmed.length() == PREFIX.length()) {
-            throw new IllegalArgumentException(
+            throw new InvalidDomainObjectError(
                     "player id must have a non-empty body after prefix '%s', got '%s'".formatted(PREFIX, trimmed));
         }
         if (trimmed.codePoints().anyMatch(Character::isWhitespace)) {
-            throw new IllegalArgumentException(
+            throw new InvalidDomainObjectError(
                     "player id must be a single token without whitespace, got '%s'".formatted(trimmed));
         }
         this.value = trimmed;

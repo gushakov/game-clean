@@ -45,7 +45,9 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
-  `item/`), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
+  `item/`) plus the `model/` root holding the always-valid construction gate's failure type
+  `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
+  arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
   `port/id/`, `port/randomness/`, `port/seed/` — the latter holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
   a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`).
