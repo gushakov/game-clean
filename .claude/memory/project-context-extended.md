@@ -33,6 +33,13 @@ Established by the scenes persistence spike, repeated verbatim for the player ag
   mapstruct).
 - **Writes vs reads** — writes are inserts via `JdbcAggregateTemplate.insert` (assigned String
   ids would otherwise be treated as updates); reads via the repository.
+- **Exception translation** — each adapter method wraps Spring's `DataAccessException` into
+  `PersistenceOperationsError`. The catch is **narrow** (`DataAccessException`, not `Exception`), so a stray
+  programming bug rides raw to the use case's catch-all instead of being mislabelled a persistence fault. The
+  **read** methods (`findScene`/`findPlayer`/`findItemsInScene`) catch `DataAccessException |
+  InvalidDomainObjectError`: a corrupt stored row fails the validating constructors during reconstitution, and
+  that is an *integrity fault* of the port (the store is valid by provenance), so it too becomes a
+  `PersistenceOperationsError` — never a domain-input invalidity (design-notes §2/§3).
 - **Schema (Flyway)** — migrations in `src/main/resources/db/migration/` (`V1` = `scene` + `exit`,
   `V2` = `player`). A composite PK on an owned child `(scene_id, name)` enforces a domain uniqueness
   invariant at the DB level. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
@@ -76,6 +83,12 @@ caught at the use case's outermost checkpoint; there is deliberately no `rollbac
   `doAfterCommit` runs immediately when no tx is active; `doAfterRollback` is a **no-op** when none
   is active. **No cache coupling** (project has no cache); the methodology's
   `CacheInvalidationOnRollback` seam is added only when a cache appears.
+- Demarcation faults have their own currency — a begin/commit/unexpected-rollback failure surfaces as a Spring
+  `TransactionException`, which the two `doInTransaction*` methods catch **narrowly** (`TransactionException`,
+  never `Exception`) and wrap into `core/port/transaction/TransactionOperationsError` (unchecked, mirroring
+  `PersistenceOperationsError`). Narrow on purpose: the action running inside already throws
+  `PersistenceOperationsError`, so a broad catch would double-wrap it and swallow the rollback trigger — the
+  inverse of the persistence read adapter's deliberately wider catch (design-notes §5).
 - Wiring — `infrastructure/transaction/TransactionConfig` declares both `TransactionTemplate` beans
   (read-write `@Primary` + `@Qualifier("read-only")`) and the adapter as an explicit `@Bean`.
 - Deliberately **leaner than `cargo-clean`'s** legacy adapter: dropped its `*WithResult`
@@ -125,7 +138,8 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   fetches per interaction, never holds the prototype (that would defeat the scope).
 - **Persistence adapter** — `Spring{Aggregate}RepositoryAdapter` (`@Component`): emptiness via
   `repository.count() == 0`, writes via `JdbcAggregateTemplate.insert(mapper.toDbEntity(...))` (insert
-  — ids are assigned); infra exceptions wrapped in `PersistenceOperationsError`.
+  — ids are assigned); Spring `DataAccessException` wrapped in `PersistenceOperationsError`, reads also
+  wrapping a reconstitution `InvalidDomainObjectError` as an integrity fault (see Persistence above).
 - **Game seeding** — split into a *driven source adapter* and a *thin driving adapter*.
   `infrastructure/world/YamlGameSeedSource` implements `GameSeedSourceOperationsOutputPort`: it reads
   `world/scenes.yaml` via `GameSeedYamlReader` + the configured starting scene and returns the `GameSeed`,
@@ -280,3 +294,12 @@ Flyway migration results — never to read or mutate business data.
   use-case gate; the ACL still owns the foreign→domain sourcing, but returns the carrier. The
   boundary-currency rule (invalid-capable carrier inward, valid model outward) is unchanged — the carrier
   just arrives as a return value. Rationale: design-notes §3 (boundary currency, *The parked caveat, realized*).
+  The discriminator behind all three shapes is **provenance, not hexagon side**: valid-by-provenance data
+  (persistence) returns a model and a failed reconstitution is an *integrity fault* wrapped into the port's
+  error; untrusted-external data (the YAML seed) returns an invalid-capable carrier and invalidity flows as a
+  *presented outcome*. The carrier type and the failure currency are one decision. Correspondingly, **every
+  driven port owns an unchecked `*OperationsError`** (`PersistenceOperationsError`,
+  `TransactionOperationsError`, `GameSeedSourceOperationsError`) and its adapter wraps its framework's technical
+  exceptions into it — the catch *width* set by whether the callee is already translated (persistence widens to
+  also catch a reconstitution `InvalidDomainObjectError`; the transaction adapter narrows to `TransactionException`
+  only). Rationale: design-notes §2/§3/§5.

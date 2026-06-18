@@ -19,10 +19,14 @@ import java.io.InputStream;
  * machinery lives — confined to the infrastructure ring, behind the port the use case pulls through.
  *
  * <p>The reader stays a separate collaborator (it owns the parse + authoring-syntax normalization); this
- * adapter owns the <em>sourcing</em> — config resolution, resource I/O, and translating an {@link IOException}
- * into the unchecked {@link GameSeedSourceOperationsError} the port contract declares. A missing or broken
- * seed therefore reaches the use case's outermost checkpoint and is presented, rather than failing startup
- * from inside this adapter — uniform with how a persistence fault is handled.
+ * adapter owns the <em>sourcing</em> — config resolution, resource I/O, and translating every technical
+ * failure into the unchecked {@link GameSeedSourceOperationsError} the port contract declares. That covers
+ * both the {@link IOException} of an unreadable resource <em>and</em> the runtime failures the reader raises
+ * on a malformed document (a SnakeYAML parse error, a non-numeric chance fraction, a structurally-wrong
+ * node). The catch can be this broad safely because the reader touches no domain model — it returns only
+ * {@code *Entry} carriers — so nothing it throws is a domain exception that would be wrongly swallowed. A
+ * missing or broken seed therefore reaches the use case's outermost checkpoint and is presented, rather than
+ * failing startup from inside this adapter — uniform with how a persistence fault is handled.
  *
  * <p>It does <b>not</b> touch the domain model — no {@code Scene}, no {@code ItemId}: it returns the
  * possibly-invalid {@code *Entry} carriers, leaving the validity gate to the use case.
@@ -42,9 +46,9 @@ public class YamlGameSeedSource implements GameSeedSourceOperationsOutputPort {
         log.info("[GameSeed] Loading the authored seed from {} with starting scene {}", seed, startingSceneId);
         try (InputStream in = seed.getInputStream()) {
             return reader.read(in, startingSceneId);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             throw new GameSeedSourceOperationsError(
-                    "could not read the game seed from %s".formatted(seed), e);
+                    "could not read or parse the game seed from %s".formatted(seed), e);
         }
     }
 }

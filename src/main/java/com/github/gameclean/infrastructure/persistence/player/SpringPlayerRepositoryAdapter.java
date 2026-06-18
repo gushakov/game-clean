@@ -1,11 +1,13 @@
 package com.github.gameclean.infrastructure.persistence.player;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.stereotype.Component;
 
@@ -14,9 +16,15 @@ import java.util.Optional;
 /**
  * Spring Data JDBC-backed implementation of {@link PlayerRepositoryOperationsOutputPort} — the driven
  * adapter for player persistence. It hides its shape entirely: {@link PlayerDbEntity} and
- * {@link PlayerDbEntityMapper} never cross the boundary, and any Spring or JDBC exception is wrapped
- * in the core's {@link PersistenceOperationsError} so callers see only domain types and a single
+ * {@link PlayerDbEntityMapper} never cross the boundary, and Spring's {@link DataAccessException} is
+ * wrapped in the core's {@link PersistenceOperationsError} so callers see only domain types and a single
  * unchecked failure mode.
+ *
+ * <p>The catch is narrow ({@code DataAccessException}, not {@code Exception}) so a stray programming bug
+ * rides raw to the use case's catch-all instead of masquerading as a persistence fault. {@code findPlayer}
+ * additionally catches {@link InvalidDomainObjectError}: a corrupt stored row fails the validating
+ * constructors during reconstitution, and that is an integrity fault of this port — so it too becomes a
+ * {@code PersistenceOperationsError}. (See {@code SpringSceneRepositoryAdapter} for the full rationale.)
  *
  * <p>{@code savePlayer} is an <em>upsert</em>: player ids are assigned (never null), so Spring Data JDBC's
  * {@code save} cannot tell a new player from an existing one — it would always attempt an update. The
@@ -38,8 +46,9 @@ public class SpringPlayerRepositoryAdapter implements PlayerRepositoryOperations
     public Optional<Player> findPlayer(PlayerId id) {
         try {
             return repository.findById(id.getValue()).map(mapper::toDomain);
-        } catch (Exception e) {
-            throw new PersistenceOperationsError("Cannot load player %s".formatted(id.getValue()), e);
+        } catch (DataAccessException | InvalidDomainObjectError e) {
+            throw new PersistenceOperationsError(
+                    "Cannot load player %s (unreadable or corrupt)".formatted(id.getValue()), e);
         }
     }
 
@@ -54,7 +63,7 @@ public class SpringPlayerRepositoryAdapter implements PlayerRepositoryOperations
                 aggregateTemplate.insert(entity);
                 log.debug("[Persistence] Inserted player {}", player.getId().getValue());
             }
-        } catch (Exception e) {
+        } catch (DataAccessException e) {
             throw new PersistenceOperationsError(
                     "Cannot save player %s".formatted(player.getId().getValue()), e);
         }

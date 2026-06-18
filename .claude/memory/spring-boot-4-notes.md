@@ -130,3 +130,10 @@ runners (`@Order(1)` seed, `@Order(2)` console) in one config class. (Confirmed 
 - `@AutoConfiguration` + `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
   as the autoconfig registration mechanism — this was the **3.0** change (replacing
   `spring.factories`); 4.0 keeps it, just one `.imports` per module now.
+- **The Spring Framework exception hierarchies did not move.** `org.springframework.dao.DataAccessException`
+  (spring-jdbc/spring-tx) and `org.springframework.transaction.TransactionException` /
+  `CannotCreateTransactionException` are in their 3.x packages on Boot 4.0.6. The Boot-4 modularization split
+  *Boot's own* autoconfigure & test-slice jars, not Spring Framework's core types — so driven-adapter
+  exception wrapping (`catch (DataAccessException …)`, `catch (TransactionException)`) compiles against the
+  same imports as 3.x. **[hit]** (confirmed by `mvn verify` while wrapping the persistence/transaction
+  adapters into port error types, issue #29).
