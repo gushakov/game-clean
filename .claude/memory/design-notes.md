@@ -111,17 +111,29 @@ instead of being mislabelled "invalid parameters". The boundary is drawn on purp
 `ItemTemplate.spawnInto`), because a null collaborator handed to a side-effect-free function is
 a *caller* programming error, not invalid domain *input*. Two failure categories, two signals.
 
-**Reconstitution shares the one gate — by choice, not accident.** `[thread #2]` The persistence
-mappers rebuild VOs and aggregates through the same constructors, so a corrupt stored row now
-throws `InvalidDomainObjectError` too, riding the use case's outermost `catch` to `presentError`
-exactly as the old raw exception did. We weighed rewrapping reads into a distinct
-`PersistenceOperationsError` — to keep "bad authored input" (a presented invalid-input outcome)
-separate from "corrupt persisted data" (an integrity fault) — and **deferred it**: the read-path
-failure is presented generically regardless, the aggregate rebuild is MapStruct-generated (so the
-wrap is not a one-liner), and one construction gate is the simpler invariant until a real need to
-tell the two apart appears. `InvalidDomainObjectError` is unchecked, like
-`PersistenceOperationsError` (§5), so it composes through the transaction template and triggers
-rollback on the rare construction that runs inside one.
+**Reconstitution failure is an integrity fault — wrapped, not shared with the input gate.** `[thread #2]`
+The persistence mappers rebuild VOs and aggregates through the same validating constructors, so a corrupt
+stored row fails *there*, throwing `InvalidDomainObjectError`. The question is what that failure *means*, and
+the driven-adapter exception-wrapping work (the driven-side twin of this section's named-error move) settled
+it: a corrupt row is an **integrity fault of the persistence port** — the store, *valid by provenance* (§3),
+handed back something unbuildable — and is emphatically *not* the same thing as a human authoring a blank
+name. So the read-path adapter catch is `catch (DataAccessException | InvalidDomainObjectError) →
+PersistenceOperationsError`: an *unreadable* row and a *corrupt* row are one category — "the repository could
+not deliver a valid aggregate" — wrapped into the port's own currency, while a stray bug (a
+non-`DataAccessException` runtime) rides raw to the use case's catch-all, un-mislabelled.
+
+This **un-defers a parked option**, and the un-defer is the lesson. We had earlier *shared* the one gate —
+let a corrupt row ride to `presentError` as a raw `InvalidDomainObjectError` — and weighed "rewrap reads into a
+distinct `PersistenceOperationsError`" only to defer it on two grounds, both now answered. *"The wrap is not a
+one-liner"* — it **is** (`| InvalidDomainObjectError`, because the failure surfaces out of the
+MapStruct-generated `toDomain` *whole*, not constructor-by-constructor). *"No real need to tell the two apart"*
+— the labeling analysis **is** the need: lumping an integrity fault together with a *presented* input outcome
+under one `InvalidDomainObjectError` is the more dangerous conflation, and would let a future use case that
+wraps a read in an `InvalidDomainObjectError` gate mislabel a corrupt row as invalid authored input. Both types
+stay unchecked, like `PersistenceOperationsError` (§5), so either composes through the transaction template and
+triggers rollback on the rare construction that runs inside one. (Promotion candidate, flagged not promoted:
+*a reconstitution failure is an integrity fault, wrapped into the persistence port's currency — never the
+input gate's type*.)
 
 **The "single source of truth" conundrum — and its resolution.** An always-valid id VO
 appears to need to validate the very character pattern that the *infrastructure* id
@@ -256,6 +268,33 @@ driven-returns-models / driving-pushes-DTOs symmetry now carries a documented ex
 exactly the kind of finding this showcase exists to surface. The decisive consequence elsewhere: with
 the seed pulled *inside* the use case, a seed-source failure is **presented** (caught at the outermost
 checkpoint), uniform with a persistence fault, rather than failing startup from an adapter — see §6.
+
+**Provenance is the real discriminator — and the failure currency falls out of it.** `[thread #2]` Stepping
+back from the three shapes above, the line that actually decides *valid model out vs invalid-capable carrier*
+is **not** driven-vs-driving (the seed is driven yet returns a carrier) but the **provenance / trust of the
+data**. The driven-adapter exception-wrapping work made this precise by asking one question of each port —
+*what does a failure to produce a valid domain object mean here?* — and the answers split cleanly:
+- **Valid-by-provenance (persistence).** The domain wrote this row through the gate; reconstitution is a
+  defensive corruption check, and a row that fails it is an **integrity fault**, never a presented outcome
+  (nobody shows a player "your saved scene has a blank name"). So the **model** is the natural return type, and
+  a reconstitution failure is wrapped into the port's `PersistenceOperationsError` (§2) — distinct from any
+  domain-input invalidity.
+- **Untrusted-external (the YAML seed).** Invalidity here *is* a first-class, **presented** domain outcome the
+  use case must test and branch on. So the carrier must be able to *hold* invalid state, construction is
+  deferred to the use-case gate, and invalidity flows as a *domain outcome* — never wrapped as an infra fault.
+
+So the dichotomy is not a stylistic wart you tolerate but a **consequence**: the carrier type and the failure
+currency are the *same decision seen twice*, both read off provenance. The one residual asymmetry — a
+persistence adapter must *have an opinion* about a reconstitution failure, while the YAML adapter has none
+because it never constructs — is not a leak: owning "I couldn't reconstitute a valid aggregate" is the same
+job as "reconstitute the aggregate," i.e. the repository pattern earning its keep. We did consider relegating
+persistence mapping to the use case (returning flat DTOs, hand-built into models like the seed's `*Entry`) to
+*remove* the adapter's construction step and so dissolve the exception-labeling tension — and **rejected it**:
+it guts the repository pattern, forces hand-rolled graph reassembly per aggregate with no MapStruct, and the
+§3 testability dividend that *justifies* the carrier on the input side is **absent** here (corrupt persisted
+data is never a presented outcome to test against). The labeling fidelity that refactor would buy costs **one
+line** of union catch instead (§2). (Promotion candidate, flagged: *provenance, not hexagon side, decides the
+boundary currency; the carrier type and the failure currency are one decision*.)
 
 ## 4. Use cases as first-class interactions
 
@@ -456,6 +495,23 @@ This reverses an earlier "checked on purpose" convention; the alternative (keep 
 bridge via `setRollbackOnly()` + wrap/unwrap in the adapter) was rejected as ceremony that
 lets transaction convenience quietly reverse a domain contract. Unchecked also lets
 persistence actions compose as plain `Runnable`/`Supplier` inside the port.
+
+**The transaction port has its own failure currency — wrapped *narrowly*, the inverse of persistence.**
+`[thread #3]` Like the persistence and seed ports, the transaction port translates its framework's exceptions
+into a port type: a fault in *demarcation* — begin with no connection, a failed commit, an unexpected rollback
+— surfaces from Spring as a `TransactionException` and is wrapped into the port's own
+`TransactionOperationsError`, so no use case ever catches a raw `org.springframework.transaction.*` type. (A
+distinct type, not a reused `PersistenceOperationsError`: failing to *demarcate* a transaction is the
+transaction port's concern, not the persistence port's, and each driven port owning its boundary type is the
+§3 symmetry.) The subtlety that sets it apart from persistence: the adapter catches `TransactionException`
+**specifically, never `Exception`** — because the action running *inside* the transaction already throws a
+port type (`PersistenceOperationsError`), so a broad catch would both *double-wrap* it and swallow the very
+runtime exception that triggers Spring's rollback. This is the **exact inverse** of the persistence read
+adapter, which catches *broadly enough* to also wrap a reconstitution `InvalidDomainObjectError` (§2): a
+persistence adapter can widen its catch because nothing it calls is pre-translated, while the transaction
+adapter must narrow its catch *because its callee is*. Two driven ports, opposite catch widths, one
+principle — **wrap your own framework's faults, never your callee's already-wrapped ones**. (Promotion
+candidate, flagged: *catch width is set by whether the callee is already translated*.)
 
 **The one read that belongs *inside* the transaction.** `[thread #3]` The seed-if-empty
 `worldIsEmpty()` guard sits inside the same transaction as the writes, not outside with the

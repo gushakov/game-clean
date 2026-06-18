@@ -74,8 +74,10 @@ Game initialization **complete** — one `InitializeGame` use case (world + play
   on one `presentGameInitialized`; a seed/world that fails stops the interaction before any write, and a
   seed-source failure is presented like a persistence fault (design-notes §3/§4/§6).
 - **Ports** — `SceneRepositoryOperationsOutputPort` (persistence), `TransactionOperationsOutputPort`
-  (tx), `GameSeedSourceOperationsOutputPort` (`core/port/seed/`, pulls the authored seed); all unchecked
-  errors (`PersistenceOperationsError`, `GameSeedSourceOperationsError`).
+  (tx), `GameSeedSourceOperationsOutputPort` (`core/port/seed/`, pulls the authored seed); each port owns an
+  unchecked boundary error (`PersistenceOperationsError`, `TransactionOperationsError`,
+  `GameSeedSourceOperationsError`) — every driven adapter wraps its framework's technical exceptions into one,
+  so a use case never catches a raw Spring/JDBC/YAML type (design-notes §2/§3/§5).
 - **Persistence** — Flyway schema (`scene`/`exit`), Spring Data JDBC `*DbEntity`s, MapStruct mapper, and
   `SpringSceneRepositoryAdapter` implementing the port (`infrastructure/persistence/scene/`). Local
   Postgres service + schema-only read-only MCP.
