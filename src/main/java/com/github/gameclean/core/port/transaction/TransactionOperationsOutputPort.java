@@ -16,6 +16,10 @@ import java.util.function.Supplier;
  *   <li><b>Failure is expressed by throwing</b> — an unchecked error thrown inside the action rolls
  *       the transaction back and propagates to the use case's single outermost checkpoint. There is
  *       deliberately no {@code rollback()} method.</li>
+ *   <li><b>The machinery has its own failure currency</b> — a fault in <em>demarcation</em> (begin,
+ *       commit, or unexpected rollback), as opposed to a fault in the action, surfaces as a
+ *       {@link TransactionOperationsError}, this port's own boundary type. The adapter translates the
+ *       underlying framework exception so the use case never catches a raw transaction exception.</li>
  * </ul>
  *
  * <p>Actions are plain {@link Runnable} / {@link Supplier}: persistence ports raise <em>unchecked</em>

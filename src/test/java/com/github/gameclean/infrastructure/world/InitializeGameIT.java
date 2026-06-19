@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
+import com.github.gameclean.infrastructure.persistence.clock.GameClockSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.item.ItemSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.player.PlayerSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
@@ -47,9 +48,13 @@ class InitializeGameIT extends AbstractPostgresIT {
     @Autowired
     private ItemSpringDataRepository itemRepository;
 
+    @Autowired
+    private GameClockSpringDataRepository gameClockRepository;
+
     @AfterEach
     void cleanUp() {
         itemRepository.deleteAll();
+        gameClockRepository.deleteAll();
         playerRepository.deleteById(SEEDED_PLAYER_ID);
         SEED_IDS.forEach(sceneRepository::deleteById);
     }
@@ -64,6 +69,9 @@ class InitializeGameIT extends AbstractPostgresIT {
         assertThat(sceneRepository.findById("scn2")).isPresent();
         assertThat(playerRepository.findById(SEEDED_PLAYER_ID)).isPresent()
                 .get().satisfies(player -> assertThat(player.getCurrentSceneId()).isEqualTo("scn1"));
+        // the world clock is created at time zero ...
+        assertThat(gameClockRepository.count()).isEqualTo(1);
+        assertThat(gameClockRepository.findAll().iterator().next().getAccumulatedGameSeconds()).isZero();
         long itemsAfterFirstRun = itemRepository.count();
 
         // ... a second run finds world, player and items already present and writes no duplicate rows —
@@ -73,5 +81,7 @@ class InitializeGameIT extends AbstractPostgresIT {
         assertThat(sceneRepository.count()).isEqualTo(4);
         assertThat(playerRepository.count()).isEqualTo(1);
         assertThat(itemRepository.count()).isEqualTo(itemsAfterFirstRun);
+        // the clock is not re-created and stays a single row at zero
+        assertThat(gameClockRepository.count()).isEqualTo(1);
     }
 }

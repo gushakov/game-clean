@@ -1,9 +1,9 @@
 package com.github.gameclean.core.model.scene;
 
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-
-import java.util.Objects;
 
 /**
  * A way out of a {@link Scene} — a Value Object owned by its source scene.
@@ -25,11 +25,11 @@ public class Exit {
     private final SceneId target;
 
     public Exit(String name, SceneId target) {
-        String trimmed = Objects.requireNonNull(name, "exit name must not be null").strip();
+        String trimmed = DomainValidation.requireNonNull(name, "exit name must not be null").strip();
         if (trimmed.isEmpty()) {
-            throw new IllegalArgumentException("exit name must not be blank");
+            throw new InvalidDomainObjectError("exit name must not be blank");
         }
         this.name = trimmed;
-        this.target = Objects.requireNonNull(target, "exit target must not be null");
+        this.target = DomainValidation.requireNonNull(target, "exit target must not be null");
     }
 }

@@ -90,9 +90,50 @@ any database exists, which is the whole point of the dependency rule.
 ## 2. The always-valid model, and where validation lives
 
 **Principle.** Domain entities and VOs are immutable and *always-valid*: a constructor
-either yields a fully-legal object or throws. Validation is JDK-only (`requireNonNull`
-+ explicit `IllegalArgumentException`); equality is by id for aggregate roots, by value
-for VOs. (Exact Lombok shape → `project-context-extended.md`.)
+either yields a fully-legal object or throws. The throw is a single named domain type,
+`InvalidDomainObjectError` (in `core/model/`), raised through the small `DomainValidation`
+helper rather than a raw `NullPointerException`/`IllegalArgumentException`; equality is by id
+for aggregate roots, by value for VOs. (Exact Lombok shape → `project-context-extended.md`.)
+
+**Why a *named* construction failure — and what it deliberately does not cover.** The
+always-valid model makes construction *the* validity gate, so the gate's failure deserves a
+domain-meaningful type, not a JDK exception each caller must remember to translate. This
+**reverses an earlier "validation is JDK-only" stance**: every constructor and static factory
+now throws `InvalidDomainObjectError`, and the use-case gate catches *that one type* —
+`InitializeGame`'s three construction checkpoints went from
+`catch (IllegalArgumentException | NullPointerException)` to `catch (InvalidDomainObjectError)`.
+The payoff is the §6 principle applied to validation — *remove the affordance* (an untranslated
+JDK exception leaking past the gate) rather than forbid the misuse — plus a sharper catch: a
+stray `NullPointerException` bug inside a construction block now falls through to `presentError`
+instead of being mislabelled "invalid parameters". The boundary is drawn on purpose:
+**construction throws the named type; behaviour-method argument guards stay plain
+`Objects.requireNonNull`/NPE** (`Scene.exitsWithTargetNotIn`, `SpawnRule.rollPlacements`,
+`ItemTemplate.spawnInto`), because a null collaborator handed to a side-effect-free function is
+a *caller* programming error, not invalid domain *input*. Two failure categories, two signals.
+
+**Reconstitution failure is an integrity fault — wrapped, not shared with the input gate.** `[thread #2]`
+The persistence mappers rebuild VOs and aggregates through the same validating constructors, so a corrupt
+stored row fails *there*, throwing `InvalidDomainObjectError`. The question is what that failure *means*, and
+the driven-adapter exception-wrapping work (the driven-side twin of this section's named-error move) settled
+it: a corrupt row is an **integrity fault of the persistence port** — the store, *valid by provenance* (§3),
+handed back something unbuildable — and is emphatically *not* the same thing as a human authoring a blank
+name. So the read-path adapter catch is `catch (DataAccessException | InvalidDomainObjectError) →
+PersistenceOperationsError`: an *unreadable* row and a *corrupt* row are one category — "the repository could
+not deliver a valid aggregate" — wrapped into the port's own currency, while a stray bug (a
+non-`DataAccessException` runtime) rides raw to the use case's catch-all, un-mislabelled.
+
+This **un-defers a parked option**, and the un-defer is the lesson. We had earlier *shared* the one gate —
+let a corrupt row ride to `presentError` as a raw `InvalidDomainObjectError` — and weighed "rewrap reads into a
+distinct `PersistenceOperationsError`" only to defer it on two grounds, both now answered. *"The wrap is not a
+one-liner"* — it **is** (`| InvalidDomainObjectError`, because the failure surfaces out of the
+MapStruct-generated `toDomain` *whole*, not constructor-by-constructor). *"No real need to tell the two apart"*
+— the labeling analysis **is** the need: lumping an integrity fault together with a *presented* input outcome
+under one `InvalidDomainObjectError` is the more dangerous conflation, and would let a future use case that
+wraps a read in an `InvalidDomainObjectError` gate mislabel a corrupt row as invalid authored input. Both types
+stay unchecked, like `PersistenceOperationsError` (§5), so either composes through the transaction template and
+triggers rollback on the rare construction that runs inside one. (Promotion candidate, flagged not promoted:
+*a reconstitution failure is an integrity fault, wrapped into the persistence port's currency — never the
+input gate's type*.)
 
 **The "single source of truth" conundrum — and its resolution.** An always-valid id VO
 appears to need to validate the very character pattern that the *infrastructure* id
@@ -227,6 +268,33 @@ driven-returns-models / driving-pushes-DTOs symmetry now carries a documented ex
 exactly the kind of finding this showcase exists to surface. The decisive consequence elsewhere: with
 the seed pulled *inside* the use case, a seed-source failure is **presented** (caught at the outermost
 checkpoint), uniform with a persistence fault, rather than failing startup from an adapter — see §6.
+
+**Provenance is the real discriminator — and the failure currency falls out of it.** `[thread #2]` Stepping
+back from the three shapes above, the line that actually decides *valid model out vs invalid-capable carrier*
+is **not** driven-vs-driving (the seed is driven yet returns a carrier) but the **provenance / trust of the
+data**. The driven-adapter exception-wrapping work made this precise by asking one question of each port —
+*what does a failure to produce a valid domain object mean here?* — and the answers split cleanly:
+- **Valid-by-provenance (persistence).** The domain wrote this row through the gate; reconstitution is a
+  defensive corruption check, and a row that fails it is an **integrity fault**, never a presented outcome
+  (nobody shows a player "your saved scene has a blank name"). So the **model** is the natural return type, and
+  a reconstitution failure is wrapped into the port's `PersistenceOperationsError` (§2) — distinct from any
+  domain-input invalidity.
+- **Untrusted-external (the YAML seed).** Invalidity here *is* a first-class, **presented** domain outcome the
+  use case must test and branch on. So the carrier must be able to *hold* invalid state, construction is
+  deferred to the use-case gate, and invalidity flows as a *domain outcome* — never wrapped as an infra fault.
+
+So the dichotomy is not a stylistic wart you tolerate but a **consequence**: the carrier type and the failure
+currency are the *same decision seen twice*, both read off provenance. The one residual asymmetry — a
+persistence adapter must *have an opinion* about a reconstitution failure, while the YAML adapter has none
+because it never constructs — is not a leak: owning "I couldn't reconstitute a valid aggregate" is the same
+job as "reconstitute the aggregate," i.e. the repository pattern earning its keep. We did consider relegating
+persistence mapping to the use case (returning flat DTOs, hand-built into models like the seed's `*Entry`) to
+*remove* the adapter's construction step and so dissolve the exception-labeling tension — and **rejected it**:
+it guts the repository pattern, forces hand-rolled graph reassembly per aggregate with no MapStruct, and the
+§3 testability dividend that *justifies* the carrier on the input side is **absent** here (corrupt persisted
+data is never a presented outcome to test against). The labeling fidelity that refactor would buy costs **one
+line** of union catch instead (§2). (Promotion candidate, flagged: *provenance, not hexagon side, decides the
+boundary currency; the carrier type and the failure currency are one decision*.)
 
 ## 4. Use cases as first-class interactions
 
@@ -400,6 +468,52 @@ its implementation *logs* (to file; see §7). The eventual player "welcome" is a
 interaction with its *own* presentation port, which keeps output-port granularity honest
 rather than overloading one port with two audiences.
 
+**A use case never mints-and-throws to its own catch-all.** `[thread #4]` An anticipated absence — an
+`Optional` the flow checks (a missing world-singleton, a dangling reference) — is a *presented outcome*:
+branch, call a dedicated `present*`, and `return`. It is **never** `orElseThrow(() -> new <JdkException>())`
+routed to the outermost `catch (Exception) → presentError`. That shortcut conflates three doctrinally-separate
+things: it expresses an *anticipated* outcome by *throwing* (against this section's "express outcomes by
+presenting"); it injects a *raw JDK technical exception* into the core — the very thing the named
+`InvalidDomainObjectError` moved away from (§2) and the wrapping discipline forbids (only adapters mint
+port-error types, by wrapping their framework's faults — §3/§5); and it launders a known condition through the
+*humble catch-all* (`ErrorHandlingPresenterOutputPort.presentError`) reserved for the unforeseen and for
+already-wrapped port faults propagating from below. It also quietly erodes **unidirectional flow**: a
+self-thrown exception is one narrowed `catch` (or one moved line) away from escaping to the controller,
+whereas branch-and-present *structurally cannot* leak. The discriminator for every `Optional`/absence in a use
+case: classify it as **outcome** (present + return) or **fault-from-below** (a *named, wrapped* port error an
+adapter already threw, which simply propagates to `presentError`) — there is no third "mint a raw exception
+and catch it myself" category. The surfacing case: `AskForTime`/`SuspendGame` first reached for
+`findClock().orElseThrow(IllegalStateException::new)`, defended by a *post-hoc* comment ("an integrity fault,
+not a presented outcome") — the rationalization-after-the-shortcut was the tell — and was corrected to
+`presenter.presentGameNotInitialized(); return;`. **Code smell to grep:** a bare `throw new
+IllegalStateException/IllegalArgumentException(...)` or `orElseThrow(() -> new <jdk-exception>)` inside a
+`core/usecase` class — a mechanical lint that catches this without depending on reviewer vigilance. (Promotion
+candidate for `clean-ddd-core`, flagged not promoted.)
+
+**"Is the game initialized?" is not one outcome — readiness decomposes into per-aggregate clusters.**
+`[thread #2]` When the clock-readiness check arrived, the tempting generalization was a single
+`presentGameNotInitialized()` that every play use case calls through one shared gate. That is a **false
+superset**: a use case only ever checks the precondition on *the state it actually reads* (the `orient`
+prologue checks player + current scene because `look`/`move` read those; `now`/`bye` check the clock because
+they read that), and *no interaction reads the whole world*, so none can honestly evaluate "is the game
+initialized." A single gate would also collapse distinctions `orient` deliberately keeps (player-not-found ≠
+dangling-current-scene). So readiness lives as **sibling presenter clusters keyed to shared sub-state** —
+`OrientPlayerPresenterOutputPort` for player+scene, a small `ClockReadinessPresenterOutputPort` (one outcome,
+`presentGameNotInitialized`) shared by the two clock use cases — each extending `ErrorHandlingPresenterOutputPort`
+*directly*, by interface extension, exactly as the orient cluster is. No common `GameReadinessPresenterOutputPort`
+super-interface is hoisted above them: the clusters share no *method* (player-not-found is not clock-not-ready),
+so a super would be an empty marker or force the collapse just rejected — it waits for a third cluster that
+genuinely shares an outcome (emergence). And the *check logic* is not subcased: at one line per use case it
+stays inline (the `orient` subcase earned itself with a multi-step prologue and 2+ consumers; a one-line clock
+load does not). This sharpens thread #2: **output-port granularity tracks *(audience × distinguishable
+outcomes)*** — shared outcomes factor by interface extension keyed to shared sub-state, never a false superset
+and never a grab-bag god-presenter. The same cut explains why the **producer** and **consumer** sides of the
+same invariants stay on separate ports: `InitializeGame` reports authoring/consistency failures (a dangling
+exit target, an unknown starting scene) to an **operator/log** audience at *build* time, while the play use
+cases report readiness gaps to a **player** audience at *play* time — same invariant guarded twice, two
+audiences, two homes; merging them would be the same overload the system-seeder's logging presenter was kept
+apart to avoid (above). (Promotion candidate, flagged not promoted.)
+
 ## 5. Explicit transaction demarcation
 
 **Principle.** Transactions are demarcated *explicitly* through a
@@ -427,6 +541,23 @@ This reverses an earlier "checked on purpose" convention; the alternative (keep 
 bridge via `setRollbackOnly()` + wrap/unwrap in the adapter) was rejected as ceremony that
 lets transaction convenience quietly reverse a domain contract. Unchecked also lets
 persistence actions compose as plain `Runnable`/`Supplier` inside the port.
+
+**The transaction port has its own failure currency — wrapped *narrowly*, the inverse of persistence.**
+`[thread #3]` Like the persistence and seed ports, the transaction port translates its framework's exceptions
+into a port type: a fault in *demarcation* — begin with no connection, a failed commit, an unexpected rollback
+— surfaces from Spring as a `TransactionException` and is wrapped into the port's own
+`TransactionOperationsError`, so no use case ever catches a raw `org.springframework.transaction.*` type. (A
+distinct type, not a reused `PersistenceOperationsError`: failing to *demarcate* a transaction is the
+transaction port's concern, not the persistence port's, and each driven port owning its boundary type is the
+§3 symmetry.) The subtlety that sets it apart from persistence: the adapter catches `TransactionException`
+**specifically, never `Exception`** — because the action running *inside* the transaction already throws a
+port type (`PersistenceOperationsError`), so a broad catch would both *double-wrap* it and swallow the very
+runtime exception that triggers Spring's rollback. This is the **exact inverse** of the persistence read
+adapter, which catches *broadly enough* to also wrap a reconstitution `InvalidDomainObjectError` (§2): a
+persistence adapter can widen its catch because nothing it calls is pre-translated, while the transaction
+adapter must narrow its catch *because its callee is*. Two driven ports, opposite catch widths, one
+principle — **wrap your own framework's faults, never your callee's already-wrapped ones**. (Promotion
+candidate, flagged: *catch width is set by whether the callee is already translated*.)
 
 **The one read that belongs *inside* the transaction.** `[thread #3]` The seed-if-empty
 `worldIsEmpty()` guard sits inside the same transaction as the writes, not outside with the
@@ -614,6 +745,23 @@ layering the second site forced into the open: `Console` is **domain-agnostic** 
 text and the terminal, never `Scene`); turning a `Scene` into styled output is *presenter* logic and
 lives in `CurrentSceneRenderer`, one layer up.
 
+**A third composition layer, and grammar as a static helper — not an abstract method.** `[thread #2]` The
+`now`/`time` interaction extended this two-layer split (domain-agnostic `Console`; domain-aware
+`CurrentSceneRenderer`) with a **third, even-more-generic layer beneath**: a pure `English` grammar helper
+(ordinals, singular/plural) that knows neither the terminal nor the domain. Rendering a date composes all
+three — `CalendarRenderer` (domain-aware: resolves month/weekday names against the calendar, does 1-based
+counting) over `Console` (terminal styling) over `English` (language). The boundary is sharp: the **model
+supplies names and numbers** (language-neutral — a `GameDate` holds 0-based integers; `Month`/`Weekday` carry
+authored names), the **presenter supplies grammar, labels and 1-based counting** ("the 6th day", "15 hours").
+Ordinals/plurals are a *third placement category* beyond §10's model-rule-vs-use-case-orchestration: not a
+domain rule and not orchestration but **locale/grammar**, unambiguously presentation. And because each is a
+pure function of an `int`, its home is a **stateless static helper composed in** — never a method on a domain
+object, never an abstract hook on a presenter base class, the same composition-over-inheritance stance §6
+takes against presenter base classes. The reuse is structural: the anniversary message ("your 4th
+anniversary") and weather text will compose the same `English` helper with no inheritance. (A faithfulness
+note the radices forced: with no minutes radix, the clock label is "N hours and M seconds into the day", not
+an `HH:MM` that would assume 60.)
+
 ## 8. Trajectory: from synchronous to loop-driven concurrency
 
 **Start synchronous; let concurrency arrive only when the domain demands it.** `[thread #3]`
@@ -754,6 +902,94 @@ use-case test.
   `KnownScenes` / `SceneCatalog` VO with `contains` / `unknownAmong` would unify both resolvers, but minting
   it on two uses spends entropy the parameter already covers; held until a *third* resolver appears or until
   "scene existence" grows behaviour (resolving to actual `Scene`s, world-wide dangling reports).
+
+---
+
+## 11. Time as a mixed-radix value — the calendar owns the arithmetic
+
+**Principle.** Game time is authored as a calendar of *uniform fixed radices* — seconds per hour, hours per
+day, days per month, and the ordered named cycles of weekdays and months (the year's length *is* the month
+count). Because one real second is one game second, a date is a **pure function of elapsed seconds**: a
+mixed-radix positional number, decomposed on demand by repeated `divmod` down the ladder, never ticked and
+never stored. The decomposition lives on `GameCalendar.placeInstant`, **not** in a use case, because the
+calendar owns the radices — this is §10 in a new guise: the eventual "what is the date?" use case will
+*orchestrate* (fetch elapsed seconds, ask the calendar to place them, hand the result to a presenter) while
+the arithmetic stays computation on the model.
+
+**A domain choice decided where a computation lives — the sharpest finding.** `[thread #1]` `GameDate` is a
+pure positional tuple `{year, monthIndex, dayIndex, hourIndex, secondOfHour}` and is minted minimal: it stores
+no month or weekday *names* (resolved against the calendar — `monthOf`, `weekdayOf`), and — the cutting case —
+no weekday *index* either. The reason is not tidiness, it is the week's semantics. Under a **per-month-reset**
+week, weekday is `dayIndex % weekLength` — local to the date, cheap to store on it. We chose a **continuous**
+week instead (weekday = absolute days since the epoch, modulo week length, unbroken across month and year
+boundaries), and that choice *moved the weekday off the value*: a continuous weekday is a total derivation
+from *all* the positional fields plus the radices, i.e. a multi-field computation that belongs on the
+radix-owner as a side-effect-free function, never duplicated onto the value where it could drift from the
+year/month/day it is read off. So a semantic decision about the *domain* (continuous vs reset) settled an
+*architectural* one (stored field vs calendar SEFF), via §2 (do not store derivable state) and §10
+(computation lives with the data it is about). The same logic that keeps the month *name* off the date keeps
+the weekday off it.
+
+**Factory shape A — the range invariant has one knower.** `GameCalendar` is the *sole* factory of `GameDate`
+(`placeInstant`), and `GameDate`'s own construction gate checks only **non-negativity**. Whether a
+`monthIndex` is *within range* needs the calendar's month count — knowledge the value neither holds nor should
+— so the bound is guaranteed by the factory, not re-checked on the value. This is the §2 single-source-of-
+truth resolution wearing different clothes (cf. the `SceneId` prefix-vs-alphabet split): the value owns what
+it can judge alone, the calendar owns the invariant that needs the radices, and there is no drift because
+there is exactly one knower. The deviation from strict always-valid self-sufficiency is deliberate and
+bounded — a `GameDate` is unreachable except by placing an instant.
+
+**Deferred, and the forward fit it sets up.** `[thread #3]` The first slice is VOs + arithmetic only;
+`placeInstant` takes a plain `long`, so the whole calendar is unit-testable with no port, clock, or database.
+Two pieces are parked with their shapes already chosen. (1) When time becomes a *live* query, `now` enters as
+an **output port** — the wall-clock is non-deterministic infrastructure, so stubbing it keeps the use case
+deterministic, exactly the role `RandomnessOperationsOutputPort` plays for spawning (§4); the persisted real
+epoch is the anchor that port's readings are measured against. (2) The authored `calendar:` block is *world
+content*, so it flows through the existing seed carrier and is constructed into a `GameCalendar` at the
+`InitializeGame` gate (§3/§4 — invalid-capable carrier in, valid model out), distinct from operational
+`game.*` configuration. A consequence worth stating because it confirms the wall-clock-derived design: closing
+the game does **not** pause time — elapsed real seconds keep accruing — which is right for a persistent world
+and is the reason the clock is derived rather than stored.
+
+**Model B realized — the clock is *stored and paused*, reversing the wall-clock lean.** `[thread #3]` The
+deferred slice above leaned wall-clock-derived ("closing the game does not pause time… the clock is derived
+rather than stored"). Building the first time-facing interaction (`now`/`time`) **reversed that to Model B —
+accumulated play-time**: game time advances only *while playing*, so the clock is a persisted `GameClock`
+aggregate holding the banked total, and current time is that total *plus* the live session's elapsed seconds.
+The reversal is a **UX call, not an architectural one** — for a sporadically-played single-player game, a
+spell or a store schedule measured against real wall-clock time (with the game closed for days) is surprising;
+pausing on quit is what a player expects. The point that matters for the showcase: **the choice lived entirely
+behind the time-source port and what persistence stored.** `placeInstant(long)` is identical either way, so
+Model A↔B is a localized swap (read an anchor vs bank an accumulator), vindicating the deferral — the model
+needed no change. Banking happens on an explicit `bye` only (no ticker yet); a hard kill loses the current
+session's unbanked seconds, accepted until an autosave/ticker arrives (its teardown is the §6 shutdown-ordering
+forward fit). The session-elapsed figure is wall-clock derived behind `GameTimeSourceOutputPort` (one real
+second = one game second), kept off the model so the time-reading use cases stay deterministic under test —
+the role randomness plays for spawning. And the banking arithmetic (`elapsedWith`/`accumulate`) is the
+**model's**, not the use case's (§10): the use case orchestrates (load clock, ask the session length, save);
+`GameClock` computes.
+
+**The calendar is load-each-boot, and that moved its validity from a presented outcome to a boot fault.**
+`[thread #2]` The authored calendar is *world content* like the scenes, but — decision taken here — it is **not
+persisted**: a `CalendarSourceOperationsOutputPort` loads and constructs it once at boot, held in memory. That
+forced a *documented departure from §3's boundary-currency rule*. §3 says untrusted authored data crosses as an
+invalid-capable carrier so its invalidity is a **presented** outcome; the calendar instead **returns a valid
+`GameCalendar` from the port**, because a non-persisted, cached, multi-reader authored singleton behaves like
+*configuration*, not per-interaction input — re-validating it on every `now` is pointless, and a malformed
+calendar is a boot-time config fault, not something to show a player. So the adapter constructs it eagerly and
+**fails fast at startup**. This adds a *third* discriminator to §3's "provenance decides the currency" finding:
+*persistence* (valid-by-provenance → model out) and *untrusted-pulled-and-presented* (the seed → carrier out)
+are now joined by *untrusted-pulled-but-cached-as-config* (the calendar → model out, fail-fast). The cost was
+chosen with eyes open: load-each-boot over persisting traded a *presented* authoring-validity outcome for a
+*boot* one, and **parked the drift hazard** — radices that change between runs silently reinterpret a stored
+clock; persisting or hashing the calendar is the future guard, taken up if it bites.
+
+**One prefix, content split from config — `game.time.*`.** The calendar's *content* (radices, named cycles) is
+authored YAML flowing through the domain gate; only its *location* (`game.time.calendar-location`) is
+operational `game.*` configuration. Every game property shares the one memorable `game.<area>.*` prefix
+(`world`/`terminal`/`player`/`time`), grouped by subsystem — so the directory a file sits in (by content kind)
+and the config prefix (by subsystem) are deliberately decoupled, exactly as `game.world.seed-location` already
+points at `world/scenes.yaml`.
 
 ---
 

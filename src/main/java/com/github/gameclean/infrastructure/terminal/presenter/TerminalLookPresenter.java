@@ -1,4 +1,4 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.presenter;
 
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.PlayerId;
@@ -6,6 +6,8 @@ import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.explore.LookPresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
+import com.github.gameclean.infrastructure.terminal.render.Console;
+import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;

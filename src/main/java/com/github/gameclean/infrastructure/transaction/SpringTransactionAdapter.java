@@ -1,8 +1,10 @@
 package com.github.gameclean.infrastructure.transaction;
 
+import com.github.gameclean.core.port.transaction.TransactionOperationsError;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -13,9 +15,17 @@ import java.util.function.Supplier;
  * Default implementation of {@link TransactionOperationsOutputPort} over Spring's transaction SPI.
  *
  * <p>Two {@link TransactionTemplate}s are injected — a read-write one and a read-only one — so the
- * {@code readOnly} flag selects the right propagation/isolation without per-call configuration. A
- * runtime error thrown by an action propagates out of the template, which triggers Spring's default
- * rollback-on-runtime; the use case's outermost checkpoint then sees it.
+ * {@code readOnly} flag selects the right propagation/isolation without per-call configuration.
+ *
+ * <p>Two failure modes, kept strictly apart. A runtime error thrown by the <em>action</em> (a
+ * {@code PersistenceOperationsError}) propagates out of the template untouched, which triggers Spring's
+ * default rollback-on-runtime; it is already a port type, so the use case's outermost checkpoint sees
+ * it as-is. A failure of the transaction <em>machinery</em> itself — begin (no connection), commit, or
+ * an unexpected rollback — surfaces as a Spring {@link TransactionException}, which this adapter catches
+ * <em>narrowly</em> and wraps into the port's own {@link TransactionOperationsError}. The catch is
+ * deliberately {@code TransactionException}, never {@code Exception}: a broad catch would re-wrap the
+ * action's already-translated {@code PersistenceOperationsError} (double-wrapping) and blur the two
+ * failure modes into one.
  *
  * <p>After-commit / after-rollback hooks register a {@link TransactionSynchronization} and fire on
  * the matching completion status. With no transaction active, {@code doAfterCommit} runs immediately
@@ -35,13 +45,21 @@ public class SpringTransactionAdapter implements TransactionOperationsOutputPort
     @Override
     public void doInTransaction(boolean readOnly, Runnable action) {
         log.debug("[Transaction] Running action in a transaction, readOnly={}", readOnly);
-        template(readOnly).executeWithoutResult(status -> action.run());
+        try {
+            template(readOnly).executeWithoutResult(status -> action.run());
+        } catch (TransactionException e) {
+            throw new TransactionOperationsError("Transaction could not be completed", e);
+        }
     }
 
     @Override
     public <T> T doInTransactionWithResult(boolean readOnly, Supplier<T> action) {
         log.debug("[Transaction] Running action (with result) in a transaction, readOnly={}", readOnly);
-        return template(readOnly).execute(status -> action.get());
+        try {
+            return template(readOnly).execute(status -> action.get());
+        } catch (TransactionException e) {
+            throw new TransactionOperationsError("Transaction could not be completed", e);
+        }
     }
 
     @Override

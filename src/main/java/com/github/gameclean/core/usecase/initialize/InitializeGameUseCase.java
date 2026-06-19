@@ -1,5 +1,7 @@
 package com.github.gameclean.core.usecase.initialize;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.model.item.Chance;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
@@ -11,6 +13,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
@@ -84,6 +87,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     SceneRepositoryOperationsOutputPort sceneOps;
     ItemRepositoryOperationsOutputPort itemOps;
+    GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     IdGeneratorOperationsOutputPort idGeneratorOps;
     RandomnessOperationsOutputPort randomnessOps;
     TransactionOperationsOutputPort txOps;
@@ -102,7 +106,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<Scene> scenes;
             try {
                 scenes = buildScenes(seed.getScenes());
-            } catch (IllegalArgumentException | NullPointerException e) {
+            } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
                 return;
             }
@@ -123,7 +127,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 playerId = new PlayerId(playerOps.currentPlayerId());
                 startingScene = new SceneId(seed.getStartingSceneId());
                 player = Player.builder().id(playerId).currentScene(startingScene).build();
-            } catch (IllegalArgumentException | NullPointerException e) {
+            } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
                 return;
             }
@@ -142,7 +146,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<AuthoredItem> authoredItems;
             try {
                 authoredItems = buildAuthoredItems(seed.getItems());
-            } catch (IllegalArgumentException | NullPointerException e) {
+            } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
                 return;
             }
@@ -160,11 +164,12 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<Item> spawnedItems = spawnItems(authoredItems);
 
             // Checkpoint 9 — one outcome, one atomic unit. A single transaction seeds the world if it is
-            // still empty, creates the player if none exists yet, and spawns items if none were spawned yet;
-            // holding all three read-then-write guards in one transaction stops a concurrent initialization
-            // from double-seeding, double-creating or double-spawning. Exactly one after-commit presentation
-            // reports the single success — carrying the items spawned this run (empty if already spawned) —
-            // and the interaction ends here, since nothing runs past a presentation.
+            // still empty, creates the player if none exists yet, spawns items if none were spawned yet, and
+            // creates the world clock at time zero if none exists yet; holding all four read-then-write guards
+            // in one transaction stops a concurrent initialization from double-seeding, double-creating,
+            // double-spawning or double-creating-the-clock. Exactly one after-commit presentation reports the
+            // single success — carrying the items spawned this run (empty if already spawned) — and the
+            // interaction ends here, since nothing runs past a presentation.
             txOps.doInTransaction(false, () -> {
                 if (sceneOps.worldIsEmpty()) {
                     scenes.forEach(sceneOps::saveScene);
@@ -178,6 +183,11 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 } else {
                     spawnedItems.forEach(itemOps::saveItem);
                     reportedItems = spawnedItems;
+                }
+                // The clock has no domain precondition on the world/player/items — it is independent
+                // world-singleton state — so it is just another create-if-absent guard, not an ordered phase.
+                if (gameClockRepositoryOps.findClock().isEmpty()) {
+                    gameClockRepositoryOps.saveClock(GameClock.initial());
                 }
                 txOps.doAfterCommit(() -> presenter.presentGameInitialized(scenes, playerId, reportedItems));
             });
@@ -227,7 +237,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         for (ItemEntry entry : entries) {
             SpawnEntry spawn = entry.getSpawn();
             if (spawn == null) {
-                throw new IllegalArgumentException(
+                throw new InvalidDomainObjectError(
                         "item '%s' has no spawn rule".formatted(entry.getId()));
             }
             Chance chance = new Chance(spawn.getChanceNumerator(), spawn.getChanceDenominator());

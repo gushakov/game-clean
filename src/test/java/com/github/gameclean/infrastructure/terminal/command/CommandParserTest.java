@@ -1,4 +1,4 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.command;
 
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +35,12 @@ class CommandParserTest {
     void move_without_an_exit_is_unknown_this_round() {
         // 'move' takes exactly one argument; bare 'move' fails the arity check.
         assertThat(parser.parse("move")).contains(new UnknownCommand("move"));
+    }
+
+    @Test
+    void parses_now_and_its_time_synonym_into_a_time_command() {
+        assertThat(parser.parse("now")).contains(new TimeCommand());
+        assertThat(parser.parse("time")).contains(new TimeCommand());
     }
 
     @Test

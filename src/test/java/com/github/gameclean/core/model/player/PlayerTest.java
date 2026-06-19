@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.player;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,7 @@ class PlayerTest {
 
     @Test
     void rejects_a_null_id() {
-        assertThatNullPointerException().isThrownBy(() -> Player.builder()
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Player.builder()
                 .id(null)
                 .currentScene(new SceneId("scn1"))
                 .build());
@@ -28,7 +29,7 @@ class PlayerTest {
 
     @Test
     void rejects_a_null_current_scene() {
-        assertThatNullPointerException().isThrownBy(() -> Player.builder()
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Player.builder()
                 .id(new PlayerId("plr1"))
                 .currentScene(null)
                 .build());
@@ -49,7 +50,7 @@ class PlayerTest {
     @Test
     void rejects_a_move_to_a_null_scene() {
         Player atGate = Player.builder().id(new PlayerId("plr1")).currentScene(new SceneId("scn1")).build();
-        assertThatNullPointerException().isThrownBy(() -> atGate.moveTo(null));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> atGate.moveTo(null));
     }
 
     @Test

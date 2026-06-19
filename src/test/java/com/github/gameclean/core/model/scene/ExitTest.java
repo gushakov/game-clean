@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.scene;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
@@ -22,17 +23,17 @@ class ExitTest {
 
     @Test
     void rejects_a_null_name() {
-        assertThatNullPointerException().isThrownBy(() -> new Exit(null, TARGET));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new Exit(null, TARGET));
     }
 
     @Test
     void rejects_a_blank_name() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new Exit("   ", TARGET));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new Exit("   ", TARGET));
     }
 
     @Test
     void rejects_a_null_target() {
-        assertThatNullPointerException().isThrownBy(() -> new Exit("east", null));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new Exit("east", null));
     }
 
     @Test

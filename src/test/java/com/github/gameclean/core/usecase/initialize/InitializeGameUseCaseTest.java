@@ -1,5 +1,7 @@
 package com.github.gameclean.core.usecase.initialize;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.Player;
@@ -8,6 +10,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
@@ -74,6 +77,8 @@ class InitializeGameUseCaseTest {
     @Mock
     private ItemRepositoryOperationsOutputPort itemOps;
     @Mock
+    private GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
+    @Mock
     private IdGeneratorOperationsOutputPort idGeneratorOps;
     @Mock
     private RandomnessOperationsOutputPort randomnessOps;
@@ -122,12 +127,29 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn1")));
+        when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(GameClock.initial()));
         runTransactionsAndFireAfterCommit();
 
         useCase.systemInitializesGame();
 
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
+        verify(gameClockRepositoryOps, never()).saveClock(any());
+        assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
+    }
+
+    @Test
+    void seedsTheClockAtZeroWhenAbsentDuringInitialization() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        // The clock is absent (default Optional.empty), so it is created at time zero.
+        runTransactionsAndFireAfterCommit();
+
+        useCase.systemInitializesGame();
+
+        verify(gameClockRepositoryOps).saveClock(GameClock.initial());
         assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
     }
 
@@ -188,7 +210,7 @@ class InitializeGameUseCaseTest {
 
         useCase.systemInitializesGame();
 
-        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
         verifyNothingInitialized();
     }
 
@@ -219,7 +241,7 @@ class InitializeGameUseCaseTest {
 
         useCase.systemInitializesGame();
 
-        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
         verifyNothingInitialized();
     }
 
@@ -250,7 +272,7 @@ class InitializeGameUseCaseTest {
 
         useCase.systemInitializesGame();
 
-        verify(presenter).presentInvalidParametersError(any(IllegalArgumentException.class));
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
         verifyNothingInitialized();
     }
 
@@ -399,6 +421,7 @@ class InitializeGameUseCaseTest {
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(itemOps, never()).saveItem(any());
+        verify(gameClockRepositoryOps, never()).saveClock(any());
         verify(presenter, never()).presentGameInitialized(any(), any(), any());
     }
 }

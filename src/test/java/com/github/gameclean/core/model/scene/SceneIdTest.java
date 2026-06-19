@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.scene;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
@@ -18,22 +19,22 @@ class SceneIdTest {
 
     @Test
     void rejects_null() {
-        assertThatNullPointerException().isThrownBy(() -> new SceneId(null));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new SceneId(null));
     }
 
     @Test
     void rejects_blank() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new SceneId("   "));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new SceneId("   "));
     }
 
     @Test
     void rejects_a_missing_prefix() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new SceneId("abc123"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new SceneId("abc123"));
     }
 
     @Test
     void rejects_a_prefix_with_an_empty_body() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new SceneId("scn"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new SceneId("scn"));
     }
 
     @Test
@@ -43,7 +44,7 @@ class SceneIdTest {
 
     @Test
     void rejects_internal_whitespace() {
-        assertThatIllegalArgumentException().isThrownBy(() -> new SceneId("scn 1"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new SceneId("scn 1"));
     }
 
     @Test
