@@ -58,8 +58,10 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `Terminal`, `Player`, `Time`). Sub-packages:
   `infrastructure/persistence/{aggregate}/` (incl. `clock/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource`), `infrastructure/clock/` (`SystemGameTimeSource`),
-  `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine
-  `TerminalConfig` + `ConsoleSession` + presenters + `CalendarRenderer` + `English`), `infrastructure/id/` (NanoID generator adapter),
+  `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
+  by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring; `command/` the
+  sealed `Command` + `CommandParser`; `presenter/` the driven `Terminal*Presenter`s; `render/`
+  `Console`/`CurrentSceneRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
   `infrastructure/randomness/` (JDK randomness adapter).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
