@@ -1,5 +1,7 @@
 package com.github.gameclean.infrastructure.terminal;
 
+import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
+import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import lombok.RequiredArgsConstructor;
@@ -16,8 +18,9 @@ import java.util.Optional;
 /**
  * Primary (driving) adapter: the interactive player session — a blocking read loop on the main thread
  * that drives the application from the console. It is a thin <em>controller</em>: read a line, ask the
- * {@link CommandParser} for the player's intent, and either control the loop ({@code bye}) or delegate
- * to a use case. It carries no game logic — that lives in the use cases, which present their own
+ * {@link CommandParser} for the player's intent, and delegate to a use case ({@code look}, {@code move},
+ * {@code now}) and/or control the loop ({@code bye} both banks the session via the {@code SuspendGame} use
+ * case and breaks the loop). It carries no game logic — that lives in the use cases, which present their own
  * output (the console no longer touches a presenter).
  *
  * <p>{@link #start()} blocks until {@code bye}. It is invoked by
@@ -42,7 +45,7 @@ public class ConsoleSession {
     private final ApplicationContext applicationContext;
 
     public void start() {
-        printLine("Welcome to game-clean. Commands: 'look', 'move <exit>', 'bye'.");
+        printLine("Welcome to game-clean. Commands: 'look', 'move <exit>', 'now', 'bye'.");
         while (true) {
             String line;
             try {
@@ -59,14 +62,16 @@ public class ConsoleSession {
             }
             Command command = parsed.get();
             if (command instanceof QuitCommand) {
-                printLine("Bye!");
+                leaveGame();
                 break;
             } else if (command instanceof LookCommand) {
                 lookAround();
             } else if (command instanceof MoveCommand move) {
                 move(move.getExitName());
+            } else if (command instanceof TimeCommand) {
+                checkTime();
             } else if (command instanceof UnknownCommand unknown) {
-                printLine("Unknown command: '%s'. Try 'look', 'move <exit>', or 'bye'.".formatted(unknown.getInput()));
+                printLine("Unknown command: '%s'. Try 'look', 'move <exit>', 'now', or 'bye'.".formatted(unknown.getInput()));
             }
         }
     }
@@ -83,6 +88,19 @@ public class ConsoleSession {
         // The acting player is ambient; only the chosen exit crosses inward, as a primitive.
         MoveInputPort moveUseCase = applicationContext.getBean(MoveInputPort.class);
         moveUseCase.playerMovesThrough(exitName);
+    }
+
+    private void checkTime() {
+        // Same idiom: a fresh prototype use case per interaction, presenting its own outcome.
+        AskForTimeInputPort askForTimeUseCase = applicationContext.getBean(AskForTimeInputPort.class);
+        askForTimeUseCase.playerChecksTheTime();
+    }
+
+    private void leaveGame() {
+        // On the way out, bank this session's elapsed time into the clock (Model B "pause on quit"); the
+        // use case presents the parting acknowledgement once the bank commits. Then the loop breaks.
+        SuspendGameInputPort suspendGameUseCase = applicationContext.getBean(SuspendGameInputPort.class);
+        suspendGameUseCase.playerLeavesTheGame();
     }
 
     private void printLine(String text) {

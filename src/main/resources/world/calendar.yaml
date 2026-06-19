@@ -1,0 +1,57 @@
+# Authored game calendar — the fabric of game time.
+#
+# This is data, not schema: it flows into the world *through the domain* (a
+# GameCalendar value object, constructed and validated against the always-valid
+# invariants — every radix positive, both cycles non-empty with unique names).
+# It is *world content*, distinct from operational `game.time.*` configuration;
+# only its location (`game.time.calendar-location`) is a property.
+#
+# Time is a mixed-radix positional number: one real second is one game second,
+# so the whole date is a pure function of elapsed seconds, decomposed on demand
+# (seconds -> hours -> days -> months -> years). The named weekday/month cycles
+# turn those indices into names; the week is *continuous* (it runs unbroken
+# across month and year boundaries, never reset per month).
+#
+# Radices and names mirror the standard calendar pinned in GameCalendarTest.
+
+secondsPerHour: 300
+hoursPerDay: 24
+daysPerMonth: 30
+
+# The weekday cycle (5 days). The epoch day (first day of year 1000) is the
+# first weekday here; the continuous week advances one step per game day.
+week:
+  - name: Elenya
+    description: guidance
+  - name: Anarya
+    description: vitality
+  - name: Isilya
+    description: reflection
+  - name: Alduya
+    description: growth
+  - name: Menelya
+    description: higher matters
+
+# The month cycle (10 months). The year's length *is* the month count, so a year
+# here is 10 * 30 = 300 days.
+months:
+  - name: Aelorin
+    description: The Silver Wind Returns
+  - name: Sylvael
+    description: The First Bloom Stirs
+  - name: Calivorn
+    description: The Waters Awaken
+  - name: Thalinde
+    description: The Light Grows Long
+  - name: Evaniel
+    description: The Golden Tide
+  - name: Miraleth
+    description: The Amber Canopy
+  - name: Faerundel
+    description: The Drifting Mists
+  - name: Veloris
+    description: The Cold Moon Rises
+  - name: Aelindra
+    description: The Deep Frost
+  - name: Sorivael
+    description: The Returning Light

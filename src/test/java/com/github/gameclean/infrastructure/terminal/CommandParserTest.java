@@ -38,6 +38,12 @@ class CommandParserTest {
     }
 
     @Test
+    void parses_now_and_its_time_synonym_into_a_time_command() {
+        assertThat(parser.parse("now")).contains(new TimeCommand());
+        assertThat(parser.parse("time")).contains(new TimeCommand());
+    }
+
+    @Test
     void parses_bye_and_quit_into_a_quit_command() {
         assertThat(parser.parse("bye")).contains(new QuitCommand());
         assertThat(parser.parse("quit")).contains(new QuitCommand());

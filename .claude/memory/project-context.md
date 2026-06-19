@@ -45,18 +45,21 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
-  `item/`, `calendar/`) plus the `model/` root holding the always-valid construction gate's failure type
+  `item/`, `calendar/`, `clock/`) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
-  `port/id/`, `port/randomness/`, `port/seed/` — the latter holds the seed-source port and the
+  `port/id/`, `port/randomness/`, `port/seed/`, `port/calendar/` (calendar-source port + error), `port/clock/`
+  (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame`).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
-  (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog). Sub-packages:
-  `infrastructure/persistence/{aggregate}/`, `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
+  (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
+  `Terminal`, `Player`, `Time`). Sub-packages:
+  `infrastructure/persistence/{aggregate}/` (incl. `clock/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
+  `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource`), `infrastructure/clock/` (`SystemGameTimeSource`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine
-  `TerminalConfig` + `ConsoleSession` + presenters), `infrastructure/id/` (NanoID generator adapter),
+  `TerminalConfig` + `ConsoleSession` + presenters + `CalendarRenderer` + `English`), `infrastructure/id/` (NanoID generator adapter),
   `infrastructure/randomness/` (JDK randomness adapter).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
@@ -195,8 +198,8 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
   `JdkRandomnessAdapter` (`infrastructure/randomness/`). `SceneYamlReader` renamed `GameSeedYamlReader`
   (parses scenes + items, assembles `GameSeed`), now invoked by `YamlGameSeedSource` behind the seed port.
 
-Calendar core model **in progress** (issue #31) — time/date value objects + arithmetic only, no ports or
-persistence yet:
+Calendar core model **complete** (issue #31) — time/date value objects + arithmetic only, no ports or
+persistence (those arrived with the `now`/`time` vertical, #33):
 
 - **Domain** — `core/model/calendar/`: `GameCalendar` (authored uniform radices — seconds/hour, hours/day,
   days/month — plus ordered `Weekday`/`Month` cycles; always-valid: positive radices, non-empty cycles,
@@ -205,11 +208,35 @@ persistence yet:
   hourIndex, secondOfHour}, non-negativity-only gate (`GameCalendar` is its sole factory — shape A).
   `Weekday`/`Month` — named VOs (non-blank name + description). Indices 0-based; ordinal/clock labeling left
   to a future renderer; `EPOCH_YEAR = 1000`. (design-notes §11.)
-- **Deferred** (shapes chosen): the persisted real epoch + a `now` time-source **output port** (parallel to
-  `RandomnessOperationsOutputPort`), and the authored `calendar:` **seed carrier** constructed into a
-  `GameCalendar` at the `InitializeGame` gate.
+- **Deferred-then-realized in #33** (not as originally sketched — see design-notes §11): the originally
+  wall-clock-leaning shape was reversed to **Model B**, so there is no persisted *real epoch*; instead a
+  persisted accumulator (`GameClock`) plus a *session-elapsed* time-source port. The calendar is **not
+  persisted** — loaded each boot via a port — so no `calendar:` seed carrier was added.
 
-Tests: 168 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`now`/`time` command + Model B clock **complete** (issue #33) — the first time-facing interaction; game time
+is **accumulated play-time** (advances only while playing; banked on `bye`, no ticker):
+
+- **Domain** — `GameClock` aggregate (`core/model/clock/`): `accumulatedGameSeconds`, `elapsedWith(session)` =
+  banked + session, `accumulate(session)` → new clock, `initial()` = 0 (design-notes §11; Model B).
+- **Use cases** (`core/usecase/clock/`) — `AskForTime` (`playerChecksTheTime()`, read-only, no tx: load
+  calendar + clock + session-elapsed → `placeInstant` → present) and `SuspendGame` (`playerLeavesTheGame()`,
+  one `doInTransaction` banks the session, presents after commit). `InitializeGame` gained a fourth
+  create-if-absent guard: **create-clock-at-zero** (no ordering precondition; design-notes §4/§11).
+- **Ports** — `CalendarSourceOperationsOutputPort.loadCalendar()` (`core/port/calendar/`, returns a **valid**
+  `GameCalendar` — load-each-boot, the §3 deviation + `CalendarSourceOperationsError`),
+  `GameTimeSourceOutputPort.elapsedSessionSeconds()` (`core/port/clock/`),
+  `GameClockRepositoryOperationsOutputPort` (`core/port/persistence/`, find/save, upsert).
+- **Adapters** — `YamlCalendarSource` (`infrastructure/calendar/`, constructs+caches the calendar at boot, fail-fast)
+  + `CalendarYamlReader`; `SystemGameTimeSource` (`infrastructure/clock/`, wall-clock since session start,
+  injectable `Clock`); Flyway `V4__create_game_clock.sql` (singleton row) + `GameClockDbEntity` + MapStruct
+  mapper + repo + `SpringGameClockRepositoryAdapter`.
+- **Terminal** — `CalendarRenderer` (domain-aware) composing `Console` (styling) + `English` (pure
+  ordinals/plurals grammar) — the three-layer presentation composition (design-notes §7); `now`/`time` verbs →
+  `TimeCommand`; `bye` dispatches `SuspendGame` before breaking the loop. Presenters `new`ed by `UseCaseConfig`.
+- **Config** — `game.time.calendar-location` (default `classpath:world/calendar.yaml`); authored
+  `world/calendar.yaml` (radices + named cycles, **world content** not `game.*` config — design-notes §11).
+
+Tests: 191 unit (Surefire, DB-free) + 12 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: NPCs, the `look <target>` / `take` use cases, async/event
 processing.

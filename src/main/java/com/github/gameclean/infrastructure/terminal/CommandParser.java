@@ -29,6 +29,8 @@ public class CommandParser {
         register("look", 0, args -> new LookCommand());
         register("move", 1, args -> new MoveCommand(args.get(0)));
         register("go", 1, args -> new MoveCommand(args.get(0)));
+        register("now", 0, args -> new TimeCommand());
+        register("time", 0, args -> new TimeCommand());
         register("bye", 0, args -> new QuitCommand());
         register("quit", 0, args -> new QuitCommand());
     }
