@@ -1,8 +1,10 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.presenter;
 
 import com.github.gameclean.core.model.calendar.GameCalendar;
 import com.github.gameclean.core.model.calendar.GameDate;
 import com.github.gameclean.core.usecase.clock.AskForTimePresenterOutputPort;
+import com.github.gameclean.infrastructure.terminal.render.CalendarRenderer;
+import com.github.gameclean.infrastructure.terminal.render.Console;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;

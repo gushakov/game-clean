@@ -1,6 +1,7 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.presenter;
 
 import com.github.gameclean.core.usecase.clock.SuspendGamePresenterOutputPort;
+import com.github.gameclean.infrastructure.terminal.render.Console;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;

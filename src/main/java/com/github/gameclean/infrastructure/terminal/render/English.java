@@ -1,4 +1,4 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.render;
 
 /**
  * English grammar helpers for the terminal presenters — ordinals ({@code 6 -> "6th"}) and quantities

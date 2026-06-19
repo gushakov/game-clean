@@ -1,4 +1,4 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.command;
 
 import lombok.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

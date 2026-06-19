@@ -4,6 +4,7 @@ import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
+import com.github.gameclean.infrastructure.terminal.command.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jline.reader.EndOfFileException;
@@ -60,18 +61,22 @@ public class ConsoleSession {
             if (parsed.isEmpty()) {               // blank line — nothing to do
                 continue;
             }
-            Command command = parsed.get();
-            if (command instanceof QuitCommand) {
-                leaveGame();
+            // Exhaustive over the sealed Command set (no default). Only 'bye' ends the loop; a switch
+            // break would only break the switch, so it signals through quitRequested and we break after.
+            boolean quitRequested = false;
+            switch (parsed.get()) {
+                case QuitCommand ignored -> {
+                    leaveGame();
+                    quitRequested = true;
+                }
+                case LookCommand ignored -> lookAround();
+                case MoveCommand move -> move(move.getExitName());
+                case TimeCommand ignored -> checkTime();
+                case UnknownCommand unknown -> printLine(
+                        "Unknown command: '%s'. Try 'look', 'move <exit>', 'now', or 'bye'.".formatted(unknown.getInput()));
+            }
+            if (quitRequested) {
                 break;
-            } else if (command instanceof LookCommand) {
-                lookAround();
-            } else if (command instanceof MoveCommand move) {
-                move(move.getExitName());
-            } else if (command instanceof TimeCommand) {
-                checkTime();
-            } else if (command instanceof UnknownCommand unknown) {
-                printLine("Unknown command: '%s'. Try 'look', 'move <exit>', 'now', or 'bye'.".formatted(unknown.getInput()));
             }
         }
     }

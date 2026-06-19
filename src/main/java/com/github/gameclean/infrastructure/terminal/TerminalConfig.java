@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal;
 
+import com.github.gameclean.infrastructure.terminal.render.Console;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
