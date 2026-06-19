@@ -45,7 +45,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
-  `item/`) plus the `model/` root holding the always-valid construction gate's failure type
+  `item/`, `calendar/`) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
   `port/id/`, `port/randomness/`, `port/seed/` — the latter holds the seed-source port and the
@@ -195,7 +195,21 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
   `JdkRandomnessAdapter` (`infrastructure/randomness/`). `SceneYamlReader` renamed `GameSeedYamlReader`
   (parses scenes + items, assembles `GameSeed`), now invoked by `YamlGameSeedSource` behind the seed port.
 
-Tests: 122 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Calendar core model **in progress** (issue #31) — time/date value objects + arithmetic only, no ports or
+persistence yet:
+
+- **Domain** — `core/model/calendar/`: `GameCalendar` (authored uniform radices — seconds/hour, hours/day,
+  days/month — plus ordered `Weekday`/`Month` cycles; always-valid: positive radices, non-empty cycles,
+  unique names), owning the mixed-radix `placeInstant(long)`, `monthOf(GameDate)`, and the **continuous-week**
+  `weekdayOf(GameDate)` SEFF. `GameDate` — pure 0-based positional tuple {year, monthIndex, dayIndex,
+  hourIndex, secondOfHour}, non-negativity-only gate (`GameCalendar` is its sole factory — shape A).
+  `Weekday`/`Month` — named VOs (non-blank name + description). Indices 0-based; ordinal/clock labeling left
+  to a future renderer; `EPOCH_YEAR = 1000`. (design-notes §11.)
+- **Deferred** (shapes chosen): the persisted real epoch + a `now` time-source **output port** (parallel to
+  `RandomnessOperationsOutputPort`), and the authored `calendar:` **seed carrier** constructed into a
+  `GameCalendar` at the `InitializeGame` gate.
+
+Tests: 168 unit (Surefire, DB-free) + 10 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: NPCs, the `look <target>` / `take` use cases, async/event
 processing.

@@ -842,6 +842,54 @@ use-case test.
 
 ---
 
+## 11. Time as a mixed-radix value — the calendar owns the arithmetic
+
+**Principle.** Game time is authored as a calendar of *uniform fixed radices* — seconds per hour, hours per
+day, days per month, and the ordered named cycles of weekdays and months (the year's length *is* the month
+count). Because one real second is one game second, a date is a **pure function of elapsed seconds**: a
+mixed-radix positional number, decomposed on demand by repeated `divmod` down the ladder, never ticked and
+never stored. The decomposition lives on `GameCalendar.placeInstant`, **not** in a use case, because the
+calendar owns the radices — this is §10 in a new guise: the eventual "what is the date?" use case will
+*orchestrate* (fetch elapsed seconds, ask the calendar to place them, hand the result to a presenter) while
+the arithmetic stays computation on the model.
+
+**A domain choice decided where a computation lives — the sharpest finding.** `[thread #1]` `GameDate` is a
+pure positional tuple `{year, monthIndex, dayIndex, hourIndex, secondOfHour}` and is minted minimal: it stores
+no month or weekday *names* (resolved against the calendar — `monthOf`, `weekdayOf`), and — the cutting case —
+no weekday *index* either. The reason is not tidiness, it is the week's semantics. Under a **per-month-reset**
+week, weekday is `dayIndex % weekLength` — local to the date, cheap to store on it. We chose a **continuous**
+week instead (weekday = absolute days since the epoch, modulo week length, unbroken across month and year
+boundaries), and that choice *moved the weekday off the value*: a continuous weekday is a total derivation
+from *all* the positional fields plus the radices, i.e. a multi-field computation that belongs on the
+radix-owner as a side-effect-free function, never duplicated onto the value where it could drift from the
+year/month/day it is read off. So a semantic decision about the *domain* (continuous vs reset) settled an
+*architectural* one (stored field vs calendar SEFF), via §2 (do not store derivable state) and §10
+(computation lives with the data it is about). The same logic that keeps the month *name* off the date keeps
+the weekday off it.
+
+**Factory shape A — the range invariant has one knower.** `GameCalendar` is the *sole* factory of `GameDate`
+(`placeInstant`), and `GameDate`'s own construction gate checks only **non-negativity**. Whether a
+`monthIndex` is *within range* needs the calendar's month count — knowledge the value neither holds nor should
+— so the bound is guaranteed by the factory, not re-checked on the value. This is the §2 single-source-of-
+truth resolution wearing different clothes (cf. the `SceneId` prefix-vs-alphabet split): the value owns what
+it can judge alone, the calendar owns the invariant that needs the radices, and there is no drift because
+there is exactly one knower. The deviation from strict always-valid self-sufficiency is deliberate and
+bounded — a `GameDate` is unreachable except by placing an instant.
+
+**Deferred, and the forward fit it sets up.** `[thread #3]` The first slice is VOs + arithmetic only;
+`placeInstant` takes a plain `long`, so the whole calendar is unit-testable with no port, clock, or database.
+Two pieces are parked with their shapes already chosen. (1) When time becomes a *live* query, `now` enters as
+an **output port** — the wall-clock is non-deterministic infrastructure, so stubbing it keeps the use case
+deterministic, exactly the role `RandomnessOperationsOutputPort` plays for spawning (§4); the persisted real
+epoch is the anchor that port's readings are measured against. (2) The authored `calendar:` block is *world
+content*, so it flows through the existing seed carrier and is constructed into a `GameCalendar` at the
+`InitializeGame` gate (§3/§4 — invalid-capable carrier in, valid model out), distinct from operational
+`game.*` configuration. A consequence worth stating because it confirms the wall-clock-derived design: closing
+the game does **not** pause time — elapsed real seconds keep accruing — which is right for a persistent world
+and is the reason the clock is derived rather than stored.
+
+---
+
 ## Open hazards / stances (genuinely unresolved)
 
 - **Testability stance.** Game logic lives in unit-testable **use cases**, not in the
