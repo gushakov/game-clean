@@ -1,4 +1,4 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.command;
 
 /**
  * A parsed player command — the driving adapter's internal representation of user <em>intent</em>,
@@ -9,7 +9,11 @@ package com.github.gameclean.infrastructure.terminal;
  * core ever knowing command syntax existed.
  *
  * <p>Implementations are the small closed set of intents the parser can produce: {@link LookCommand},
- * {@link MoveCommand}, {@link QuitCommand}, {@link UnknownCommand}.
+ * {@link MoveCommand}, {@link TimeCommand}, {@link QuitCommand}, {@link UnknownCommand}. The {@code sealed}
+ * clause makes that closure explicit, so the console controller's pattern-matching {@code switch} over a
+ * command is <em>exhaustive</em> — adding a new intent is a compile error until every dispatch handles it,
+ * rather than silently falling through.
  */
-public interface Command {
+public sealed interface Command
+        permits LookCommand, MoveCommand, TimeCommand, QuitCommand, UnknownCommand {
 }

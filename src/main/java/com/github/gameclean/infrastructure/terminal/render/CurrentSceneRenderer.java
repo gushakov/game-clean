@@ -1,4 +1,4 @@
-package com.github.gameclean.infrastructure.terminal;
+package com.github.gameclean.infrastructure.terminal.render;
 
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.PlayerId;

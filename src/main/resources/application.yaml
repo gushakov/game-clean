@@ -13,6 +13,13 @@ spring:
     username: postgres
     password: postgres
 
+# Log levels live here (idiomatic Spring Boot); logback-spring.xml owns only appender wiring and
+# routing-to-file. Boot applies these on top of that config. The app's own packages at DEBUG so its
+# logging is visible in ./logs/game-clean.log; everything else stays at the root INFO.
+logging:
+  level:
+    com.github.gameclean: DEBUG
+
 game:  # all game.* properties are catalogued in GameConfigurationProperties
   # Where the authored world seed lives (consumed by GameSeeder, fed to the InitializeGame use case).
   world:

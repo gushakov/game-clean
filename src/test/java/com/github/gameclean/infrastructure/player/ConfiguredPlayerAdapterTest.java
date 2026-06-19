@@ -14,7 +14,7 @@ class ConfiguredPlayerAdapterTest {
     @Test
     void returnsTheConfiguredPlayerId() {
         GameConfigurationProperties properties = new GameConfigurationProperties(
-                null, null, new GameConfigurationProperties.Player("plr1", "scn1"));
+                null, null, new GameConfigurationProperties.Player("plr1", "scn1"), null);
         ConfiguredPlayerAdapter adapter = new ConfiguredPlayerAdapter(properties);
 
         assertThat(adapter.currentPlayerId()).isEqualTo("plr1");
