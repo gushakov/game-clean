@@ -3,6 +3,7 @@ package com.github.gameclean.infrastructure.world;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import com.github.gameclean.infrastructure.persistence.clock.GameClockSpringDataRepository;
+import com.github.gameclean.infrastructure.persistence.daytime.DayPhaseLogSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.item.ItemSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.player.PlayerSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
@@ -51,10 +52,14 @@ class InitializeGameIT extends AbstractPostgresIT {
     @Autowired
     private GameClockSpringDataRepository gameClockRepository;
 
+    @Autowired
+    private DayPhaseLogSpringDataRepository dayPhaseLogRepository;
+
     @AfterEach
     void cleanUp() {
         itemRepository.deleteAll();
         gameClockRepository.deleteAll();
+        dayPhaseLogRepository.deleteAll();
         playerRepository.deleteById(SEEDED_PLAYER_ID);
         SEED_IDS.forEach(sceneRepository::deleteById);
     }
@@ -72,6 +77,9 @@ class InitializeGameIT extends AbstractPostgresIT {
         // the world clock is created at time zero ...
         assertThat(gameClockRepository.count()).isEqualTo(1);
         assertThat(gameClockRepository.findAll().iterator().next().getAccumulatedGameSeconds()).isZero();
+        // ... and the day-phase log is seeded at the "nothing announced" sentinel (-1) ...
+        assertThat(dayPhaseLogRepository.count()).isEqualTo(1);
+        assertThat(dayPhaseLogRepository.findAll().iterator().next().getAnnouncedThroughHour()).isEqualTo(-1);
         long itemsAfterFirstRun = itemRepository.count();
 
         // ... a second run finds world, player and items already present and writes no duplicate rows —
@@ -81,7 +89,8 @@ class InitializeGameIT extends AbstractPostgresIT {
         assertThat(sceneRepository.count()).isEqualTo(4);
         assertThat(playerRepository.count()).isEqualTo(1);
         assertThat(itemRepository.count()).isEqualTo(itemsAfterFirstRun);
-        // the clock is not re-created and stays a single row at zero
+        // the clock and the day-phase log are not re-created and stay single rows
         assertThat(gameClockRepository.count()).isEqualTo(1);
+        assertThat(dayPhaseLogRepository.count()).isEqualTo(1);
     }
 }

@@ -163,6 +163,34 @@ class GameCalendarTest {
                 .isThrownBy(() -> standard().placeInstant(-1));
     }
 
+    // --- absoluteHourOf: the monotonic hour-since-epoch --------------------------------------------------
+
+    @Test
+    void absoluteHourOf_counts_whole_game_hours_since_the_epoch() {
+        GameCalendar calendar = standard();
+        assertThat(calendar.absoluteHourOf(0)).isZero();
+        assertThat(calendar.absoluteHourOf(6 * SECONDS_PER_HOUR)).isEqualTo(6L);          // day 0, hour 6 (dawn)
+        assertThat(calendar.absoluteHourOf(6 * SECONDS_PER_HOUR + 299)).isEqualTo(6L);     // floored within the hour
+    }
+
+    @Test
+    void absoluteHourOf_keeps_climbing_across_days_while_hourIndex_wraps() {
+        GameCalendar calendar = standard();
+        long dayOneDawn = (HOURS_PER_DAY + 6) * SECONDS_PER_HOUR;        // day 1, hour-of-day 6
+        long absoluteHour = calendar.absoluteHourOf(dayOneDawn);
+        int hourIndex = calendar.placeInstant(dayOneDawn).getHourIndex();
+
+        assertThat(absoluteHour).isEqualTo(30L);                         // 24 + 6, not 6
+        assertThat(hourIndex).isEqualTo(6);                              // the cyclic hour still wraps
+        assertThat(absoluteHour % HOURS_PER_DAY).isEqualTo((long) hourIndex);   // consistent by construction
+    }
+
+    @Test
+    void absoluteHourOf_rejects_a_negative_elapsed() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> standard().absoluteHourOf(-1));
+    }
+
     // --- the continuous week -----------------------------------------------------------------------------
 
     @Test

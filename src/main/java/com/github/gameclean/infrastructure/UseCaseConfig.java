@@ -2,7 +2,9 @@ package com.github.gameclean.infrastructure;
 
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
+import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
 import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
@@ -11,6 +13,8 @@ import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import com.github.gameclean.core.usecase.clock.AnnounceTimeOfDayInputPort;
+import com.github.gameclean.core.usecase.clock.AnnounceTimeOfDayUseCase;
 import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.AskForTimeUseCase;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
@@ -22,6 +26,7 @@ import com.github.gameclean.core.usecase.explore.MoveUseCase;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
@@ -64,12 +69,14 @@ public class UseCaseConfig {
             SceneRepositoryOperationsOutputPort sceneOps,
             ItemRepositoryOperationsOutputPort itemOps,
             GameClockRepositoryOperationsOutputPort gameClockRepositoryOps,
+            DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps,
             IdGeneratorOperationsOutputPort idGeneratorOps,
             RandomnessOperationsOutputPort randomnessOps,
             TransactionOperationsOutputPort txOps) {
         return new InitializeGameUseCase(
                 new LoggingInitializeGamePresenter(), seedSourceOps, playerOps, playerRepositoryOps,
-                sceneOps, itemOps, gameClockRepositoryOps, idGeneratorOps, randomnessOps, txOps);
+                sceneOps, itemOps, gameClockRepositoryOps, dayPhaseLogRepositoryOps, idGeneratorOps,
+                randomnessOps, txOps);
     }
 
     @Bean
@@ -111,6 +118,22 @@ public class UseCaseConfig {
             GameTimeSourceOutputPort gameTimeSourceOps) {
         TerminalAskForTimePresenter presenter = new TerminalAskForTimePresenter(calendarRenderer, console);
         return new AskForTimeUseCase(presenter, calendarSourceOps, gameClockRepositoryOps, gameTimeSourceOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public AnnounceTimeOfDayInputPort announceTimeOfDayUseCase(
+            Console console,
+            CalendarSourceOperationsOutputPort calendarSourceOps,
+            DayPhaseScheduleSourceOperationsOutputPort dayPhaseScheduleSourceOps,
+            GameClockRepositoryOperationsOutputPort gameClockRepositoryOps,
+            DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps,
+            GameTimeSourceOutputPort gameTimeSourceOps,
+            RandomnessOperationsOutputPort randomnessOps,
+            TransactionOperationsOutputPort txOps) {
+        TerminalAnnounceTimeOfDayPresenter presenter = new TerminalAnnounceTimeOfDayPresenter(console);
+        return new AnnounceTimeOfDayUseCase(presenter, calendarSourceOps, dayPhaseScheduleSourceOps,
+                gameClockRepositoryOps, dayPhaseLogRepositoryOps, gameTimeSourceOps, randomnessOps, txOps);
     }
 
     @Bean

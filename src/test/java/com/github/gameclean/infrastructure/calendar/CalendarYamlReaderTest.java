@@ -4,6 +4,8 @@ import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.calendar.GameCalendar;
 import com.github.gameclean.core.model.calendar.Month;
 import com.github.gameclean.core.model.calendar.Weekday;
+import com.github.gameclean.core.model.daytime.DayPhase;
+import com.github.gameclean.core.model.daytime.DayPhaseSchedule;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -39,6 +41,37 @@ class CalendarYamlReaderTest {
                     .containsExactly("Aelorin", "Sylvael", "Calivorn", "Thalinde", "Evaniel",
                             "Miraleth", "Faerundel", "Veloris", "Aelindra", "Sorivael");
         }
+    }
+
+    @Test
+    void readsTheAuthoredDayPhases() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/world/calendar.yaml")) {
+            assertThat(in).as("authored calendar resource on the classpath").isNotNull();
+            DayPhaseSchedule schedule = reader.readDayPhases(in);
+
+            assertThat(schedule.getPhases()).extracting(DayPhase::getName).containsExactly("Dawn", "Dusk");
+            assertThat(schedule.phaseBeginningAt(6)).map(DayPhase::getName).contains("Dawn");
+            assertThat(schedule.phaseBeginningAt(18)).map(DayPhase::getName).contains("Dusk");
+            assertThat(schedule.phaseBeginningAt(6)).get()
+                    .extracting(p -> p.getMessages().isEmpty()).isEqualTo(false);
+        }
+    }
+
+    @Test
+    void anAbsentDayPhasesBlockYieldsAnEmptySchedule() {
+        // A valid calendar document with no dayPhases: section — the world announces no day phases.
+        String yaml = """
+                secondsPerHour: 300
+                hoursPerDay: 24
+                daysPerMonth: 30
+                week:
+                  - name: Elenya
+                    description: guidance
+                months:
+                  - name: Aelorin
+                    description: a
+                """;
+        assertThat(reader.readDayPhases(stream(yaml)).getPhases()).isEmpty();
     }
 
     @Test

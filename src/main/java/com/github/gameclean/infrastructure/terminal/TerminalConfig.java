@@ -25,10 +25,12 @@ import java.io.IOException;
  * absent in test profiles) so that {@code @SpringBootTest} slices never try to grab a system terminal.
  *
  * <p>The {@link Terminal} is declared with {@code destroyMethod = "close"} so Spring closes it on
- * shutdown. With no asynchronous writers yet there is nothing to stop first; the ordered-shutdown
- * dance (stop clock / outbox threads <em>before</em> {@code Terminal.close()}, or {@code printAbove}
- * throws on a closed terminal) becomes a {@code SmartLifecycle} concern only when those threads
- * arrive (Phase 3).
+ * shutdown. The first asynchronous writer — the {@code GameClockTicker} announcing day phases via
+ * {@code printAbove} — has now arrived, so the ordered-shutdown dance is live: the ticker is a
+ * {@code @Scheduled} task, and Spring's scheduling is lifecycle-managed, so the container cancels scheduled
+ * tasks (waiting for an in-flight run) at context close <em>before</em> it destroys plain singletons like
+ * this {@link Terminal}. So the ticker stops (no more {@code printAbove}) before the terminal closes —
+ * exactly the order design-notes §7 requires, and we get it without hand-numbering lifecycle phases.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
@@ -54,7 +56,7 @@ public class TerminalConfig {
      * adapter), injected by the driven presenter beans so the JLine writing vocabulary lives in one place.
      */
     @Bean
-    public Console console(Terminal terminal) {
-        return new Console(terminal);
+    public Console console(Terminal terminal, LineReader lineReader) {
+        return new Console(terminal, lineReader);
     }
 }

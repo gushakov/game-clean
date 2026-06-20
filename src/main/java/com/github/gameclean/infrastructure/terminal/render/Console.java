@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal.render;
 
+import org.jline.reader.LineReader;
 import org.jline.terminal.Terminal;
 import org.jline.utils.AttributedStringBuilder;
 import org.jline.utils.AttributedStyle;
@@ -16,22 +17,37 @@ import org.jline.utils.AttributedStyle;
  * players. Rendering a domain object (a {@link com.github.gameclean.core.model.scene.Scene}) is presenter
  * logic that builds an {@link AttributedStringBuilder} and hands it here to write.
  *
- * <p>Writes go through {@link Terminal#writer()} because rendering happens synchronously between reads —
- * no {@code readLine} is in flight, so there is no live prompt to print above. The switch to
- * {@link org.jline.reader.LineReader#printAbove} is the known Phase-3 seam.
+ * <p>Two write paths, for the two timing situations. {@link #write(AttributedStringBuilder)} goes through
+ * {@link Terminal#writer()} for output rendered <em>synchronously between reads</em> — a player command's
+ * response, where no {@code readLine} is in flight so there is no live prompt to disturb.
+ * {@link #printAbove(AttributedStringBuilder)} goes through {@link LineReader#printAbove} for output produced
+ * <em>asynchronously while a read is in flight</em> — the background time ticker announcing a day phase above
+ * the live {@code game> } prompt. This is the Phase-3 seam design-notes §7 reserved: one line editor, N async
+ * {@code printAbove} writers onto one terminal buffer.
  */
 public class Console {
 
     private final Terminal terminal;
+    private final LineReader lineReader;
 
-    public Console(Terminal terminal) {
+    public Console(Terminal terminal, LineReader lineReader) {
         this.terminal = terminal;
+        this.lineReader = lineReader;
     }
 
-    /** Writes already-styled content as a line, then flushes. */
+    /** Writes already-styled content as a line, then flushes. For output rendered between reads. */
     public void write(AttributedStringBuilder content) {
         content.toAttributedString().println(terminal);
         terminal.flush();
+    }
+
+    /**
+     * Writes already-styled content <em>above</em> the live prompt, for asynchronous output produced while a
+     * {@code readLine} is in flight (the time ticker). JLine redraws the prompt and the player's partial input
+     * below the inserted line, so the announcement does not corrupt what they are typing.
+     */
+    public void printAbove(AttributedStringBuilder content) {
+        lineReader.printAbove(content.toAttributedString());
     }
 
     /** Writes a line of plain text in the error style (red). */

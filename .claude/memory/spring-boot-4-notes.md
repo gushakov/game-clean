@@ -125,6 +125,25 @@ methods too (the bean it produces is what gets ordered). Used in `BootSequence` 
 runners (`@Order(1)` seed, `@Order(2)` console) in one config class. (Confirmed against the Boot 4.1
 *Spring Application* reference; runner ordering exercised by `BootSequenceTest`.)
 
+## Scheduling & lifecycle for an async driving adapter — not a 4-vs-3 delta (kept in design-notes)
+
+The dawn/dusk `GameClockTicker` is a `@Scheduled` background task whose shutdown must precede `Terminal.close()`.
+The relevant facts — `@Scheduled` tasks are lifecycle-managed (Spring ≥6.1, so cancelled at context close,
+waiting for an in-flight run, **before** plain singletons are destroyed); scheduling starts during context
+refresh, *before* `ApplicationRunner`s; `fixedDelayString`/`initialDelayString` accept a simple duration string
+(`5s`) — are **Spring 6.1 / Framework 7 behaviours, not Boot-4-vs-3 differences**, so they live with the
+architecture rationale in `design-notes.md` (§6/§7), not here. (An earlier draft hand-rolled a `SmartLifecycle`
+thread and noted it here; that was both speculative complexity and not a delta — walked back to `@Scheduled`.)
+
+## `Duration` config binding + nested `@DefaultValue` group — works as in 3.x **[hit]**
+
+`game.time.ticker.interval` binds to a `java.time.Duration` from a string like `5s` (Spring Boot's
+`DurationStyle`), and a nested constructor-bound group with a bare `@DefaultValue` (`@DefaultValue Ticker ticker`)
+instantiates the group with its own field defaults when the whole `game.time.ticker.*` subtree is absent.
+Confirmed: `InitializeGameIT`'s full-context startup binds `GameConfigurationProperties` with the default
+`Ticker(5s)` and comes up clean. (Same constructor-binding + `@DefaultValue` machinery as the existing
+`World`/`Terminal`/`Player`/`Time` groups — no Boot 4 difference.)
+
 ## Unchanged / carried over from 3.x (so you don't misattribute)
 
 - `@AutoConfiguration` + `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
