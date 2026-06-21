@@ -9,10 +9,10 @@ import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.daytime.DayPhaseSchedule;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.persistence.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -73,7 +72,7 @@ class AnnounceTimeOfDayUseCaseTest {
         when(dayPhaseScheduleSourceOps.loadDayPhases()).thenReturn(dawnAtHourSix());
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
         when(randomnessOps.nextDouble()).thenReturn(0.0);   // pick the first message
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit();
 
         useCase.systemObservesTimeOfDay();
 
@@ -92,7 +91,7 @@ class AnnounceTimeOfDayUseCaseTest {
         verify(presenter).presentNothingToAnnounce();
         verify(presenter, never()).presentDayPhaseBegan(any(), any());
         verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
+        verify(txOps, never()).doInTransaction(any(Runnable.class), any(Runnable.class));
     }
 
     @Test
@@ -107,7 +106,7 @@ class AnnounceTimeOfDayUseCaseTest {
         verify(presenter).presentNothingToAnnounce();
         verify(presenter, never()).presentDayPhaseBegan(any(), any());
         verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
+        verify(txOps, never()).doInTransaction(any(Runnable.class), any(Runnable.class));
     }
 
     @Test
@@ -119,7 +118,7 @@ class AnnounceTimeOfDayUseCaseTest {
         // The version-checked save loses to a concurrent advance that happened since our read.
         doThrow(new OptimisticLockingError("stale version"))
                 .when(dayPhaseLogRepositoryOps).saveDayPhaseLog(any());
-        runTransactionsPropagatingErrors();
+        runTransactionDetectingLock();
 
         useCase.systemObservesTimeOfDay();
 
@@ -170,23 +169,27 @@ class AnnounceTimeOfDayUseCaseTest {
         return new DayPhaseSchedule(List.of(dawn()));
     }
 
-    private void runTransactionsAndFireAfterCommit() {
+    private void runTransactionAndFireAfterCommit() {
         doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
+            inv.getArgument(0, Runnable.class).run();
             return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
+        }).when(txOps).doInTransaction(any(Runnable.class), any(Runnable.class));
         doAnswer(inv -> {
             inv.getArgument(0, Runnable.class).run();
             return null;
         }).when(txOps).doAfterCommit(any(Runnable.class));
     }
 
-    /** Run the transactional action inline, letting any error it throws propagate (as the real port does). */
-    private void runTransactionsPropagatingErrors() {
+    /** Mirror the adapter's lock path: run the action; if it raises OptimisticLockingError, run the handler. */
+    private void runTransactionDetectingLock() {
         doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
+            try {
+                inv.getArgument(0, Runnable.class).run();
+            } catch (OptimisticLockingError e) {
+                inv.getArgument(1, Runnable.class).run();
+            }
             return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
+        }).when(txOps).doInTransaction(any(Runnable.class), any(Runnable.class));
     }
 
     /** The standard calendar pinned in GameCalendarTest: 300s hours, 24h days, 30-day months. */

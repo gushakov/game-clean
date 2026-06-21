@@ -7,10 +7,10 @@ import com.github.gameclean.core.model.daytime.DayPhase;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.persistence.OptimisticLockingError;
 import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import lombok.AccessLevel;
@@ -43,11 +43,14 @@ import java.util.Optional;
  * (design-notes §5: atomicity ≠ isolation). So the guard is optimistic locking carried <em>on the
  * aggregate</em>: the log is read once (capturing its {@code version}), {@link DayPhaseLog#announceThrough}
  * carries that version onto the advanced log, and the single save inside {@code doInTransaction} is checked
- * against it. A concurrent observer that advanced the watermark first makes this write stale — the adapter
- * raises {@link OptimisticLockingError}, the transaction rolls back, and that is caught here and presented as
- * {@code presentNothingToAnnounce}: the loser's goal was already met, so there is nothing left to say (never a
- * double announcement). No re-read inside the transaction is needed; the version the use case read is the
- * whole guard. The success is deferred to after-commit, so it is never reported before the watermark is durable.
+ * against it. A concurrent observer that advanced the watermark first makes this write stale — the persistence
+ * adapter raises {@link OptimisticLockingError}, the transaction rolls back, and the
+ * {@code doInTransaction(action, onLockDetected)} handler presents {@code presentNothingToAnnounce}: the
+ * loser's goal was already met, so there is nothing left to say (never a double announcement). The reaction
+ * rides the transaction port's lock-detect handler rather than the outermost catch, which keeps it co-located
+ * with the single write that can lose. No re-read inside the transaction is needed; the version the use case
+ * read is the whole guard. The success is deferred to after-commit, so it is never reported before the
+ * watermark is durable.
  *
  * <p><b>Every path presents exactly once.</b> The quiet observation — no phase at this hour, or one already
  * past the watermark — is a real outcome ({@code presentNothingToAnnounce}), presented immediately with no
@@ -104,19 +107,18 @@ public class AnnounceTimeOfDayUseCase implements AnnounceTimeOfDayInputPort {
             String message = phase.pickMessage(randomnessOps::nextDouble);
             DayPhaseLog advanced = log.announceThrough(absoluteHour);
 
-            // One write, one atomic unit: save the advance (optimistically version-checked) and announce only
-            // after it commits. A concurrent observer that advanced the watermark since our read makes this
-            // write stale — surfaced as OptimisticLockingError below, never a double announcement.
-            txOps.doInTransaction(false, () -> {
-                dayPhaseLogRepositoryOps.saveDayPhaseLog(advanced);
-                txOps.doAfterCommit(() -> presenter.presentDayPhaseBegan(phase, message));
-            });
+            // One write, one atomic unit: save the advance (optimistically version-checked) and announce the
+            // new phase only after it commits. The second argument is the concurrent-loss handler: if a rival
+            // observer advanced the watermark since our read, our versioned write loses the race and the
+            // transaction rolls back — the loser's goal is already met, so we present "nothing to announce"
+            // (never a double announcement). This doInTransaction is the interaction's terminal act, so a
+            // handler that presents here is safe.
+            txOps.doInTransaction(() -> {
+                        dayPhaseLogRepositoryOps.saveDayPhaseLog(advanced);
+                        txOps.doAfterCommit(() -> presenter.presentDayPhaseBegan(phase, message));
+                    },
+                    presenter::presentNothingToAnnounce);
 
-        } catch (OptimisticLockingError e) {
-            // A concurrent observer announced this phase first: its version won, our write was rejected (and
-            // rolled back). The loser's goal is already met, so there is simply nothing left to announce — an
-            // expected outcome under concurrency, not a fault.
-            presenter.presentNothingToAnnounce();
         } catch (Exception e) {
             // Outermost checkpoint: only genuine faults reach here — a PersistenceOperationsError (already
             // rolled back), a CalendarSourceOperationsError, a TransactionOperationsError, or an unexpected bug.

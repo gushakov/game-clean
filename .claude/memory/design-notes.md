@@ -648,38 +648,63 @@ simplification and no current contention. And it leaves a clean contrast in the 
 detector — unique constraint, version, or row lock — and optimistic `@Version` on the aggregate is the
 canonical one, demarcated by the use case and reacted to as an outcome*.)
 
-**Rejected: generalizing the lock-catch into the transaction port (`doOnLockDetect`).** `[thread #3]` The
-tempting symmetry, once the `catch (OptimisticLockingError)` worked, was to lift it into
-`TransactionOperationsOutputPort` as an idiom beside `doAfterCommit` — register a concurrent-loss reaction the
-way success is registered. We **rejected** it, and the reasoning sharpens what `doAfterCommit` actually earns
-its callback for. The two hooks are different *in kind*: `doAfterCommit` exists for a **correctness property the
-use case cannot satisfy itself** (never report success before durability) — commit is a lifecycle event with no
-other observation point, so the machinery *must* own the callback, and forgetting it is a silent bug. The
-lock reaction is **plain handling of an exception that already propagates out of `doInTransaction`**: the
-`catch` *is* the idiom, there is no lifecycle moment to wait for, and forgetting it falls through to
-`presentError` — an honest, safe default. That asymmetry in failure modes is the tell for which reaction
-deserves machinery. Four objections compound it: (1) it reneges on the port's own canon — *failure is
-expressed by throwing, caught at the single outermost checkpoint; there is deliberately no `rollback()`* — by
-having the port intercept-and-route instead of letting the error propagate (the same move `rollback()` was cut
-for); (2) it is a **wrong-port coupling** — `OptimisticLockingError` is a *persistence*-port type, and the
-transaction port deliberately keeps its currency (`TransactionOperationsError`) distinct, so teaching it to
-catch a sibling port's error breaks the each-port-owns-its-boundary symmetry; (3) it **hides a control-flow
-branch the project insists on keeping visible** — the same shape as the rejected
-`SubcaseAlreadyPresented`-in-the-presenter idea (§4): humble machinery must not own a flow decision that belongs
-in the use case's outcome ladder; (4) the reaction is **use-case-specific domain interpretation** ("concurrent
-loss → my goal was already met → `presentNothingToAnnounce`"), not generic plumbing — another aggregate might
-map a lost race to a retry, a re-check outcome, or genuinely to `presentError` — and with exactly *one* call
-site there is nothing to factor (emergence, §2). On the sketch's own (A) register-inside-body vs (B)
-second-`Runnable`-argument fork: (A) is *mechanically broken* — the throw from `save` short-circuits the rest
-of the lambda, so an in-body registration after the failing write never takes effect; the handler must be
-established *before* the body runs, i.e. it wants to be a parameter. That (A) cannot mirror `doAfterCommit`'s
-in-body shape is itself the structural proof the two are not the same kind of thing. The only behaviour that
-*would* merit generalizing is a **retry** policy (re-read, recompute, re-save on loss) — intricate, reusable,
-with a real footgun (unbounded retry, re-presentation) — but `AnnounceTimeOfDay` deliberately does *not* retry
-(the loser's goal is already met), so even that waits for a contended aggregate that actually wants it. The
-keep-the-explicit-catch decision is what makes the §5 three-way split (*aggregate owns the version, adapter
-owns the wrapping, use case owns the reaction*) visible in code — generalizing it would obscure the very
-lesson this section teaches.
+**The lock-catch generalized into `doInTransaction(action, onLockDetected)` — and the neutral `concurrency`
+package it forced.** `[thread #3]` The reaction to a lost optimistic-lock race began as an explicit
+`catch (OptimisticLockingError)` in the use case. The question was whether to lift it into
+`TransactionOperationsOutputPort` as an idiom beside `doAfterCommit`. The first answer was *no*, on an
+asymmetry worth recording because it is the right test for *which* reactions deserve machinery: `doAfterCommit`
+earns its callback for a **correctness property the use case cannot satisfy itself** (never report success
+before durability — commit is an unobservable lifecycle event, so the machinery *must* own it and forgetting it
+is a silent bug), whereas a lock loss is **plain handling of an exception that already propagates**, so the
+`catch` is the natural idiom and forgetting it falls *safely* through to `presentError`.
+
+What overturned the *no* were three points, the decisive one structural. **(a) In addition, not a
+replacement.** The idiom is opt-in: the signature stays two `Runnable`s (no error type in the contract), and
+with a `null` handler — or via every other overload — `OptimisticLockingError` still propagates to the
+outermost checkpoint. "Failure is expressed by throwing" is *preserved as the default*; the handler is sugar
+over the rollback exactly as `doAfterCommit` is sugar over the commit, not a `rollback()`-style bypass. **(b)
+The distinguish argument inverts the "hides control flow" objection.** A single outermost `catch` cannot tell
+*which* of several `doInTransaction` blocks in one interaction lost its race; a per-block handler co-locates the
+reaction with the very write that can lose — *more* visible at the point of failure, not less. (Today's
+single-write announce does not yet need this, so it is adopted slightly ahead of contention — like the version
+itself — against the combat future that will put several contended writes in one interaction.) **(c) The
+interpretation stays with the use case.** The reaction `Runnable` is supplied *by* the use case
+(`presenter::presentNothingToAnnounce`); only the catch *mechanics* move into the adapter.
+
+The remaining objection — **wrong-port coupling** — refused to be waved away, and produced the real finding.
+Having the *transaction* adapter catch a *persistence*-port error type is a genuine smell (the methodology
+keeps `TransactionOperationsError` and `PersistenceOperationsError` deliberately distinct). Asking what a
+concurrent-modification conflict *is* gives a three-owner split: the **aggregate** owns the *concept* (it
+carries the `version`), **persistence** *detects* it (the store enforces the check, so the persistence adapter
+— owning that framework call — raises it), and the **transaction** *rolls back* on it. It is **both** a
+persistence and a transaction concern *by implementation* but **neither by concept** — a concurrency-control
+signal. A type two boundaries both legitimately need but neither conceptually owns belongs on neutral ground,
+so `OptimisticLockingError` moved to its own `core.port.concurrency` package that both adapters depend on
+symmetrically — **raiser is not owner**. The smell was never the dependency *direction* (infra → core is fine);
+it was a *misplaced type*, and it surfaced only when the reaction moved *into an adapter* — a use case may
+freely know every port's vocabulary (orchestrating them is its job), but one adapter knowing a *sibling* port's
+currency is the tighter coupling worth dissolving. (Promotion candidate, flagged not promoted: *when two
+adapters both react to a boundary type that neither conceptually owns, house it in a neutral package both
+depend on — raiser ≠ owner*.)
+
+Two findings the adoption pinned down. **(B) beat (A), and (A) is mechanically broken.** Of the two sketched
+shapes — (A) register the handler *inside* the transaction body like `doAfterCommit`, (B) pass it as a second
+argument — (A) cannot work: the throw from the failing `save` short-circuits the rest of the lambda, so an
+in-body registration *after* the write never takes effect; the handler must be established *before* the body
+runs, i.e. it must be a parameter. That (A) cannot mirror `doAfterCommit`'s in-body shape is the structural
+proof the two hooks are not the same kind of thing — the first *no*'s asymmetry, now expressed as an API
+constraint. **A presenting handler must be the interaction's terminal act.** Unlike a propagating error (which
+unwinds the whole interaction, *guaranteeing* exactly-once presentation), the handler *swallows* the loss and
+returns control to the caller, which continues past the call — so a handler that *presents* must sit on the
+interaction's last `doInTransaction`, the same discipline `doAfterCommit` carries (§4, presentation is
+terminal). That is the cost the distinguish-benefit is paid against: the multi-block future motivating the
+idiom is exactly where a swallow-and-continue handler could present twice if the discipline is ignored. The
+predicted **`ConcurrencyConflictError` parent** (a unique-constraint race, a serialization failure are sibling
+detectors per the detector lens) is left unbuilt — deferred by emergence until a second detector needs a home;
+the `concurrency` package is its eventual address. The one behaviour still *not* generalized is a **retry**
+policy (re-read, recompute, re-save) — intricate and footgun-prone (unbounded retry, re-presentation) — which
+`AnnounceTimeOfDay` deliberately forgoes (the loser's goal is already met), so it too waits for a contended
+aggregate that wants it.
 
 ## 6. The composition root — the framework held at arm's length
 

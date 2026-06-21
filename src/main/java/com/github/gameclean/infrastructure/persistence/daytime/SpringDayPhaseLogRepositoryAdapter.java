@@ -2,8 +2,8 @@ package com.github.gameclean.infrastructure.persistence.daytime;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.persistence.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
