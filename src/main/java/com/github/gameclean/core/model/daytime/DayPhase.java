@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.daytime;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 import java.util.List;
 import java.util.Objects;
@@ -32,8 +31,7 @@ import java.util.function.DoubleSupplier;
  * under test — exactly as {@link com.github.gameclean.core.model.item.SpawnRule#pickScene(double)} does for
  * scene selection.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class DayPhase {
 
     private final String name;

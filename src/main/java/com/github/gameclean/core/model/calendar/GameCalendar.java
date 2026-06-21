@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.calendar;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 import java.util.List;
 import java.util.Objects;
@@ -33,8 +32,7 @@ import java.util.function.Function;
  * {@link #placeInstant} takes a plain elapsed-seconds {@code long}, so the whole calendar is unit-testable
  * with no port, clock, or database. The base year is fixed at {@link #EPOCH_YEAR} for now.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class GameCalendar {
 
     /** The game year the epoch instant (zero elapsed seconds) maps to — the first day of this year. */

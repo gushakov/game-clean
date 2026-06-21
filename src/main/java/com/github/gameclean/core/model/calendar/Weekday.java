@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.calendar;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * A named day of the week — one authored entry in the calendar's {@code week:} cycle, carrying the name the
@@ -14,8 +13,7 @@ import lombok.Getter;
  * since the epoch, so a {@code Weekday} carries no index of its own — its position is its slot in the
  * {@link GameCalendar#getWeek()} list, and {@link GameCalendar#weekdayOf} resolves a date to one of these.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class Weekday {
 
     private final String name;

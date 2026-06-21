@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.scene;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * A way out of a {@link Scene} — a Value Object owned by its source scene.
@@ -17,8 +16,7 @@ import lombok.Getter;
  * <p>Always-valid: neither the name nor the target may be null, and the name may not be blank.
  * Equality is by value.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class Exit {
 
     private final String name;
