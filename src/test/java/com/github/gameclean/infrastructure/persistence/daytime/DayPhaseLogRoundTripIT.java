@@ -1,7 +1,7 @@
 package com.github.gameclean.infrastructure.persistence.daytime;
 
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
-import com.github.gameclean.core.port.persistence.OptimisticLockingError;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

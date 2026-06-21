@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.transaction;
 
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.transaction.TransactionOperationsError;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,16 @@ import java.util.function.Supplier;
  * action's already-translated {@code PersistenceOperationsError} (double-wrapping) and blur the two
  * failure modes into one.
  *
+ * <p>The {@code (action, onLockDetected)} overload adds a third, opt-in reaction, distinct from those two
+ * demarcation faults. An {@link OptimisticLockingError} — raised by the <em>persistence</em> adapter when a
+ * versioned write loses a concurrent race, and propagated through the template as a rollback-triggering
+ * runtime exception — is caught here and routed to the supplied handler instead of to the use case's
+ * outermost checkpoint, because a lost race is an expected concurrency outcome, not a machinery failure. Note
+ * the cross-boundary direction: the conflict is <em>detected</em> by persistence but <em>reacted to</em> here,
+ * which is exactly why its type sits in the neutral {@code core.port.concurrency} package both adapters depend
+ * on rather than in either port's own (design-notes §5). With a {@code null} handler the overload is a plain
+ * read-write transaction and the error propagates as usual.
+ *
  * <p>After-commit / after-rollback hooks register a {@link TransactionSynchronization} and fire on
  * the matching completion status. With no transaction active, {@code doAfterCommit} runs immediately
  * (nothing to wait for) and {@code doAfterRollback} is a no-op (nothing rolled back).
@@ -49,6 +60,25 @@ public class SpringTransactionAdapter implements TransactionOperationsOutputPort
             template(readOnly).executeWithoutResult(status -> action.run());
         } catch (TransactionException e) {
             throw new TransactionOperationsError("Transaction could not be completed", e);
+        }
+    }
+
+    @Override
+    public void doInTransaction(Runnable action, Runnable onLockDetected) {
+        if (onLockDetected == null) {
+            // No handler supplied: behave exactly like a plain read-write transaction — a lost race
+            // propagates as OptimisticLockingError to the use case's outermost checkpoint.
+            doInTransaction(action);
+            return;
+        }
+        try {
+            doInTransaction(action);
+        } catch (OptimisticLockingError e) {
+            // The action's versioned write lost a concurrent race: the detector fired and the transaction
+            // already rolled back. That is an expected outcome under concurrency, not a fault, so the
+            // caller's handler reacts to it (e.g. present "nothing to do") instead of it reaching presentError.
+            log.debug("[Transaction] Optimistic-lock conflict detected; running the onLockDetected handler", e);
+            onLockDetected.run();
         }
     }
 

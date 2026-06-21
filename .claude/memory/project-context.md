@@ -255,16 +255,18 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
 - **Use case** — `AnnounceTimeOfDay` (`core/usecase/clock/`): system-actor input port `systemObservesTimeOfDay()`,
   presenter extends `ClockReadinessPresenterOutputPort` (`presentDayPhaseBegan` + `presentNothingToAnnounce`).
   Derives "now" like `AskForTime`; reads the log once (capturing its version) + random message pick **outside**
-  the tx; one `doInTransaction` holds the single **version-checked** save (no inside-tx re-read), presents after
-  commit. A concurrent loss surfaces as `OptimisticLockingError` → caught → `presentNothingToAnnounce`; a quiet
-  observation also presents `presentNothingToAnnounce` (no tx); missing clock → `presentGameNotInitialized`
+  the tx; one `doInTransaction(action, onLockDetected)` holds the single **version-checked** save (no inside-tx
+  re-read), presents after commit. A concurrent loss surfaces as `OptimisticLockingError` → the tx-port
+  `onLockDetected` handler → `presentNothingToAnnounce`; a quiet observation also presents
+  `presentNothingToAnnounce` (no tx); missing clock → `presentGameNotInitialized`
   (design-notes §5/§8 thread #3). `InitializeGame` gained a **5th create-if-absent guard** (seed
   `DayPhaseLog.initial()` beside the clock).
 - **Ports** — `DayPhaseScheduleSourceOperationsOutputPort.loadDayPhases()` (`core/port/daytime/`, returns a
   **valid** `DayPhaseSchedule` — the §3 load-each-boot deviation, + `DayPhaseScheduleSourceOperationsError`);
-  `DayPhaseLogRepositoryOperationsOutputPort` (`core/port/persistence/`, find/save); new `OptimisticLockingError`
-  (`core/port/persistence/`, a **sibling** of `PersistenceOperationsError` — a concurrent loss is an outcome,
-  not a fault).
+  `DayPhaseLogRepositoryOperationsOutputPort` (`core/port/persistence/`, find/save); `OptimisticLockingError`
+  (`core/port/concurrency/`, its **own neutral package** — raised by persistence, reacted to by the transaction
+  port / use case, owned conceptually by the aggregate; not a subtype of either port error — a concurrent loss
+  is an outcome, not a fault. Also reacted to via the new `doInTransaction(action, onLockDetected)` overload).
 - **Adapters / infra** — `YamlCalendarSource` now implements **both** source ports (reads a `dayPhases:` block in
   `calendar.yaml` via `CalendarYamlReader.readDayPhases`, reconciles each phase hour against `hoursPerDay`
   fail-fast at boot); Flyway `V5__create_day_phase_log.sql` (singleton row, with a `version` column) +
