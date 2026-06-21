@@ -39,6 +39,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -100,7 +102,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -115,7 +117,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -133,7 +135,7 @@ class InitializeGameUseCaseTest {
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(GameClock.initial()));
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -151,7 +153,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         // The clock is absent (default Optional.empty), so it is created at time zero.
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -166,7 +168,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         // The day-phase log is absent (default Optional.empty), so it is created at the "nothing announced" sentinel.
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -186,7 +188,7 @@ class InitializeGameUseCaseTest {
         // 0.6 selects candidate index (int)(0.6 * 2) = 1, i.e. scn2.
         when(randomnessOps.nextDouble()).thenReturn(0.0, 0.6);
         when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -212,7 +214,7 @@ class InitializeGameUseCaseTest {
         // The rolls still happen (outside the transaction), but the guard means nothing is saved.
         when(randomnessOps.nextDouble()).thenReturn(0.0, 0.0);
         when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -332,7 +334,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(sceneOps).saveScene(any());
-        runTransactionsPropagatingErrors();
+        runTransaction(txOps);
 
         useCase.systemInitializesGame();
 
@@ -348,7 +350,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
-        runTransactionsPropagatingErrors();
+        runTransaction(txOps);
 
         useCase.systemInitializesGame();
 
@@ -385,28 +387,6 @@ class InitializeGameUseCaseTest {
 
     private static Player player(String id, String currentScene) {
         return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
-    }
-
-    // --- transaction-port stubs -----------------------------------------------------------------
-
-    /** Run the transactional action inline and fire after-commit callbacks immediately. */
-    private void runTransactionsAndFireAfterCommit() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
-        doAnswer(inv -> {
-            inv.getArgument(0, Runnable.class).run();
-            return null;
-        }).when(txOps).doAfterCommit(any(Runnable.class));
-    }
-
-    /** Run the transactional action inline, letting any error it throws propagate (as the real port does). */
-    private void runTransactionsPropagatingErrors() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
     }
 
     // --- assertion helpers ----------------------------------------------------------------------
