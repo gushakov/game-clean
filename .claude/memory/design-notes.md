@@ -648,6 +648,39 @@ simplification and no current contention. And it leaves a clean contrast in the 
 detector — unique constraint, version, or row lock — and optimistic `@Version` on the aggregate is the
 canonical one, demarcated by the use case and reacted to as an outcome*.)
 
+**Rejected: generalizing the lock-catch into the transaction port (`doOnLockDetect`).** `[thread #3]` The
+tempting symmetry, once the `catch (OptimisticLockingError)` worked, was to lift it into
+`TransactionOperationsOutputPort` as an idiom beside `doAfterCommit` — register a concurrent-loss reaction the
+way success is registered. We **rejected** it, and the reasoning sharpens what `doAfterCommit` actually earns
+its callback for. The two hooks are different *in kind*: `doAfterCommit` exists for a **correctness property the
+use case cannot satisfy itself** (never report success before durability) — commit is a lifecycle event with no
+other observation point, so the machinery *must* own the callback, and forgetting it is a silent bug. The
+lock reaction is **plain handling of an exception that already propagates out of `doInTransaction`**: the
+`catch` *is* the idiom, there is no lifecycle moment to wait for, and forgetting it falls through to
+`presentError` — an honest, safe default. That asymmetry in failure modes is the tell for which reaction
+deserves machinery. Four objections compound it: (1) it reneges on the port's own canon — *failure is
+expressed by throwing, caught at the single outermost checkpoint; there is deliberately no `rollback()`* — by
+having the port intercept-and-route instead of letting the error propagate (the same move `rollback()` was cut
+for); (2) it is a **wrong-port coupling** — `OptimisticLockingError` is a *persistence*-port type, and the
+transaction port deliberately keeps its currency (`TransactionOperationsError`) distinct, so teaching it to
+catch a sibling port's error breaks the each-port-owns-its-boundary symmetry; (3) it **hides a control-flow
+branch the project insists on keeping visible** — the same shape as the rejected
+`SubcaseAlreadyPresented`-in-the-presenter idea (§4): humble machinery must not own a flow decision that belongs
+in the use case's outcome ladder; (4) the reaction is **use-case-specific domain interpretation** ("concurrent
+loss → my goal was already met → `presentNothingToAnnounce`"), not generic plumbing — another aggregate might
+map a lost race to a retry, a re-check outcome, or genuinely to `presentError` — and with exactly *one* call
+site there is nothing to factor (emergence, §2). On the sketch's own (A) register-inside-body vs (B)
+second-`Runnable`-argument fork: (A) is *mechanically broken* — the throw from `save` short-circuits the rest
+of the lambda, so an in-body registration after the failing write never takes effect; the handler must be
+established *before* the body runs, i.e. it wants to be a parameter. That (A) cannot mirror `doAfterCommit`'s
+in-body shape is itself the structural proof the two are not the same kind of thing. The only behaviour that
+*would* merit generalizing is a **retry** policy (re-read, recompute, re-save on loss) — intricate, reusable,
+with a real footgun (unbounded retry, re-presentation) — but `AnnounceTimeOfDay` deliberately does *not* retry
+(the loser's goal is already met), so even that waits for a contended aggregate that actually wants it. The
+keep-the-explicit-catch decision is what makes the §5 three-way split (*aggregate owns the version, adapter
+owns the wrapping, use case owns the reaction*) visible in code — generalizing it would obscure the very
+lesson this section teaches.
+
 ## 6. The composition root — the framework held at arm's length
 
 **Wiring is explicit and hidden from the core.** Use cases are declared as
