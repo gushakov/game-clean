@@ -25,6 +25,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -71,7 +73,7 @@ class MoveUseCaseTest {
         orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard));
         when(itemOps.findItemsInScene(new SceneId("scn2"))).thenReturn(itemsInCourtyard);
-        runTransactionAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.playerMovesThrough("east");
 
@@ -89,7 +91,7 @@ class MoveUseCaseTest {
     void matchesTheExitCaseInsensitively() {
         orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
-        runTransactionAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.playerMovesThrough("EAST");
 
@@ -147,7 +149,7 @@ class MoveUseCaseTest {
         orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
-        runTransactionPropagatingErrors();
+        runTransaction(txOps);
 
         useCase.playerMovesThrough("east");
 
@@ -187,28 +189,6 @@ class MoveUseCaseTest {
                 .fullDescription("A place worth describing in full.")
                 .exits(List.of())
                 .build();
-    }
-
-    // --- transaction-port stubs ---------------------------------------------------------------------
-
-    /** Run the transactional action inline and fire after-commit callbacks immediately. */
-    private void runTransactionAndFireAfterCommit() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
-        doAnswer(inv -> {
-            inv.getArgument(0, Runnable.class).run();
-            return null;
-        }).when(txOps).doAfterCommit(any(Runnable.class));
-    }
-
-    /** Run the transactional action inline, letting any error it throws propagate (as the real port does). */
-    private void runTransactionPropagatingErrors() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
     }
 
     private void verifyNoWriteOrScene() {

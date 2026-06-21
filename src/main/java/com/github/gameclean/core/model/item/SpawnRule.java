@@ -3,8 +3,7 @@ package com.github.gameclean.core.model.item;
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,8 +27,7 @@ import java.util.function.DoubleSupplier;
  * resolves to an authored scene is an inter-aggregate world-consistency rule checked by the initialization
  * use case, not here — the same split scenes already use for their exit targets.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class SpawnRule {
 
     private final Chance chance;

@@ -1,8 +1,5 @@
 package com.github.gameclean.core.usecase.clock;
 
-import com.github.gameclean.core.model.calendar.GameCalendar;
-import com.github.gameclean.core.model.calendar.Month;
-import com.github.gameclean.core.model.calendar.Weekday;
 import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.model.daytime.DayPhase;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
@@ -25,8 +22,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
+import static com.github.gameclean.core.model.calendar.CalendarFixtures.standard;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -72,7 +71,7 @@ class AnnounceTimeOfDayUseCaseTest {
         when(dayPhaseScheduleSourceOps.loadDayPhases()).thenReturn(dawnAtHourSix());
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
         when(randomnessOps.nextDouble()).thenReturn(0.0);   // pick the first message
-        runTransactionAndFireAfterCommit();
+        runLockAwareTransactionAndFireAfterCommit(txOps);
 
         useCase.systemObservesTimeOfDay();
 
@@ -118,7 +117,7 @@ class AnnounceTimeOfDayUseCaseTest {
         // The version-checked save loses to a concurrent advance that happened since our read.
         doThrow(new OptimisticLockingError("stale version"))
                 .when(dayPhaseLogRepositoryOps).saveDayPhaseLog(any());
-        runTransactionDetectingLock();
+        runLockAwareTransactionDetectingLock(txOps);
 
         useCase.systemObservesTimeOfDay();
 
@@ -158,7 +157,7 @@ class AnnounceTimeOfDayUseCaseTest {
     private void givenTimeAt(long elapsedSeconds) {
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(new GameClock(elapsedSeconds)));
         when(gameTimeSourceOps.elapsedSessionSeconds()).thenReturn(0L);
-        when(calendarSourceOps.loadCalendar()).thenReturn(standardCalendar());
+        when(calendarSourceOps.loadCalendar()).thenReturn(standard());
     }
 
     private static DayPhase dawn() {
@@ -167,40 +166,5 @@ class AnnounceTimeOfDayUseCaseTest {
 
     private static DayPhaseSchedule dawnAtHourSix() {
         return new DayPhaseSchedule(List.of(dawn()));
-    }
-
-    private void runTransactionAndFireAfterCommit() {
-        doAnswer(inv -> {
-            inv.getArgument(0, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(any(Runnable.class), any(Runnable.class));
-        doAnswer(inv -> {
-            inv.getArgument(0, Runnable.class).run();
-            return null;
-        }).when(txOps).doAfterCommit(any(Runnable.class));
-    }
-
-    /** Mirror the adapter's lock path: run the action; if it raises OptimisticLockingError, run the handler. */
-    private void runTransactionDetectingLock() {
-        doAnswer(inv -> {
-            try {
-                inv.getArgument(0, Runnable.class).run();
-            } catch (OptimisticLockingError e) {
-                inv.getArgument(1, Runnable.class).run();
-            }
-            return null;
-        }).when(txOps).doInTransaction(any(Runnable.class), any(Runnable.class));
-    }
-
-    /** The standard calendar pinned in GameCalendarTest: 300s hours, 24h days, 30-day months. */
-    private static GameCalendar standardCalendar() {
-        return new GameCalendar(300, 24, 30,
-                List.of(new Weekday("Elenya", "guidance"), new Weekday("Anarya", "vitality"),
-                        new Weekday("Isilya", "reflection"), new Weekday("Alduya", "growth"),
-                        new Weekday("Menelya", "higher matters")),
-                List.of(new Month("Aelorin", "a"), new Month("Sylvael", "b"), new Month("Calivorn", "c"),
-                        new Month("Thalinde", "d"), new Month("Evaniel", "e"), new Month("Miraleth", "f"),
-                        new Month("Faerundel", "g"), new Month("Veloris", "h"), new Month("Aelindra", "i"),
-                        new Month("Sorivael", "j")));
     }
 }

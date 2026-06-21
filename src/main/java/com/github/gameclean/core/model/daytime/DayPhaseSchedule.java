@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.daytime;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,8 +23,7 @@ import java.util.Optional;
  * fault, like a malformed calendar) rather than re-checked here on every read — so this schedule stays
  * calendar-agnostic, validating only what it can judge alone (uniqueness of phase hours).
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class DayPhaseSchedule {
 
     private final List<DayPhase> phases;

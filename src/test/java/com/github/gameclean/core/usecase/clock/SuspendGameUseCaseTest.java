@@ -13,9 +13,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,7 +48,7 @@ class SuspendGameUseCaseTest {
     void banksTheSessionIntoTheClockAndAcknowledgesAfterCommit() {
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(new GameClock(1_000)));
         when(gameTimeSourceOps.elapsedSessionSeconds()).thenReturn(350L);
-        runTransactionAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.playerLeavesTheGame();
 
@@ -75,31 +76,11 @@ class SuspendGameUseCaseTest {
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(new GameClock(1_000)));
         when(gameTimeSourceOps.elapsedSessionSeconds()).thenReturn(350L);
         doThrow(boom).when(gameClockRepositoryOps).saveClock(any());
-        runTransactionPropagatingErrors();
+        runTransaction(txOps);
 
         useCase.playerLeavesTheGame();
 
         verify(presenter).presentError(boom);
         verify(presenter, never()).presentGameSuspended();
-    }
-
-    /** Run the transactional action inline and fire after-commit callbacks immediately. */
-    private void runTransactionAndFireAfterCommit() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
-        doAnswer(inv -> {
-            inv.getArgument(0, Runnable.class).run();
-            return null;
-        }).when(txOps).doAfterCommit(any(Runnable.class));
-    }
-
-    /** Run the transactional action inline, letting any error it throws propagate (as the real port does). */
-    private void runTransactionPropagatingErrors() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
     }
 }

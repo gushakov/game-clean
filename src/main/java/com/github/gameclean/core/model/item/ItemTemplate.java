@@ -3,8 +3,7 @@ package com.github.gameclean.core.model.item;
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,8 +25,7 @@ import java.util.function.Supplier;
  * how the random spawn rolls fall, closing the gap where an invalid template might otherwise never be
  * exercised.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class ItemTemplate {
 
     private final String shortDescription;

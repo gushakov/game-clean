@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.player;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * Identity of a {@link Player} — a Value Object wrapping an authored id of the form
@@ -14,8 +13,7 @@ import lombok.Getter;
  * character set, which is an artifact of the id-generation scheme owned solely by the generator
  * adapter. Equality is by value (the wrapped string).
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class PlayerId {
 
     /** Three-letter aggregate prefix for players. */

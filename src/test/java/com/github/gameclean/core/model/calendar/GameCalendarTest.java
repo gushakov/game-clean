@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static com.github.gameclean.core.model.calendar.CalendarFixtures.*;
 import static org.assertj.core.api.Assertions.*;
 
 /**
@@ -24,34 +25,6 @@ class GameCalendarTest {
     private static final long SECONDS_PER_DAY = SECONDS_PER_HOUR * HOURS_PER_DAY;     // 7_200
     private static final long SECONDS_PER_MONTH = SECONDS_PER_DAY * DAYS_PER_MONTH;   // 216_000
     private static final long SECONDS_PER_YEAR = SECONDS_PER_MONTH * 10;             // 2_160_000
-
-    private static List<Weekday> fiveWeekdays() {
-        return List.of(
-                new Weekday("Elenya", "guidance"),
-                new Weekday("Anarya", "vitality"),
-                new Weekday("Isilya", "reflection"),
-                new Weekday("Alduya", "growth"),
-                new Weekday("Menelya", "higher matters"));
-    }
-
-    private static List<Month> tenMonths() {
-        return List.of(
-                new Month("Aelorin", "The Silver Wind Returns"),
-                new Month("Sylvael", "The First Bloom Stirs"),
-                new Month("Calivorn", "The Waters Awaken"),
-                new Month("Thalinde", "The Light Grows Long"),
-                new Month("Evaniel", "The Golden Tide"),
-                new Month("Miraleth", "The Amber Canopy"),
-                new Month("Faerundel", "The Drifting Mists"),
-                new Month("Veloris", "The Cold Moon Rises"),
-                new Month("Aelindra", "The Deep Frost"),
-                new Month("Sorivael", "The Returning Light"));
-    }
-
-    /** The calendar from the design discussion: 300s hours, 24h days, 30-day months, 5 weekdays, 10 months. */
-    private static GameCalendar standard() {
-        return new GameCalendar(300, 24, 30, fiveWeekdays(), tenMonths());
-    }
 
     // --- construction invariants -------------------------------------------------------------------------
 

@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.item;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * Identity of an {@link Item} — a Value Object wrapping an id of the form {@code itm} + a non-empty
@@ -21,8 +20,7 @@ import lombok.Getter;
  * supplies a body of its own private alphabet, and this factory owns the one thing the domain owns about
  * a generated id — the prefix and how it composes with the body — then runs the same always-valid gate.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class ItemId {
 
     /** Three-letter aggregate prefix for items. */
