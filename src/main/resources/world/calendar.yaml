@@ -55,3 +55,23 @@ months:
     description: The Deep Frost
   - name: Sorivael
     description: The Returning Light
+
+# Day phases — recurring moments of the day the world announces as game time crosses
+# into them (dawn, dusk). Co-authored with the calendar but a distinct concern: these
+# carry player-facing narrative, not calendar structure, so they live in their own
+# model (DayPhase / DayPhaseSchedule) rather than on GameCalendar. The `hour` is a
+# 0-based hour-of-day index and must be within `hoursPerDay`; the background time
+# ticker announces a phase once per occurrence (one message picked at random).
+dayPhases:
+  - name: Dawn
+    hour: 6
+    messages:
+      - The first pale light spills over the horizon; the world stirs awake.
+      - Dawn breaks, and the long shadows of night retreat before the rising sun.
+      - A cool, grey morning unfolds, and somewhere a lone bird greets the day.
+  - name: Dusk
+    hour: 18
+    messages:
+      - The sun sinks low, and the sky burns amber before surrendering to night.
+      - Dusk settles over the land; lanterns flicker to life in the gathering dark.
+      - The last light fades, and a hush falls as the world prepares for night.

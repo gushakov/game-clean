@@ -7,6 +7,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.core.io.Resource;
 
+import java.time.Duration;
+
 /**
  * The single catalog of every {@code game.*} application property. These are the project's important
  * configuration points, so they live in one bean at the infrastructure root rather than scattered
@@ -26,6 +28,14 @@ import org.springframework.core.io.Resource;
  * — a bound properties object. So {@code game.terminal.enabled} also appears as a raw key in those
  * guards. It is still bound here, so this remains the one place that documents every {@code game.*}
  * property even when a condition reads it independently.
+ *
+ * <p>The contrast is worth keeping straight, because it bit once: a <em>post</em>-binding consumer
+ * <em>can</em> (and should) consult this bound catalog rather than re-read a raw key. The time ticker
+ * ({@code GameClockTicker}) configures its schedule at bean time via a {@code SchedulingConfigurer} and
+ * injects {@code getTime().getTicker().getInterval()} as a typed {@link Duration}. An earlier cut reached
+ * for {@code @Scheduled("${game.time.ticker.interval}")} instead and failed at startup: a {@code @DefaultValue}
+ * is a binding-time default, not an {@code Environment} entry, so the placeholder did not resolve. The
+ * raw-key carve-out is only for pre-binding conditions; everything after binding reads the typed value here.
  */
 @Getter
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
@@ -93,20 +103,43 @@ public class GameConfigurationProperties {
         }
     }
 
-    /** {@code game.time.*} — the game calendar and clock. */
+    /** {@code game.time.*} — the game calendar, clock, and background time ticker. */
     @Getter
     @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
     public static class Time {
 
         /**
-         * Location of the authored calendar (radices + named weekday/month cycles), any Spring resource
-         * string. The calendar's <em>content</em> is world data flowing through the domain; only this
-         * location is operational configuration.
+         * Location of the authored calendar (radices + named weekday/month cycles, plus the day phases), any
+         * Spring resource string. The content is world data flowing through the domain; only this location is
+         * operational configuration.
          */
         Resource calendarLocation;
 
-        public Time(@DefaultValue("classpath:world/calendar.yaml") Resource calendarLocation) {
+        /** {@code game.time.ticker.*} — the background metronome that drives day-phase announcements. */
+        Ticker ticker;
+
+        public Time(@DefaultValue("classpath:world/calendar.yaml") Resource calendarLocation,
+                    @DefaultValue Ticker ticker) {
             this.calendarLocation = calendarLocation;
+            this.ticker = ticker;
+        }
+
+        /** {@code game.time.ticker.*} — the background time ticker. */
+        @Getter
+        @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+        public static class Ticker {
+
+            /**
+             * Real-time interval between observations of game time. The ticker is a blind metronome: it fires
+             * the announcement use case this often, and the use case dedups so over-frequent polls are
+             * harmless. Keep it well below one game hour ({@code secondsPerHour} real seconds) so a day-phase
+             * boundary is announced promptly. A Spring Boot {@link Duration} string, e.g. {@code 5s}.
+             */
+            Duration interval;
+
+            public Ticker(@DefaultValue("5s") Duration interval) {
+                this.interval = interval;
+            }
         }
     }
 }

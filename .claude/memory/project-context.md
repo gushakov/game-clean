@@ -45,23 +45,25 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
-  `item/`, `calendar/`, `clock/`) plus the `model/` root holding the always-valid construction gate's failure type
+  `item/`, `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate)) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
-  `port/id/`, `port/randomness/`, `port/seed/`, `port/calendar/` (calendar-source port + error), `port/clock/`
+  `port/id/`, `port/randomness/`, `port/seed/`, `port/calendar/` (calendar-source port + error), `port/daytime/`
+  (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
-  `GameSeed`/`*Entry` carriers it returns), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame`).
+  `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
   `Terminal`, `Player`, `Time`). Sub-packages:
-  `infrastructure/persistence/{aggregate}/` (incl. `clock/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
-  `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource`), `infrastructure/clock/` (`SystemGameTimeSource`),
+  `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
+  `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
+  `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring; `command/` the
   sealed `Command` + `CommandParser`; `presenter/` the driven `Terminal*Presenter`s; `render/`
-  `Console`/`CurrentSceneRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
+  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
   `infrastructure/randomness/` (JDK randomness adapter).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
@@ -101,7 +103,9 @@ Interactive terminal shell **complete** (issue #6) — one process, JLine owning
   `consoleSession.start()` — each an independent inward fire (no imperative `seed(); start();` body, which
   removes the return-of-control affordance the unidirectional rule forbids). Class-level
   `@ConditionalOnProperty(game.terminal.enabled)` gates both runners. Business sequencing lives inside the
-  use case, not here (design-notes §6).
+  use case, not here (design-notes §6). Also carries `@EnableScheduling` (since #36): the enablement for the
+  async `GameClockTicker`, gated with the rest of the interactive runtime — recurring driving adapters are
+  not one-shot runners, so only their scheduling-enablement lives here.
 - **Two adapters, one terminal** — `TerminalConfig` declares shared singleton `Terminal`/`LineReader`
   *resources*; the driving `ConsoleSession` (blocking `look`/`bye` loop; `look` loads `scn1` directly via
   the Spring Data repo + mapper — **spike**, bypassing the clean port) and the driven
@@ -205,8 +209,9 @@ persistence (those arrived with the `now`/`time` vertical, #33):
 
 - **Domain** — `core/model/calendar/`: `GameCalendar` (authored uniform radices — seconds/hour, hours/day,
   days/month — plus ordered `Weekday`/`Month` cycles; always-valid: positive radices, non-empty cycles,
-  unique names), owning the mixed-radix `placeInstant(long)`, `monthOf(GameDate)`, and the **continuous-week**
-  `weekdayOf(GameDate)` SEFF. `GameDate` — pure 0-based positional tuple {year, monthIndex, dayIndex,
+  unique names), owning the mixed-radix `placeInstant(long)`, `monthOf(GameDate)`, the **continuous-week**
+  `weekdayOf(GameDate)`, and `absoluteHourOf(long)` (the monotonic hour-since-epoch — un-wrapped companion to
+  `placeInstant`'s cyclic `hourIndex`, used by the day-phase dedup) SEFFs. `GameDate` — pure 0-based positional tuple {year, monthIndex, dayIndex,
   hourIndex, secondOfHour}, non-negativity-only gate (`GameCalendar` is its sole factory — shape A).
   `Weekday`/`Month` — named VOs (non-blank name + description). Indices 0-based; ordinal/clock labeling left
   to a future renderer; `EPOCH_YEAR = 1000`. (design-notes §11.)
@@ -238,7 +243,46 @@ is **accumulated play-time** (advances only while playing; banked on `bye`, no t
 - **Config** — `game.time.calendar-location` (default `classpath:world/calendar.yaml`); authored
   `world/calendar.yaml` (radices + named cycles, **world content** not `game.*` config — design-notes §11).
 
-Tests: 191 unit (Surefire, DB-free) + 12 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Dawn/dusk announcements + background time ticker **complete** (issue #36) — the project's first asynchronous,
+time-driven interaction and first parallel actor (Package B: "dumb metronome, smart use case"):
+
+- **Domain** — `core/model/daytime/`: `DayPhase` (name + 0-based `hourOfDay` + ≥1 non-blank messages; owns the
+  uniform `pickMessage(DoubleSupplier)`, mirroring `SpawnRule.pickScene`), `DayPhaseSchedule` (distinct phase
+  hours; `phaseBeginningAt(hourIndex)`), and `DayPhaseLog` — a **world-singleton aggregate** holding
+  `announcedThroughHour` (the dedup watermark; `-1` = none, monotonic `announceThrough`/`isPending`) plus an
+  optimistic-locking `version` carried **on the model** (opaque, excluded from value equality, carried through
+  `announceThrough`; design-notes §5).
+- **Use case** — `AnnounceTimeOfDay` (`core/usecase/clock/`): system-actor input port `systemObservesTimeOfDay()`,
+  presenter extends `ClockReadinessPresenterOutputPort` (`presentDayPhaseBegan` + `presentNothingToAnnounce`).
+  Derives "now" like `AskForTime`; reads the log once (capturing its version) + random message pick **outside**
+  the tx; one `doInTransaction` holds the single **version-checked** save (no inside-tx re-read), presents after
+  commit. A concurrent loss surfaces as `OptimisticLockingError` → caught → `presentNothingToAnnounce`; a quiet
+  observation also presents `presentNothingToAnnounce` (no tx); missing clock → `presentGameNotInitialized`
+  (design-notes §5/§8 thread #3). `InitializeGame` gained a **5th create-if-absent guard** (seed
+  `DayPhaseLog.initial()` beside the clock).
+- **Ports** — `DayPhaseScheduleSourceOperationsOutputPort.loadDayPhases()` (`core/port/daytime/`, returns a
+  **valid** `DayPhaseSchedule` — the §3 load-each-boot deviation, + `DayPhaseScheduleSourceOperationsError`);
+  `DayPhaseLogRepositoryOperationsOutputPort` (`core/port/persistence/`, find/save); new `OptimisticLockingError`
+  (`core/port/persistence/`, a **sibling** of `PersistenceOperationsError` — a concurrent loss is an outcome,
+  not a fault).
+- **Adapters / infra** — `YamlCalendarSource` now implements **both** source ports (reads a `dayPhases:` block in
+  `calendar.yaml` via `CalendarYamlReader.readDayPhases`, reconciles each phase hour against `hoursPerDay`
+  fail-fast at boot); Flyway `V5__create_day_phase_log.sql` (singleton row, with a `version` column) +
+  `DayPhaseLogDbEntity` (`@Version`) + MapStruct mapper + repo + `SpringDayPhaseLogRepositoryAdapter` (version-driven
+  `repository.save` upsert — **no** `existsById`/`JdbcAggregateTemplate`, unlike the version-less clock adapter;
+  wraps `OptimisticLockingFailureException` → `OptimisticLockingError`); `GameClockTicker` (`infrastructure/time/`, a
+  `SchedulingConfigurer` registering a fixed-delay task that fires `AnnounceTimeOfDay`, pulling a fresh prototype
+  per tick — carries **no** domain knowledge; reads the **bound, typed** `game.time.ticker.interval` `Duration`
+  from the catalog, not a `${}` placeholder — `@Scheduled` placeholders don't see `@DefaultValue`s and reject
+  the `5s` form; `@EnableScheduling` sits on the gated `BootSequence`, and Spring's lifecycle cancels scheduled
+  tasks before the `Terminal` is destroyed, so `printAbove` never hits a closed terminal — no hand-rolled
+  `SmartLifecycle`); `TerminalAnnounceTimeOfDayPresenter` announces via the new
+  `Console.printAbove` (first async console write) and trace/warn-logs the quiet/not-ready/error outcomes.
+- **Config** — `game.time.ticker.interval` (default `5s`, a `Duration`); authored `dayPhases:` (Dawn@6, Dusk@18)
+  in `world/calendar.yaml`. Deferred: catch-up across boundaries skipped when the interval exceeds a game hour
+  (detects only a phase at the *current* hour).
+
+Tests: 222 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: NPCs, the `look <target>` / `take` use cases, async/event
-processing.
+processing (the ticker polls; the outbox event spine is still ahead).

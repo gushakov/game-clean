@@ -3,6 +3,8 @@ package com.github.gameclean.infrastructure.calendar;
 import com.github.gameclean.core.model.calendar.GameCalendar;
 import com.github.gameclean.core.model.calendar.Month;
 import com.github.gameclean.core.model.calendar.Weekday;
+import com.github.gameclean.core.model.daytime.DayPhase;
+import com.github.gameclean.core.model.daytime.DayPhaseSchedule;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -27,6 +29,11 @@ import java.util.Objects;
  * fails here like malformed YAML, and authored radices/cycles that break the always-valid gate throw
  * {@code InvalidDomainObjectError} from the constructors — both wrapped into the port's error by
  * {@link YamlCalendarSource}.
+ *
+ * <p>It also reads the {@code dayPhases:} block of the same document ({@link #readDayPhases}) into a
+ * {@link DayPhaseSchedule}. Day phases are co-authored with the calendar but kept a distinct model (they
+ * carry narrative, not radices), so they parse into their own carrier here; {@code YamlCalendarSource}
+ * reconciles each phase hour against the calendar's {@code hoursPerDay} after both are read.
  */
 @Component
 public class CalendarYamlReader {
@@ -55,6 +62,39 @@ public class CalendarYamlReader {
         return new GameCalendar(secondsPerHour, hoursPerDay, daysPerMonth, week, months);
     }
 
+    /**
+     * Parses the {@code dayPhases:} block of the given YAML stream into the day-phase schedule. Each entry
+     * carries a {@code name}, an {@code hour} (0-based hour-of-day index), and a {@code messages:} sequence of
+     * flavour lines. The block is optional: an absent or empty {@code dayPhases:} yields an empty schedule
+     * (the world announces no day phases).
+     *
+     * @param yamlStream the authored calendar document
+     * @return the always-valid {@link DayPhaseSchedule}
+     */
+    public DayPhaseSchedule readDayPhases(InputStream yamlStream) {
+        Objects.requireNonNull(yamlStream, "yaml stream must not be null");
+
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
+        Map<String, Object> root = yaml.load(yamlStream);
+        Objects.requireNonNull(root, "calendar document is empty");
+
+        return new DayPhaseSchedule(parseDayPhases(root.get("dayPhases")));
+    }
+
+    private static List<DayPhase> parseDayPhases(Object node) {
+        if (node == null) {
+            return List.of();
+        }
+        List<DayPhase> phases = new ArrayList<>();
+        for (Map<String, Object> entry : asListOfMaps(node, "dayPhases")) {
+            phases.add(new DayPhase(
+                    asString(entry.get("name")),
+                    asInt(entry.get("hour"), "day phase hour"),
+                    asListOfStrings(entry.get("messages"), "day phase messages")));
+        }
+        return phases;
+    }
+
     private static List<Weekday> parseWeek(Object node) {
         List<Weekday> week = new ArrayList<>();
         for (Map<String, Object> entry : asListOfMaps(node, "week")) {
@@ -77,6 +117,13 @@ public class CalendarYamlReader {
             throw new IllegalArgumentException("calendar '%s' must be a sequence".formatted(what));
         }
         return (List<Map<String, Object>>) list;
+    }
+
+    private static List<String> asListOfStrings(Object node, String what) {
+        if (!(node instanceof List<?> list)) {
+            throw new IllegalArgumentException("calendar '%s' must be a sequence".formatted(what));
+        }
+        return list.stream().map(CalendarYamlReader::asString).toList();
     }
 
     private static int asInt(Object value, String what) {

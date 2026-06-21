@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.initialize;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
+import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.Player;
@@ -10,6 +11,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
@@ -79,6 +81,8 @@ class InitializeGameUseCaseTest {
     @Mock
     private GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     @Mock
+    private DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
+    @Mock
     private IdGeneratorOperationsOutputPort idGeneratorOps;
     @Mock
     private RandomnessOperationsOutputPort randomnessOps;
@@ -128,6 +132,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(GameClock.initial()));
+        when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
         runTransactionsAndFireAfterCommit();
 
         useCase.systemInitializesGame();
@@ -135,6 +140,7 @@ class InitializeGameUseCaseTest {
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(gameClockRepositoryOps, never()).saveClock(any());
+        verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
         assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
     }
 
@@ -150,6 +156,21 @@ class InitializeGameUseCaseTest {
         useCase.systemInitializesGame();
 
         verify(gameClockRepositoryOps).saveClock(GameClock.initial());
+        assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
+    }
+
+    @Test
+    void seedsTheDayPhaseLogAtTheSentinelWhenAbsentDuringInitialization() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        // The day-phase log is absent (default Optional.empty), so it is created at the "nothing announced" sentinel.
+        runTransactionsAndFireAfterCommit();
+
+        useCase.systemInitializesGame();
+
+        verify(dayPhaseLogRepositoryOps).saveDayPhaseLog(DayPhaseLog.initial());
         assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
     }
 
@@ -422,6 +443,7 @@ class InitializeGameUseCaseTest {
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(itemOps, never()).saveItem(any());
         verify(gameClockRepositoryOps, never()).saveClock(any());
+        verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
         verify(presenter, never()).presentGameInitialized(any(), any(), any());
     }
 }

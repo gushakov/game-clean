@@ -88,6 +88,31 @@ public class GameCalendar {
     }
 
     /**
+     * The absolute game hour an instant falls in: the monotonic count of whole game hours since the epoch,
+     * running unbroken across day, month and year boundaries — the <em>un-wrapped</em> companion to
+     * {@link #placeInstant}'s cyclic {@link GameDate#getHourIndex() hourIndex}. Where {@code hourIndex} resets
+     * each day (so a phase at hour-of-day 6 recurs as hour 6 every day), this keeps climbing (day 0's hour 6 is
+     * absolute hour 6, day 1's is {@code 6 + hoursPerDay}, …), which is exactly what an ordering or
+     * once-per-occurrence dedup key needs. The two are consistent by construction:
+     * {@code placeInstant(e).getHourIndex() == absoluteHourOf(e) % hoursPerDay}.
+     *
+     * <p>The calendar owns this arithmetic for the same reason it owns {@link #placeInstant}: it owns the
+     * {@code secondsPerHour} radix. A use case orchestrates — fetch the elapsed seconds, ask the calendar for
+     * the absolute hour — rather than dividing by the radix itself.
+     *
+     * @param elapsedGameSeconds game seconds since the epoch (must not be negative)
+     * @return the number of whole game hours elapsed since the epoch
+     * @throws InvalidDomainObjectError if {@code elapsedGameSeconds} is negative
+     */
+    public long absoluteHourOf(long elapsedGameSeconds) {
+        if (elapsedGameSeconds < 0) {
+            throw new InvalidDomainObjectError(
+                    "elapsed game seconds must not be negative, got " + elapsedGameSeconds);
+        }
+        return elapsedGameSeconds / secondsPerHour;
+    }
+
+    /**
      * The {@link Month} a date falls in — its {@code monthIndex} resolved against this calendar's month cycle.
      * The index is trusted to be in range because {@link GameDate}s are minted only by {@link #placeInstant}.
      *

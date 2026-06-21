@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.initialize;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
+import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.item.Chance;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
@@ -13,6 +14,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
@@ -69,7 +71,7 @@ import java.util.stream.Collectors;
  * resolve to an authored scene — resolved against the in-memory world being initialized, since on a first run
  * the store is not seeded yet. <b>Item spawning is non-deterministic</b> but its rolls have no persistence
  * side effect, so they too run outside the transaction; a single {@code doInTransaction} then holds the three
- * idempotency guards (seed-if-empty, create-if-absent, spawn-if-none) together with their writes, so those
+ * idempotency guards (seed-if-empty, create-if-absent player/clock/day-phase-log, spawn-if-none) together with their writes, so those
  * read-then-write decisions cannot interleave with a concurrent initialization, and a restart re-rolls
  * harmlessly but never re-persists. The lone success presentation is deferred to after-commit so it is never
  * reported before the data is durable, and the interaction returns immediately after registering it. The
@@ -88,6 +90,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     SceneRepositoryOperationsOutputPort sceneOps;
     ItemRepositoryOperationsOutputPort itemOps;
     GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
+    DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
     IdGeneratorOperationsOutputPort idGeneratorOps;
     RandomnessOperationsOutputPort randomnessOps;
     TransactionOperationsOutputPort txOps;
@@ -164,10 +167,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<Item> spawnedItems = spawnItems(authoredItems);
 
             // Checkpoint 9 — one outcome, one atomic unit. A single transaction seeds the world if it is
-            // still empty, creates the player if none exists yet, spawns items if none were spawned yet, and
-            // creates the world clock at time zero if none exists yet; holding all four read-then-write guards
-            // in one transaction stops a concurrent initialization from double-seeding, double-creating,
-            // double-spawning or double-creating-the-clock. Exactly one after-commit presentation reports the
+            // still empty, creates the player if none exists yet, spawns items if none were spawned yet,
+            // creates the world clock at time zero if none exists yet, and seeds the day-phase log at its
+            // sentinel if none exists yet; holding all five read-then-write guards in one transaction stops a
+            // concurrent initialization from double-seeding, double-creating, or double-spawning. Exactly one after-commit presentation reports the
             // single success — carrying the items spawned this run (empty if already spawned) — and the
             // interaction ends here, since nothing runs past a presentation.
             txOps.doInTransaction(false, () -> {
@@ -188,6 +191,11 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 // world-singleton state — so it is just another create-if-absent guard, not an ordered phase.
                 if (gameClockRepositoryOps.findClock().isEmpty()) {
                     gameClockRepositoryOps.saveClock(GameClock.initial());
+                }
+                // Likewise the day-phase log: independent world-singleton state (the watermark the time
+                // ticker dedups dawn/dusk announcements against), seeded at the "nothing announced" sentinel.
+                if (dayPhaseLogRepositoryOps.findDayPhaseLog().isEmpty()) {
+                    dayPhaseLogRepositoryOps.saveDayPhaseLog(DayPhaseLog.initial());
                 }
                 txOps.doAfterCommit(() -> presenter.presentGameInitialized(scenes, playerId, reportedItems));
             });
