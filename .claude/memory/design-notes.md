@@ -787,6 +787,27 @@ earned: *emergence governs plumbing too — reach for the framework's managed, t
 hand-rolling threads/lifecycle or re-stringifying config the framework has already bound; hand-roll only when a
 concrete need the abstraction can't express has actually arrived.*)
 
+**A third walk-back, surfaced only by a live run: the ordered shutdown is real, but nothing *triggered* it.**
+`[thread #3]` The shutdown-ordering claim above — Spring cancels scheduled tasks at context close, *before*
+destroying plain singletons like the JLine `Terminal`, so `printAbove` never hits a closed terminal — rests on a
+single load-bearing premise: that the context actually **closes**. It did not. `main` fired
+`SpringApplication.run(...)` and *discarded the returned context*. `run()` returns only once every
+`ApplicationRunner` has completed — including the console loop that blocks until `bye` — so on `bye` the main
+thread simply ended. But `@EnableScheduling` runs Spring's scheduler on **non-daemon** threads, and a single
+live non-daemon thread keeps the JVM up: after `bye` the process did not exit, the ticker kept firing into a
+still-open context (announcing *after* "Farewell"), and only Ctrl-C killed it. It is a deadlock of assumptions —
+the scheduler thread won't stop until the context closes; Boot's shutdown hook won't close it until the JVM
+begins shutting down; the JVM won't begin shutting down while the non-daemon scheduler thread lives. The fix
+supplies the missing trigger at the only altitude that owns it, the **process boundary**: `main` now
+`System.exit(SpringApplication.exit(run(...)))`, closing the context explicitly once the runners return. Every
+guarantee the paragraph above asserts then comes true *because the context closes*: cancel the scheduled tasks
+(waiting for an in-flight run) → destroy the plain singletons last, `Terminal` included → tty restored → exit.
+The boot story's division of labour extends one notch: `BootSequence` owns startup *ordering*; `main` owns the
+process *run-and-exit*. The lesson the ticker saga keeps re-teaching, now a third time: a framework's managed
+lifecycle hands you the *ordering* for free, but you must still **trigger** the lifecycle — here, close the
+context — or none of its guarantees ever run. (Not a Boot-4 delta — non-daemon scheduler threads and
+`SpringApplication.exit` are framework-general Spring behaviour, so nothing for `spring-boot-4-notes.md`.)
+
 ## 7. The presentation layer (JLine), and one terminal for two adapters
 
 **Why JLine, and why not the alternatives.** JLine is *right-sized* for a boundaries
