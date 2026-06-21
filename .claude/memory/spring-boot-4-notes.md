@@ -127,13 +127,16 @@ runners (`@Order(1)` seed, `@Order(2)` console) in one config class. (Confirmed 
 
 ## Scheduling & lifecycle for an async driving adapter — not a 4-vs-3 delta (kept in design-notes)
 
-The dawn/dusk `GameClockTicker` is a `@Scheduled` background task whose shutdown must precede `Terminal.close()`.
-The relevant facts — `@Scheduled` tasks are lifecycle-managed (Spring ≥6.1, so cancelled at context close,
-waiting for an in-flight run, **before** plain singletons are destroyed); scheduling starts during context
-refresh, *before* `ApplicationRunner`s; `fixedDelayString`/`initialDelayString` accept a simple duration string
-(`5s`) — are **Spring 6.1 / Framework 7 behaviours, not Boot-4-vs-3 differences**, so they live with the
-architecture rationale in `design-notes.md` (§6/§7), not here. (An earlier draft hand-rolled a `SmartLifecycle`
-thread and noted it here; that was both speculative complexity and not a delta — walked back to `@Scheduled`.)
+The dawn/dusk `GameClockTicker` is a scheduler-driven background task (a `SchedulingConfigurer`) whose shutdown
+must precede `Terminal.close()`. The relevant facts — Spring's scheduled tasks are lifecycle-managed (≥6.1, so
+cancelled at context close, waiting for an in-flight run, **before** plain singletons are destroyed); scheduling
+starts during context refresh, *before* `ApplicationRunner`s; `@Scheduled`'s `fixedDelayString` takes ISO-8601
+(`PT5S`) or a millis number, **not** the simplified `5s` style (that style is for `@ConfigurationProperties`
+binding); and a `@DefaultValue` is a binding-time default, not an `Environment` entry a `${}` placeholder can
+resolve — are **Spring 6.1 / Framework 7 behaviours, not Boot-4-vs-3 differences**, so they live with the
+architecture rationale in `design-notes.md` (§6/§7), not here. (Two earlier drafts — a hand-rolled
+`SmartLifecycle` thread, then an `@Scheduled` placeholder that failed to boot — were both walked back to a
+`SchedulingConfigurer` reading the bound, typed `Duration`.)
 
 ## `Duration` config binding + nested `@DefaultValue` group — works as in 3.x **[hit]**
 

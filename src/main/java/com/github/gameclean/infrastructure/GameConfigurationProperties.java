@@ -28,6 +28,14 @@ import java.time.Duration;
  * — a bound properties object. So {@code game.terminal.enabled} also appears as a raw key in those
  * guards. It is still bound here, so this remains the one place that documents every {@code game.*}
  * property even when a condition reads it independently.
+ *
+ * <p>The contrast is worth keeping straight, because it bit once: a <em>post</em>-binding consumer
+ * <em>can</em> (and should) consult this bound catalog rather than re-read a raw key. The time ticker
+ * ({@code GameClockTicker}) configures its schedule at bean time via a {@code SchedulingConfigurer} and
+ * injects {@code getTime().getTicker().getInterval()} as a typed {@link Duration}. An earlier cut reached
+ * for {@code @Scheduled("${game.time.ticker.interval}")} instead and failed at startup: a {@code @DefaultValue}
+ * is a binding-time default, not an {@code Environment} entry, so the placeholder did not resolve. The
+ * raw-key carve-out is only for pre-binding conditions; everything after binding reads the typed value here.
  */
 @Getter
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)

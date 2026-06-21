@@ -758,23 +758,34 @@ stop must pair" branch — a daemon thread with `start`/`stop`/`isRunning`, a `v
 Reviewing it against §2, we recognized it as **speculative complexity applied to our own plumbing**: the only
 thing a hand-rolled `SmartLifecycle` buys over Spring's scheduler is *per-bean phase ordering relative to
 another lifecycle participant*, and there is no second async writer to order against yet. So it was simplified
-to a single `@Scheduled` method (Spring owns the thread), and the emergence rule was applied *reflexively* —
-the same discipline we use on the model, turned on the infrastructure. The justification I had used for the
-thread — "the ticker must stop before the JLine `Terminal` closes, or `printAbove` throws" — turned out **not**
-to need a hand-rolled lifecycle at all: `@Scheduled` tasks are themselves lifecycle-managed (Spring ≥6.1), so
-the container *cancels* them at context close, waiting for an in-flight run, **before** it destroys plain
-singletons like the `Terminal` (verified against the Spring reference). The reverse-order shutdown the §7
-hazard demanded falls out of the framework either way — the mistake was thinking I had to *implement* the
-lifecycle to *get* the ordering. The thin-driving-adapter shape is unchanged (pull the prototype, fire, use no
-return — the polling-system-actor peer of `ConsoleSession`/`GameSeeder`), and the same knowing looseness
-remains: scheduling starts during context refresh, before the `@Order(1)` seeder, so an early tick observes an
-uninitialized game — a safe no-op routed to the readiness gate (`initialDelay` of one interval also gives the
-seeder a head start). **`SmartLifecycle` phases are deferred to their real trigger**: the first time two async
+to framework scheduling (Spring owns the thread), and the emergence rule was applied *reflexively* — the same
+discipline we use on the model, turned on the infrastructure. The justification I had used for the thread —
+"the ticker must stop before the JLine `Terminal` closes, or `printAbove` throws" — turned out **not** to need
+a hand-rolled lifecycle at all: Spring's scheduled tasks are lifecycle-managed (≥6.1), so the container
+*cancels* them at context close, waiting for an in-flight run, **before** it destroys plain singletons like the
+`Terminal` (verified against the Spring reference). The reverse-order shutdown the §7 hazard demanded falls out
+of the framework either way — the mistake was thinking I had to *implement* the lifecycle to *get* the ordering.
+The thin-driving-adapter shape is unchanged (pull the prototype, fire, use no return — the polling-system-actor
+peer of `ConsoleSession`/`GameSeeder`), and the same knowing looseness remains: scheduling starts during context
+refresh, before the `@Order(1)` seeder, so an early tick observes an uninitialized game — a safe no-op routed to
+the readiness gate. **`SmartLifecycle` phases are deferred to their real trigger**: the first time two async
 writers (the ticker and a future outbox relay) must be ordered against *each other*. The enablement
 (`@EnableScheduling`) lives on the equally-gated `BootSequence`, beside the boot runners, so a test slice spins
-up no scheduler. (The lesson worth keeping: *emergence governs plumbing too — reach for the framework's managed
-abstraction before hand-rolling threads/lifecycle; hand-roll only when a concrete ordering need the abstraction
-can't express has actually arrived.*)
+up no scheduler.
+
+A **second misstep, caught only when the app refused to boot**, sharpened the same point. The first cut reached
+for the `@Scheduled(fixedDelayString = "${game.time.ticker.interval}")` *annotation* — which failed twice over:
+the `${}` placeholder does not resolve (a `@DefaultValue` is a *binding-time* default on the catalog, **not** an
+`Environment` entry the placeholder can see), and `@Scheduled`'s string parser would reject the readable `5s`
+form anyway (it wants ISO-8601 `PT5S` or a millis number — the simplified style is for `@ConfigurationProperties`
+binding, not `@Scheduled`). The fix is a `SchedulingConfigurer` that injects the **bound, typed `Duration`** from
+the catalog: scheduling is configured *after* binding (unlike a *pre*-binding `@ConditionalOnProperty`, which is
+why that one must read a raw key), so it can — and should — consult the bound object rather than re-read a raw,
+stringly-typed placeholder. A bonus: the previously-dead bound `ticker.interval` becomes the single source of
+truth, and the scheduling path has no string parsing left to get wrong. (The lesson worth keeping, now twice
+earned: *emergence governs plumbing too — reach for the framework's managed, typed abstraction before
+hand-rolling threads/lifecycle or re-stringifying config the framework has already bound; hand-roll only when a
+concrete need the abstraction can't express has actually arrived.*)
 
 ## 7. The presentation layer (JLine), and one terminal for two adapters
 
@@ -887,9 +898,10 @@ Gameplay is where the second mechanism earns its keep (an NPC reacting to the pl
 scene), so the event spine is introduced at its first *causal* site, not retrofitted onto boot.
 
 **The first parallel actor is a *polling metronome*, not the event spine — and that is the right first step.**
-`[thread #3]` The dawn/dusk ticker (`GameClockTicker`) is the project's first concurrency: a `@Scheduled`
-background task that drives `AnnounceTimeOfDay` on a fixed real-time interval. It is deliberately **not** built
-on the outbox/event mechanism above, because announcing the time of day is not *causation* — nothing in the domain
+`[thread #3]` The dawn/dusk ticker (`GameClockTicker`) is the project's first concurrency: a scheduler-driven
+background task (a `SchedulingConfigurer` reading the bound interval) that drives `AnnounceTimeOfDay` on a fixed
+delay. It is deliberately **not** built on the outbox/event mechanism above, because announcing the time of day
+is not *causation* — nothing in the domain
 "happened" that a phase boundary reacts to; game time simply advanced, and a phase boundary is a *derived* fact
 of the current instant. Polling-and-deriving fits a derived, idempotent observation; events fit discrete causal
 facts. So this slice exercises *threading and async presentation* without prejudging the event spine, which

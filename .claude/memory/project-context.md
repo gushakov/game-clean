@@ -59,7 +59,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `Terminal`, `Player`, `Time`). Sub-packages:
   `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
-  `infrastructure/time/` (`GameClockTicker` — the `@Scheduled` background metronome driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`),
+  `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring; `command/` the
   sealed `Command` + `CommandParser`; `presenter/` the driven `Terminal*Presenter`s; `render/`
@@ -271,10 +271,12 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   `DayPhaseLogDbEntity` (`@Version`) + MapStruct mapper + repo + `SpringDayPhaseLogRepositoryAdapter` (version-driven
   `repository.save` upsert — **no** `existsById`/`JdbcAggregateTemplate`, unlike the version-less clock adapter;
   wraps `OptimisticLockingFailureException` → `OptimisticLockingError`); `GameClockTicker` (`infrastructure/time/`, a
-  `@Scheduled` bean firing `AnnounceTimeOfDay` every `game.time.ticker.interval` via `fixedDelay`, pulling a fresh
-  prototype per tick — carries **no** domain knowledge; `@EnableScheduling` sits on the gated `BootSequence`,
-  and Spring's lifecycle cancels scheduled tasks before the `Terminal` is destroyed, so `printAbove` never hits
-  a closed terminal — no hand-rolled `SmartLifecycle`); `TerminalAnnounceTimeOfDayPresenter` announces via the new
+  `SchedulingConfigurer` registering a fixed-delay task that fires `AnnounceTimeOfDay`, pulling a fresh prototype
+  per tick — carries **no** domain knowledge; reads the **bound, typed** `game.time.ticker.interval` `Duration`
+  from the catalog, not a `${}` placeholder — `@Scheduled` placeholders don't see `@DefaultValue`s and reject
+  the `5s` form; `@EnableScheduling` sits on the gated `BootSequence`, and Spring's lifecycle cancels scheduled
+  tasks before the `Terminal` is destroyed, so `printAbove` never hits a closed terminal — no hand-rolled
+  `SmartLifecycle`); `TerminalAnnounceTimeOfDayPresenter` announces via the new
   `Console.printAbove` (first async console write) and trace/warn-logs the quiet/not-ready/error outcomes.
 - **Config** — `game.time.ticker.interval` (default `5s`, a `Duration`); authored `dayPhases:` (Dawn@6, Dusk@18)
   in `world/calendar.yaml`. Deferred: catch-up across boundaries skipped when the interval exceeds a game hour
