@@ -593,6 +593,119 @@ concurrency thread*: when a genuinely contended aggregate arrives, the live ques
 whether optimistic locking can stay on the persistence entity or must surface in the model — a
 sharper lesson than anything a speculative version column would teach today.
 
+**Atomicity is not isolation — the transaction boundary is not, by itself, the concurrency mechanism.** `[thread #3]`
+The dawn/dusk watermark forced a sharpening of this section's earlier "keeping the read-then-write decision
+atomic stops two concurrent X" framing, which quietly overclaims. A transaction gives **atomic rollback**; it
+does **not**, at the default READ COMMITTED, serialize a read-then-write against a concurrent one. Two
+observers can both `SELECT` the watermark, both see it pending, both `UPDATE` — the row lock serializes the
+*writes* but the loser never *re-decides*, so it overwrites and both announce. The boundary alone has no teeth
+here. The honest model is a **detector lens**: *a transaction provides atomic rollback when a **detector**
+fires — a unique constraint, an optimistic version, or a `SELECT … FOR UPDATE` lock — and provides no
+isolation without one.* Audit game-clean's three init guards through it: **seed-if-empty** is safe because the
+**primary key** is the detector (the second insert of the singleton clock/log row duplicate-keys and rolls
+back); **spawn-if-none** has *no* detector (distinct generated item ids), so concurrent inits would
+double-spawn — latent only because init has one actor; **the watermark update** had no detector, so the
+read-then-write "guard" narrowed the race window but never closed it. The boundary is still the use case's to
+*demarcate* (that part is fully Clean-and-DDD-consistent — demarcation is an application concern in both); what
+the boundary cannot supply is *conflict detection*, which is the **aggregate's** concern (the aggregate is the
+DDD consistency-and-concurrency boundary). The two compose as layers; they were never substitutes.
+
+**`DayPhaseLog` is the first aggregate *updated* under a guard — so it earns the canonical `@Version`, and
+adopting it *removes* code.** `[thread #3]` This un-defers the `@Version` parked above, for the aggregate where
+it finally fits. `DayPhaseLog` is updated (not inserted) under a dedup guard, so it is exactly where the
+no-detector gap bites — and optimistic locking is the canonical detector. The striking part is that adopting it
+**simplified two layers** rather than adding ceremony: with a `@Version` on the entity, `repository.save`
+decides insert-vs-update from the version itself, so the adapter dropped the hand-rolled `existsById ? update :
+insert` *and* its `JdbcAggregateTemplate`; and because the version is read with the aggregate and checked on
+write, the use case dropped its inside-transaction re-read entirely — *read once outside, carry the version,
+save version-checked*. The loser's stale write surfaces as `OptimisticLockingFailureException`, wrapped by the
+adapter into a port-level `OptimisticLockingError`, which the use case catches and maps onto the outcome it
+*already had* — `presentNothingToAnnounce` ("someone announced first; my goal is already met"). So the real
+detector slotted into the exact shape the proxy had sketched, and the use case needed no new outcome.
+
+**The version is carried *all the way to the model* — a deliberate §2 departure, and the layering it demonstrates.**
+The §2-minimal instinct is to keep a concurrency column on the entity only. We chose the opposite here, knowingly:
+the `version` rides on the always-valid `DayPhaseLog`, set by persistence on read and checked on write, *opaque*
+to the domain (it carries but never interprets it) and **excluded from value equality** (two logs with the same
+watermark are the same domain value). This is what makes the Clean-vs-DDD composition concrete and visible: the
+**aggregate owns the version** (DDD's concurrency token, on the model), the **adapter owns wrapping the
+framework's failure** into the port's own currency (a *sibling* of `PersistenceOperationsError`, not a subtype —
+a concurrent loss is an expected outcome, not a fault), and the **use case owns demarcation and the reaction**
+(catch the port error, present the domain outcome). For a singleton whose entire purpose is this one guarded
+watermark, surfacing the token end-to-end teaches the mechanism better than hiding it; the §2 cost (a non-domain
+field on the model) is paid with eyes open and bounded by the equality exclusion.
+
+**The honest caveat: this is adopted slightly ahead of real contention — a chosen showcase deviation from
+emergence.** There is still exactly *one* ticker thread (§8), so no two `AnnounceTimeOfDay` runs are actually
+concurrent; the race the version guards against cannot occur today. Strict emergence (§2) would defer the
+version until a second writer exists. We took it now because (a) it is the natural *teaching* site for the
+detector lesson, and (b) — decisively — it **reduced** code rather than speculatively adding it, so it is not
+the usual "speculative complexity" emergence warns against. This is the inverse of why `@Version` stays
+deferred for `Player`: there it would add a wasted version-read or bleed a field into the model for *no*
+simplification and no current contention. And it leaves a clean contrast in the codebase: the version-less
+`GameClock` keeps its explicit `JdbcAggregateTemplate` insert/update; the versioned `DayPhaseLog` uses
+`repository.save`. (Promotion candidate, flagged not promoted: *atomicity ≠ isolation; a transaction needs a
+detector — unique constraint, version, or row lock — and optimistic `@Version` on the aggregate is the
+canonical one, demarcated by the use case and reacted to as an outcome*.)
+
+**The lock-catch generalized into `doInTransaction(action, onLockDetected)` — and the neutral `concurrency`
+package it forced.** `[thread #3]` The reaction to a lost optimistic-lock race began as an explicit
+`catch (OptimisticLockingError)` in the use case. The question was whether to lift it into
+`TransactionOperationsOutputPort` as an idiom beside `doAfterCommit`. The first answer was *no*, on an
+asymmetry worth recording because it is the right test for *which* reactions deserve machinery: `doAfterCommit`
+earns its callback for a **correctness property the use case cannot satisfy itself** (never report success
+before durability — commit is an unobservable lifecycle event, so the machinery *must* own it and forgetting it
+is a silent bug), whereas a lock loss is **plain handling of an exception that already propagates**, so the
+`catch` is the natural idiom and forgetting it falls *safely* through to `presentError`.
+
+What overturned the *no* were three points, the decisive one structural. **(a) In addition, not a
+replacement.** The idiom is opt-in: the signature stays two `Runnable`s (no error type in the contract), and
+with a `null` handler — or via every other overload — `OptimisticLockingError` still propagates to the
+outermost checkpoint. "Failure is expressed by throwing" is *preserved as the default*; the handler is sugar
+over the rollback exactly as `doAfterCommit` is sugar over the commit, not a `rollback()`-style bypass. **(b)
+The distinguish argument inverts the "hides control flow" objection.** A single outermost `catch` cannot tell
+*which* of several `doInTransaction` blocks in one interaction lost its race; a per-block handler co-locates the
+reaction with the very write that can lose — *more* visible at the point of failure, not less. (Today's
+single-write announce does not yet need this, so it is adopted slightly ahead of contention — like the version
+itself — against the combat future that will put several contended writes in one interaction.) **(c) The
+interpretation stays with the use case.** The reaction `Runnable` is supplied *by* the use case
+(`presenter::presentNothingToAnnounce`); only the catch *mechanics* move into the adapter.
+
+The remaining objection — **wrong-port coupling** — refused to be waved away, and produced the real finding.
+Having the *transaction* adapter catch a *persistence*-port error type is a genuine smell (the methodology
+keeps `TransactionOperationsError` and `PersistenceOperationsError` deliberately distinct). Asking what a
+concurrent-modification conflict *is* gives a three-owner split: the **aggregate** owns the *concept* (it
+carries the `version`), **persistence** *detects* it (the store enforces the check, so the persistence adapter
+— owning that framework call — raises it), and the **transaction** *rolls back* on it. It is **both** a
+persistence and a transaction concern *by implementation* but **neither by concept** — a concurrency-control
+signal. A type two boundaries both legitimately need but neither conceptually owns belongs on neutral ground,
+so `OptimisticLockingError` moved to its own `core.port.concurrency` package that both adapters depend on
+symmetrically — **raiser is not owner**. The smell was never the dependency *direction* (infra → core is fine);
+it was a *misplaced type*, and it surfaced only when the reaction moved *into an adapter* — a use case may
+freely know every port's vocabulary (orchestrating them is its job), but one adapter knowing a *sibling* port's
+currency is the tighter coupling worth dissolving. (Promotion candidate, flagged not promoted: *when two
+adapters both react to a boundary type that neither conceptually owns, house it in a neutral package both
+depend on — raiser ≠ owner*.)
+
+Two findings the adoption pinned down. **(B) beat (A), and (A) is mechanically broken.** Of the two sketched
+shapes — (A) register the handler *inside* the transaction body like `doAfterCommit`, (B) pass it as a second
+argument — (A) cannot work: the throw from the failing `save` short-circuits the rest of the lambda, so an
+in-body registration *after* the write never takes effect; the handler must be established *before* the body
+runs, i.e. it must be a parameter. That (A) cannot mirror `doAfterCommit`'s in-body shape is the structural
+proof the two hooks are not the same kind of thing — the first *no*'s asymmetry, now expressed as an API
+constraint. **A presenting handler must be the interaction's terminal act.** Unlike a propagating error (which
+unwinds the whole interaction, *guaranteeing* exactly-once presentation), the handler *swallows* the loss and
+returns control to the caller, which continues past the call — so a handler that *presents* must sit on the
+interaction's last `doInTransaction`, the same discipline `doAfterCommit` carries (§4, presentation is
+terminal). That is the cost the distinguish-benefit is paid against: the multi-block future motivating the
+idiom is exactly where a swallow-and-continue handler could present twice if the discipline is ignored. The
+predicted **`ConcurrencyConflictError` parent** (a unique-constraint race, a serialization failure are sibling
+detectors per the detector lens) is left unbuilt — deferred by emergence until a second detector needs a home;
+the `concurrency` package is its eventual address. The one behaviour still *not* generalized is a **retry**
+policy (re-read, recompute, re-save) — intricate and footgun-prone (unbounded retry, re-presentation) — which
+`AnnounceTimeOfDay` deliberately forgoes (the loser's goal is already met), so it too waits for a contended
+aggregate that wants it.
+
 ## 6. The composition root — the framework held at arm's length
 
 **Wiring is explicit and hidden from the core.** Use cases are declared as
@@ -697,6 +810,62 @@ belong here too, as further `@Order`-ed runner beans co-located in this config (
 `SmartLifecycle` equivalent where start and stop must pair), so the boot order stays one
 readable declaration.
 
+**Forward fit realized — and a walk-back that *is* the lesson: `@Scheduled`, not a hand-rolled `SmartLifecycle`
+thread.** `[thread #3]` The dawn/dusk ticker first reached for the "`SmartLifecycle` equivalent where start and
+stop must pair" branch — a daemon thread with `start`/`stop`/`isRunning`, a `volatile` flag, interrupt/join.
+Reviewing it against §2, we recognized it as **speculative complexity applied to our own plumbing**: the only
+thing a hand-rolled `SmartLifecycle` buys over Spring's scheduler is *per-bean phase ordering relative to
+another lifecycle participant*, and there is no second async writer to order against yet. So it was simplified
+to framework scheduling (Spring owns the thread), and the emergence rule was applied *reflexively* — the same
+discipline we use on the model, turned on the infrastructure. The justification I had used for the thread —
+"the ticker must stop before the JLine `Terminal` closes, or `printAbove` throws" — turned out **not** to need
+a hand-rolled lifecycle at all: Spring's scheduled tasks are lifecycle-managed (≥6.1), so the container
+*cancels* them at context close, waiting for an in-flight run, **before** it destroys plain singletons like the
+`Terminal` (verified against the Spring reference). The reverse-order shutdown the §7 hazard demanded falls out
+of the framework either way — the mistake was thinking I had to *implement* the lifecycle to *get* the ordering.
+The thin-driving-adapter shape is unchanged (pull the prototype, fire, use no return — the polling-system-actor
+peer of `ConsoleSession`/`GameSeeder`), and the same knowing looseness remains: scheduling starts during context
+refresh, before the `@Order(1)` seeder, so an early tick observes an uninitialized game — a safe no-op routed to
+the readiness gate. **`SmartLifecycle` phases are deferred to their real trigger**: the first time two async
+writers (the ticker and a future outbox relay) must be ordered against *each other*. The enablement
+(`@EnableScheduling`) lives on the equally-gated `BootSequence`, beside the boot runners, so a test slice spins
+up no scheduler.
+
+A **second misstep, caught only when the app refused to boot**, sharpened the same point. The first cut reached
+for the `@Scheduled(fixedDelayString = "${game.time.ticker.interval}")` *annotation* — which failed twice over:
+the `${}` placeholder does not resolve (a `@DefaultValue` is a *binding-time* default on the catalog, **not** an
+`Environment` entry the placeholder can see), and `@Scheduled`'s string parser would reject the readable `5s`
+form anyway (it wants ISO-8601 `PT5S` or a millis number — the simplified style is for `@ConfigurationProperties`
+binding, not `@Scheduled`). The fix is a `SchedulingConfigurer` that injects the **bound, typed `Duration`** from
+the catalog: scheduling is configured *after* binding (unlike a *pre*-binding `@ConditionalOnProperty`, which is
+why that one must read a raw key), so it can — and should — consult the bound object rather than re-read a raw,
+stringly-typed placeholder. A bonus: the previously-dead bound `ticker.interval` becomes the single source of
+truth, and the scheduling path has no string parsing left to get wrong. (The lesson worth keeping, now twice
+earned: *emergence governs plumbing too — reach for the framework's managed, typed abstraction before
+hand-rolling threads/lifecycle or re-stringifying config the framework has already bound; hand-roll only when a
+concrete need the abstraction can't express has actually arrived.*)
+
+**A third walk-back, surfaced only by a live run: the ordered shutdown is real, but nothing *triggered* it.**
+`[thread #3]` The shutdown-ordering claim above — Spring cancels scheduled tasks at context close, *before*
+destroying plain singletons like the JLine `Terminal`, so `printAbove` never hits a closed terminal — rests on a
+single load-bearing premise: that the context actually **closes**. It did not. `main` fired
+`SpringApplication.run(...)` and *discarded the returned context*. `run()` returns only once every
+`ApplicationRunner` has completed — including the console loop that blocks until `bye` — so on `bye` the main
+thread simply ended. But `@EnableScheduling` runs Spring's scheduler on **non-daemon** threads, and a single
+live non-daemon thread keeps the JVM up: after `bye` the process did not exit, the ticker kept firing into a
+still-open context (announcing *after* "Farewell"), and only Ctrl-C killed it. It is a deadlock of assumptions —
+the scheduler thread won't stop until the context closes; Boot's shutdown hook won't close it until the JVM
+begins shutting down; the JVM won't begin shutting down while the non-daemon scheduler thread lives. The fix
+supplies the missing trigger at the only altitude that owns it, the **process boundary**: `main` now
+`System.exit(SpringApplication.exit(run(...)))`, closing the context explicitly once the runners return. Every
+guarantee the paragraph above asserts then comes true *because the context closes*: cancel the scheduled tasks
+(waiting for an in-flight run) → destroy the plain singletons last, `Terminal` included → tty restored → exit.
+The boot story's division of labour extends one notch: `BootSequence` owns startup *ordering*; `main` owns the
+process *run-and-exit*. The lesson the ticker saga keeps re-teaching, now a third time: a framework's managed
+lifecycle hands you the *ordering* for free, but you must still **trigger** the lifecycle — here, close the
+context — or none of its guarantees ever run. (Not a Boot-4 delta — non-daemon scheduler threads and
+`SpringApplication.exit` are framework-general Spring behaviour, so nothing for `spring-boot-4-notes.md`.)
+
 ## 7. The presentation layer (JLine), and one terminal for two adapters
 
 **Why JLine, and why not the alternatives.** JLine is *right-sized* for a boundaries
@@ -762,6 +931,18 @@ anniversary") and weather text will compose the same `English` helper with no in
 note the radices forced: with no minutes radix, the clock label is "N hours and M seconds into the day", not
 an `HH:MM` that would assume 60.)
 
+**The first *asynchronous* presentation — `printAbove` realized, and the §7 seam closed.** `[thread #3]` The
+dawn/dusk ticker is the first interaction whose presenter writes *while a `readLine` is in flight* — a system
+actor producing output the player sees mid-prompt. This is exactly the "one line editor, N async `printAbove`
+writers onto one terminal buffer" scenario this section said JLine was *chosen* for, and it cashed in the
+deferred `Console` seam: `Console` now has two write paths — `write` (between reads, via `Terminal.writer()`,
+for player-command responses) and `printAbove` (during a read, via `LineReader.printAbove`, for the ticker). The
+split is by **timing**, not by content, and both stay behind the domain-agnostic facade (the presenter builds
+the styled line, `Console` writes it) — so the §7 layering holds even though one writer is now concurrent. The
+presenter also shows the §4 "mandated presenter even with no human audience" rule applied to a *background*
+actor sharpened by repetition: only an actual announcement reaches the console; the quiet poll and the
+not-yet-initialized poll are trace logs, the error a warn log — never per-interval console spam.
+
 ## 8. Trajectory: from synchronous to loop-driven concurrency
 
 **Start synchronous; let concurrency arrive only when the domain demands it.** `[thread #3]`
@@ -794,6 +975,46 @@ domain reaction; and an in-memory broker is not the crash-durable outbox anyway.
 **genuine causation — dynamic, possibly one-to-many, reactive — is choreographed with events.**
 Gameplay is where the second mechanism earns its keep (an NPC reacting to the player entering a
 scene), so the event spine is introduced at its first *causal* site, not retrofitted onto boot.
+
+**The first parallel actor is a *polling metronome*, not the event spine — and that is the right first step.**
+`[thread #3]` The dawn/dusk ticker (`GameClockTicker`) is the project's first concurrency: a scheduler-driven
+background task (a `SchedulingConfigurer` reading the bound interval) that drives `AnnounceTimeOfDay` on a fixed
+delay. It is deliberately **not** built on the outbox/event mechanism above, because announcing the time of day
+is not *causation* — nothing in the domain
+"happened" that a phase boundary reacts to; game time simply advanced, and a phase boundary is a *derived* fact
+of the current instant. Polling-and-deriving fits a derived, idempotent observation; events fit discrete causal
+facts. So this slice exercises *threading and async presentation* without prejudging the event spine, which
+still waits for its first causal site (an NPC reacting). The two will coexist: a polling clock for derived
+time-of-day, an event outbox for causal reactions.
+
+**"Dumb metronome, smart use case" — the driving adapter carries no domain knowledge.** The decisive design
+choice (Package B) was to make the ticker a *blind* metronome: every scheduled interval it pulls a fresh
+prototype use case and fires it — knowing nothing of the calendar, the seconds-per-hour, or what a day phase is.
+All time semantics live in the use case. This dissolved the question that *started* the design — "how does the
+ticker learn the seconds-per-hour, which only initialization has?" — into a non-problem: the metronome needs
+neither the seed nor the radices (it needs only its own `interval` config), and the use case reads
+seconds-per-hour from the calendar port it already injects (the same port `AskForTime` uses), not from a
+hand-off. The general trap avoided: a *driving* adapter reaching into a *driven* port (the calendar source) to
+size its own behaviour — the metronome touches no domain port at all.
+
+**The dedup watermark, guarded by optimistic locking — thread #3's second data point.** `[thread #3]` A dumb
+metronome over-fires, so the use case must make announcing *idempotent per occurrence*. The mechanism is a
+persisted monotonic watermark (`DayPhaseLog.announcedThroughHour`, the absolute game hour announced through),
+and the concurrency guard is **optimistic locking carried on the aggregate** (`DayPhaseLog.version`): the use
+case reads the log once (capturing the version), advances the watermark carrying that version, and the single
+save inside `doInTransaction` is version-checked — a concurrent observer that won makes the loser's write stale,
+surfaced as `OptimisticLockingError` and presented as "nothing to announce." This is the §5 *detector* lesson:
+the transaction boundary gives atomic rollback, the version gives the actual conflict detection (an earlier
+inside-transaction re-read was the *proxy* that §5 shows is toothless, and it was removed once the real detector
+landed). The random message pick runs *outside* the transaction (a pure choice with no persistence effect,
+exactly like the item-spawn rolls, §4). Persisting the watermark (rather than holding "last hour" in the ticker
+thread) is what makes it restart-safe: a `bye`/restart mid-dawn-hour does not re-announce. And the quiet poll —
+no phase, already past the watermark, or the concurrent-loss — is always a *presented* outcome
+(`presentNothingToAnnounce`), never a silent return, so "exactly one `present*` per run" (§4) holds even for the
+overwhelmingly common no-op tick. The watermark earned its own **singleton aggregate** rather than a field on
+`GameClock`: "how far have we narrated" is a different concern from "how much time is banked," and keeping them
+apart gives the concurrency thread a clean second example (and the natural `@Version` home — §5) instead of
+muddying the accumulator (§2 minimalism applied to aggregate boundaries).
 
 ## 9. Command parsing as a delivery-mechanism concern
 
@@ -916,6 +1137,21 @@ calendar owns the radices — this is §10 in a new guise: the eventual "what is
 *orchestrate* (fetch elapsed seconds, ask the calendar to place them, hand the result to a presenter) while
 the arithmetic stays computation on the model.
 
+**The companion that proved the principle wasn't yet complete — `absoluteHourOf`.** `[thread #3]` The dawn/dusk
+announcement needed not the *cyclic* hour-of-day but the *monotonic* absolute hour since the epoch (its dedup
+watermark must climb, never wrap — §5/§8). The first cut computed it in the use case as
+`elapsed / calendar.getSecondsPerHour()` — exactly the §10 leak this principle warns against: the use case
+reaching for a radix *getter* and doing the arithmetic itself. ("Use `placeInstant`'s `hourIndex`" is *not* the
+fix — that is the wrong coordinate, cyclic where the watermark needs monotonic; and re-deriving the absolute
+hour from a `GameDate` would multiply back through *more* radices in the use case, worse still.) The fix is a
+second calendar SEFF, `absoluteHourOf(elapsed)` — the un-wrapped companion to `placeInstant`, consistent by
+construction (`placeInstant(e).getHourIndex() == absoluteHourOf(e) % hoursPerDay`). Now the use case
+orchestrates both (ask for the date *and* the absolute hour) and never touches `secondsPerHour`. The lesson:
+*"the calendar owns the arithmetic" is not satisfied by `placeInstant` alone — only when **every** derivation
+that needs a radix lives on the calendar, the coarse un-decomposed ones (an absolute hour) as much as the full
+decomposition.* A radix *getter* called from a use case that then computes on the result is the tell that an
+arithmetic has leaked outward.
+
 **A domain choice decided where a computation lives — the sharpest finding.** `[thread #1]` `GameDate` is a
 pure positional tuple `{year, monthIndex, dayIndex, hourIndex, secondOfHour}` and is minted minimal: it stores
 no month or weekday *names* (resolved against the calendar — `monthOf`, `weekdayOf`), and — the cutting case —
@@ -991,6 +1227,20 @@ operational `game.*` configuration. Every game property shares the one memorable
 and the config prefix (by subsystem) are deliberately decoupled, exactly as `game.world.seed-location` already
 points at `world/scenes.yaml`.
 
+**Day phases are co-authored with the calendar but kept *out* of it — narrative is not structure.** `[thread #1]`
+The dawn/dusk feature could have bolted `dawnHour`/`duskHour` + messages onto `GameCalendar`. It did not:
+`GameCalendar` stays pure mixed-radix arithmetic + named cycles, and day phases became their own model
+(`DayPhase`/`DayPhaseSchedule` in `core/model/daytime/`). The cut is *what kind of thing* each is — a day phase
+carries player-facing *prose* and triggers an announcement, which is narrative, not the fabric of time (§2:
+keep the VO minimal; don't let a new concern bloat an existing one). They are still co-authored in one
+`calendar.yaml` (a dawn hour is meaningless without `hoursPerDay`), so one adapter (`YamlCalendarSource`) reads
+the file and serves **two** ports returning **two** carriers — the calendar and the schedule — with the
+inter-model check (every phase hour `< hoursPerDay`) done once, fail-fast at boot, in the adapter that holds
+both (the same load-each-boot, return-a-valid-model §3 deviation the calendar itself takes; each port still
+owns its own boundary error). Generalizing to a *set* of phases rather than two hard-coded fields is not
+speculation — dawn and dusk are literally two instances of one shape (`{name, hourOfDay, messages}`), and the
+list is less code than two special-cased fields.
+
 ---
 
 ## Open hazards / stances (genuinely unresolved)
@@ -1000,9 +1250,14 @@ points at `world/scenes.yaml`.
   reserved for adapter smoke checks and the wall-clock / concurrency exploration of
   `[thread #3]`, where unit tests are weak — and it verifies output *content and ordering*,
   not visual rendering.
-- **Shutdown ordering (Phase 3).** Async threads (clock, outbox relay) must be stopped
-  *before* the `Terminal` bean is closed, or `printAbove` throws on a closed terminal. The
-  boot orchestrator (§6) is the intended home for this reverse-order teardown.
+- **Shutdown ordering — first case resolved (§6).** The dawn/dusk ticker, the first async writer, is a
+  `@Scheduled` task, so it stops before the `Terminal` bean is destroyed *for free*: Spring's scheduling is
+  lifecycle-managed (≥6.1) and cancels tasks (waiting for an in-flight run) at context close, before
+  plain-singleton destruction — no hand-numbered phases (verified against the Spring reference). The hazard
+  reopens only if a *second* async writer must stop in a defined order *relative to the ticker* (e.g. the outbox
+  relay), at which point explicit `SmartLifecycle` phases return. Confirmed by docs; the runtime path
+  (`@Scheduled` firing + `printAbove` over the live prompt) runs only in the real app (tests disable the
+  terminal), so it is asserted by inspection/app-run, not yet by an automated test.
 
 ## Non-doctrinal project decision
 

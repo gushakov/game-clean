@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static com.github.gameclean.core.model.calendar.CalendarFixtures.*;
 import static org.assertj.core.api.Assertions.*;
 
 /**
@@ -24,34 +25,6 @@ class GameCalendarTest {
     private static final long SECONDS_PER_DAY = SECONDS_PER_HOUR * HOURS_PER_DAY;     // 7_200
     private static final long SECONDS_PER_MONTH = SECONDS_PER_DAY * DAYS_PER_MONTH;   // 216_000
     private static final long SECONDS_PER_YEAR = SECONDS_PER_MONTH * 10;             // 2_160_000
-
-    private static List<Weekday> fiveWeekdays() {
-        return List.of(
-                new Weekday("Elenya", "guidance"),
-                new Weekday("Anarya", "vitality"),
-                new Weekday("Isilya", "reflection"),
-                new Weekday("Alduya", "growth"),
-                new Weekday("Menelya", "higher matters"));
-    }
-
-    private static List<Month> tenMonths() {
-        return List.of(
-                new Month("Aelorin", "The Silver Wind Returns"),
-                new Month("Sylvael", "The First Bloom Stirs"),
-                new Month("Calivorn", "The Waters Awaken"),
-                new Month("Thalinde", "The Light Grows Long"),
-                new Month("Evaniel", "The Golden Tide"),
-                new Month("Miraleth", "The Amber Canopy"),
-                new Month("Faerundel", "The Drifting Mists"),
-                new Month("Veloris", "The Cold Moon Rises"),
-                new Month("Aelindra", "The Deep Frost"),
-                new Month("Sorivael", "The Returning Light"));
-    }
-
-    /** The calendar from the design discussion: 300s hours, 24h days, 30-day months, 5 weekdays, 10 months. */
-    private static GameCalendar standard() {
-        return new GameCalendar(300, 24, 30, fiveWeekdays(), tenMonths());
-    }
 
     // --- construction invariants -------------------------------------------------------------------------
 
@@ -161,6 +134,34 @@ class GameCalendarTest {
     void rejects_a_negative_elapsed() {
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> standard().placeInstant(-1));
+    }
+
+    // --- absoluteHourOf: the monotonic hour-since-epoch --------------------------------------------------
+
+    @Test
+    void absoluteHourOf_counts_whole_game_hours_since_the_epoch() {
+        GameCalendar calendar = standard();
+        assertThat(calendar.absoluteHourOf(0)).isZero();
+        assertThat(calendar.absoluteHourOf(6 * SECONDS_PER_HOUR)).isEqualTo(6L);          // day 0, hour 6 (dawn)
+        assertThat(calendar.absoluteHourOf(6 * SECONDS_PER_HOUR + 299)).isEqualTo(6L);     // floored within the hour
+    }
+
+    @Test
+    void absoluteHourOf_keeps_climbing_across_days_while_hourIndex_wraps() {
+        GameCalendar calendar = standard();
+        long dayOneDawn = (HOURS_PER_DAY + 6) * SECONDS_PER_HOUR;        // day 1, hour-of-day 6
+        long absoluteHour = calendar.absoluteHourOf(dayOneDawn);
+        int hourIndex = calendar.placeInstant(dayOneDawn).getHourIndex();
+
+        assertThat(absoluteHour).isEqualTo(30L);                         // 24 + 6, not 6
+        assertThat(hourIndex).isEqualTo(6);                              // the cyclic hour still wraps
+        assertThat(absoluteHour % HOURS_PER_DAY).isEqualTo((long) hourIndex);   // consistent by construction
+    }
+
+    @Test
+    void absoluteHourOf_rejects_a_negative_elapsed() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> standard().absoluteHourOf(-1));
     }
 
     // --- the continuous week -----------------------------------------------------------------------------

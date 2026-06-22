@@ -1,8 +1,7 @@
 package com.github.gameclean.core.model.calendar;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * A moment in game time, decomposed into a {@link GameCalendar}'s units — the pure positional result of
@@ -22,8 +21,7 @@ import lombok.Getter;
  * count) is guaranteed by the sole factory, {@link GameCalendar#placeInstant} — a {@code GameDate} is never
  * constructed except by placing an instant, so it carries no calendar reference to check bounds against.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class GameDate {
 
     private final int year;

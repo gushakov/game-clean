@@ -2,8 +2,6 @@ package com.github.gameclean.core.usecase.clock;
 
 import com.github.gameclean.core.model.calendar.GameCalendar;
 import com.github.gameclean.core.model.calendar.GameDate;
-import com.github.gameclean.core.model.calendar.Month;
-import com.github.gameclean.core.model.calendar.Weekday;
 import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
@@ -15,9 +13,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.List;
 import java.util.Optional;
 
+import static com.github.gameclean.core.model.calendar.CalendarFixtures.standard;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,7 +45,7 @@ class AskForTimeUseCaseTest {
 
     @Test
     void presentsTheDatePlacedFromTheBankedTotalPlusTheSession() {
-        GameCalendar calendar = standardCalendar();
+        GameCalendar calendar = standard();
         when(calendarSourceOps.loadCalendar()).thenReturn(calendar);
         // 3_000s banked + 600s this session = 3_600s = 12 game hours into the first day of year 1000.
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(new GameClock(3_000)));
@@ -60,7 +58,7 @@ class AskForTimeUseCaseTest {
 
     @Test
     void countsOnlyTheSessionWhenTheBankedTotalIsZero() {
-        GameCalendar calendar = standardCalendar();
+        GameCalendar calendar = standard();
         when(calendarSourceOps.loadCalendar()).thenReturn(calendar);
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(GameClock.initial()));
         when(gameTimeSourceOps.elapsedSessionSeconds()).thenReturn(3_600L);
@@ -93,17 +91,5 @@ class AskForTimeUseCaseTest {
         verify(presenter).presentError(boom);
         verify(presenter, never()).presentGameNotInitialized();
         verify(presenter, never()).presentCurrentTime(any(), any());
-    }
-
-    /** The standard calendar pinned in GameCalendarTest: 300s hours, 24h days, 30-day months, 5 weekdays, 10 months. */
-    private static GameCalendar standardCalendar() {
-        return new GameCalendar(300, 24, 30,
-                List.of(new Weekday("Elenya", "guidance"), new Weekday("Anarya", "vitality"),
-                        new Weekday("Isilya", "reflection"), new Weekday("Alduya", "growth"),
-                        new Weekday("Menelya", "higher matters")),
-                List.of(new Month("Aelorin", "a"), new Month("Sylvael", "b"), new Month("Calivorn", "c"),
-                        new Month("Thalinde", "d"), new Month("Evaniel", "e"), new Month("Miraleth", "f"),
-                        new Month("Faerundel", "g"), new Month("Veloris", "h"), new Month("Aelindra", "i"),
-                        new Month("Sorivael", "j")));
     }
 }

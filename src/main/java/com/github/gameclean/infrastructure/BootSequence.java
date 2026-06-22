@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * The application's startup choreography, made explicit — and made <em>unidirectional</em>. Two boot-time
@@ -41,12 +42,23 @@ import org.springframework.core.annotation.Order;
  * so either the interactive application boots (seed, then console) or a test slice gets neither runner —
  * never seeding implicitly, blocking on a console, or grabbing a system terminal.
  *
- * <p>Forward fit: when Phase 3 adds an independent clock and an outbox relay, their ordered start — and the
- * reverse-order shutdown the design notes call for ({@code Terminal.close()} must run last) — belong here
- * too, as further {@code @Order}ed runner beans (or their lifecycle equivalent), not scattered
- * {@code SmartLifecycle} phase numbers.
+ * <p><b>Not every primary adapter is a one-shot boot step — some run asynchronously.</b> The two runners
+ * below fire once and return (seed, then hand over the console). But the interactive runtime also has primary
+ * (driving) adapters that start <em>asynchronously and recur</em> — today the {@code GameClockTicker}, which
+ * drives the time-of-day announcement on a fixed interval, and tomorrow an outbox relay reacting to events.
+ * Those are not boot steps and are <b>not</b> runners (recurring ≠ one-shot); they are their own gated beans.
+ * What belongs here is their <em>enablement</em>: {@code @EnableScheduling} turns on Spring's scheduling
+ * infrastructure exactly when the interactive runtime boots — co-located with the rest of the boot wiring and
+ * sharing the {@code game.terminal.enabled} guard, so a test slice spins up no scheduler.
+ *
+ * <p>Forward fit: Spring owns the scheduled actors' threads and their lifecycle, including cancelling them at
+ * context close (waiting for an in-flight run) <em>before</em> it destroys plain singletons like the
+ * {@code Terminal} — the reverse-order shutdown the design requires ({@code Terminal.close()} must run last),
+ * without our hand-numbering {@code SmartLifecycle} phases. Explicit phases return only when two async writers
+ * (e.g. the ticker and a future outbox relay) must be ordered against <em>each other</em>.
  */
 @Configuration
+@EnableScheduling
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
 public class BootSequence {
 

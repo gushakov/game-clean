@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.calendar;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 import java.util.List;
 import java.util.Objects;
@@ -33,8 +32,7 @@ import java.util.function.Function;
  * {@link #placeInstant} takes a plain elapsed-seconds {@code long}, so the whole calendar is unit-testable
  * with no port, clock, or database. The base year is fixed at {@link #EPOCH_YEAR} for now.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class GameCalendar {
 
     /** The game year the epoch instant (zero elapsed seconds) maps to — the first day of this year. */
@@ -85,6 +83,31 @@ public class GameCalendar {
         int secondOfHour = (int) (withinDay % secondsPerHour);
 
         return new GameDate(year, monthIndex, dayIndex, hourIndex, secondOfHour);
+    }
+
+    /**
+     * The absolute game hour an instant falls in: the monotonic count of whole game hours since the epoch,
+     * running unbroken across day, month and year boundaries — the <em>un-wrapped</em> companion to
+     * {@link #placeInstant}'s cyclic {@link GameDate#getHourIndex() hourIndex}. Where {@code hourIndex} resets
+     * each day (so a phase at hour-of-day 6 recurs as hour 6 every day), this keeps climbing (day 0's hour 6 is
+     * absolute hour 6, day 1's is {@code 6 + hoursPerDay}, …), which is exactly what an ordering or
+     * once-per-occurrence dedup key needs. The two are consistent by construction:
+     * {@code placeInstant(e).getHourIndex() == absoluteHourOf(e) % hoursPerDay}.
+     *
+     * <p>The calendar owns this arithmetic for the same reason it owns {@link #placeInstant}: it owns the
+     * {@code secondsPerHour} radix. A use case orchestrates — fetch the elapsed seconds, ask the calendar for
+     * the absolute hour — rather than dividing by the radix itself.
+     *
+     * @param elapsedGameSeconds game seconds since the epoch (must not be negative)
+     * @return the number of whole game hours elapsed since the epoch
+     * @throws InvalidDomainObjectError if {@code elapsedGameSeconds} is negative
+     */
+    public long absoluteHourOf(long elapsedGameSeconds) {
+        if (elapsedGameSeconds < 0) {
+            throw new InvalidDomainObjectError(
+                    "elapsed game seconds must not be negative, got " + elapsedGameSeconds);
+        }
+        return elapsedGameSeconds / secondsPerHour;
     }
 
     /**

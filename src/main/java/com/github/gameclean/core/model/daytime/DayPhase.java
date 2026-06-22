@@ -1,0 +1,79 @@
+package com.github.gameclean.core.model.daytime;
+
+import com.github.gameclean.core.model.DomainValidation;
+import com.github.gameclean.core.model.InvalidDomainObjectError;
+import lombok.Value;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.function.DoubleSupplier;
+
+/**
+ * A named, recurring moment of the game day — dawn, dusk — that begins at a fixed hour-of-day and carries the
+ * flavour lines the world announces when it arrives. A Value Object: always-valid (a non-blank name, a
+ * non-negative hour index, and at least one non-blank message — a phase with nothing to say is meaningless)
+ * and equal by value.
+ *
+ * <p><b>Authored time <em>narrative</em>, deliberately not calendar <em>structure</em>.</b> {@code DayPhase}
+ * is co-authored with the calendar (both live in {@code calendar.yaml}) but is kept out of
+ * {@link com.github.gameclean.core.model.calendar.GameCalendar}, which stays pure mixed-radix arithmetic and
+ * named cycles. A day phase carries player-facing prose and is the seed of an asynchronous announcement — a
+ * different kind of thing from "how many hours make a day". (design-notes §2 minimalism, §11.)
+ *
+ * <p>The hour is a bare 0-based index into the day, like {@link
+ * com.github.gameclean.core.model.calendar.GameDate#getHourIndex()}. Whether it is <em>within range</em> for a
+ * given calendar (below its {@code hoursPerDay}) is an inter-model consistency rule checked once at load — the
+ * same split scenes use for their exit targets — so a {@code DayPhase} holds no calendar reference of its own.
+ *
+ * <p>It owns the whole message-selection policy: {@link #pickMessage(DoubleSupplier)} chooses uniformly among
+ * its lines. The randomness is supplied as a plain {@link DoubleSupplier}, never a port, so the use case
+ * adapts its randomness output port to that supplier and the phase stays framework-free and deterministic
+ * under test — exactly as {@link com.github.gameclean.core.model.item.SpawnRule#pickScene(double)} does for
+ * scene selection.
+ */
+@Value
+public class DayPhase {
+
+    private final String name;
+    private final int hourOfDay;
+    private final List<String> messages;
+
+    public DayPhase(String name, int hourOfDay, List<String> messages) {
+        this.name = requireNonBlank(name, "day phase name");
+        if (hourOfDay < 0) {
+            throw new InvalidDomainObjectError("day phase hour of day must not be negative, got " + hourOfDay);
+        }
+        this.hourOfDay = hourOfDay;
+        this.messages = List.copyOf(
+                DomainValidation.requireNonNull(messages, "day phase '%s' messages must not be null".formatted(name)));
+        if (this.messages.isEmpty()) {
+            throw new InvalidDomainObjectError("day phase '%s' must have at least one message".formatted(name));
+        }
+        this.messages.forEach(message -> requireNonBlank(message, "day phase '%s' message".formatted(name)));
+    }
+
+    /**
+     * Selects, uniformly, the line to announce for this phase, scaling the draw across the messages. The draw
+     * is expected in {@code [0, 1)}; the top of the range is clamped so a draw arbitrarily close to 1 still
+     * selects the last message rather than running off the end (the same clamp {@code SpawnRule.pickScene}
+     * applies).
+     *
+     * @param draws a source of one uniform random draw in {@code [0, 1)}
+     * @return the chosen message
+     */
+    public String pickMessage(DoubleSupplier draws) {
+        Objects.requireNonNull(draws, "draw source must not be null");
+        int index = (int) (draws.getAsDouble() * messages.size());
+        if (index >= messages.size()) {
+            index = messages.size() - 1;
+        }
+        return messages.get(index);
+    }
+
+    private static String requireNonBlank(String value, String what) {
+        if (DomainValidation.requireNonNull(value, what + " must not be null").strip().isEmpty()) {
+            throw new InvalidDomainObjectError(what + " must not be blank");
+        }
+        return value;
+    }
+}

@@ -1,8 +1,7 @@
 package com.github.gameclean.core.model.item;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * A spawn probability expressed as an authored fraction — e.g. {@code 12/50} — and the rule that decides
@@ -15,8 +14,7 @@ import lombok.Getter;
  * by item spawning — the source of entropy and the meaning of the odds are kept on opposite sides of the
  * boundary.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class Chance {
 
     private final int numerator;

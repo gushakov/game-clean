@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.scene;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * Identity of a {@link Scene} — a Value Object wrapping an authored id of the form
@@ -15,8 +14,7 @@ import lombok.Getter;
  * generator adapter, so there is no shared pattern for the model to keep in sync. Equality
  * is by value (the wrapped string).
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class SceneId {
 
     /** Three-letter aggregate prefix for scenes. */

@@ -2,8 +2,7 @@ package com.github.gameclean.core.model.calendar;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+import lombok.Value;
 
 /**
  * A named month — one authored entry in the calendar's {@code months:} cycle, carrying the name the renderer
@@ -14,8 +13,7 @@ import lombok.Getter;
  * and the number of months <em>is</em> the length of the year. {@link GameCalendar#monthOf} resolves a date's
  * month index to one of these.
  */
-@Getter
-@EqualsAndHashCode
+@Value
 public class Month {
 
     private final String name;

@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.initialize;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
+import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.Player;
@@ -10,6 +11,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
@@ -37,6 +39,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -79,6 +83,8 @@ class InitializeGameUseCaseTest {
     @Mock
     private GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     @Mock
+    private DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
+    @Mock
     private IdGeneratorOperationsOutputPort idGeneratorOps;
     @Mock
     private RandomnessOperationsOutputPort randomnessOps;
@@ -96,7 +102,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -111,7 +117,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -128,13 +134,15 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(GameClock.initial()));
-        runTransactionsAndFireAfterCommit();
+        when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(gameClockRepositoryOps, never()).saveClock(any());
+        verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
         assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
     }
 
@@ -145,11 +153,26 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         // The clock is absent (default Optional.empty), so it is created at time zero.
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
         verify(gameClockRepositoryOps).saveClock(GameClock.initial());
+        assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
+    }
+
+    @Test
+    void seedsTheDayPhaseLogAtTheSentinelWhenAbsentDuringInitialization() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        // The day-phase log is absent (default Optional.empty), so it is created at the "nothing announced" sentinel.
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        verify(dayPhaseLogRepositoryOps).saveDayPhaseLog(DayPhaseLog.initial());
         assertGameInitializedPresentedWithNoItems("plr1", "scn1", "scn2");
     }
 
@@ -165,7 +188,7 @@ class InitializeGameUseCaseTest {
         // 0.6 selects candidate index (int)(0.6 * 2) = 1, i.e. scn2.
         when(randomnessOps.nextDouble()).thenReturn(0.0, 0.6);
         when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -191,7 +214,7 @@ class InitializeGameUseCaseTest {
         // The rolls still happen (outside the transaction), but the guard means nothing is saved.
         when(randomnessOps.nextDouble()).thenReturn(0.0, 0.0);
         when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
-        runTransactionsAndFireAfterCommit();
+        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
@@ -311,7 +334,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(sceneOps).saveScene(any());
-        runTransactionsPropagatingErrors();
+        runTransaction(txOps);
 
         useCase.systemInitializesGame();
 
@@ -327,7 +350,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
-        runTransactionsPropagatingErrors();
+        runTransaction(txOps);
 
         useCase.systemInitializesGame();
 
@@ -366,28 +389,6 @@ class InitializeGameUseCaseTest {
         return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
     }
 
-    // --- transaction-port stubs -----------------------------------------------------------------
-
-    /** Run the transactional action inline and fire after-commit callbacks immediately. */
-    private void runTransactionsAndFireAfterCommit() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
-        doAnswer(inv -> {
-            inv.getArgument(0, Runnable.class).run();
-            return null;
-        }).when(txOps).doAfterCommit(any(Runnable.class));
-    }
-
-    /** Run the transactional action inline, letting any error it throws propagate (as the real port does). */
-    private void runTransactionsPropagatingErrors() {
-        doAnswer(inv -> {
-            inv.getArgument(1, Runnable.class).run();
-            return null;
-        }).when(txOps).doInTransaction(anyBoolean(), any(Runnable.class));
-    }
-
     // --- assertion helpers ----------------------------------------------------------------------
 
     private void assertScenesSavedInOrder(String... expectedIds) {
@@ -422,6 +423,7 @@ class InitializeGameUseCaseTest {
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(itemOps, never()).saveItem(any());
         verify(gameClockRepositoryOps, never()).saveClock(any());
+        verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
         verify(presenter, never()).presentGameInitialized(any(), any(), any());
     }
 }
