@@ -25,6 +25,8 @@ import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.LookUseCase;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import com.github.gameclean.core.usecase.explore.MoveUseCase;
+import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
+import com.github.gameclean.core.usecase.guidance.GuidanceUseCase;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
@@ -32,6 +34,7 @@ import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalGuidancePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
@@ -170,5 +173,12 @@ public class UseCaseConfig {
             TransactionOperationsOutputPort txOps) {
         TerminalSuspendGamePresenter presenter = new TerminalSuspendGamePresenter(console);
         return new SuspendGameUseCase(presenter, gameClockRepositoryOps, gameTimeSourceOps, txOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public GuidanceInputPort guidanceUseCase(Console console) {
+        TerminalGuidancePresenter presenter = new TerminalGuidancePresenter(console);
+        return new GuidanceUseCase(presenter);
     }
 }

@@ -5,6 +5,7 @@ import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
 import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
+import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,8 +23,10 @@ import java.util.Optional;
  * that drives the application from the console. It is a thin <em>controller</em>: read a line, ask the
  * {@link CommandParser} for the player's intent, and delegate to a use case ({@code look}, {@code examine},
  * {@code move}, {@code now}) and/or control the loop ({@code bye} both banks the session via the
- * {@code SuspendGame} use case and breaks the loop). It carries no game logic — that lives in the use cases,
- * which present their own output (the console no longer touches a presenter).
+ * {@code SuspendGame} use case and breaks the loop). Even an <em>unrecognized</em> line delegates: the parser
+ * decides it matched no command, and the {@code Guidance} use case decides to steer the player and presents
+ * the guidance. It carries no game logic — that lives in the use cases, which present their own output (the
+ * console no longer touches a presenter; the only direct write left is the lifecycle welcome banner).
  *
  * <p>It also holds the one piece of conversational state the design admits: a pending {@code examine}
  * disambiguation offer, in the shared {@link AffordanceContext} resource. When {@code examine} finds an
@@ -96,8 +99,7 @@ public class ConsoleSession {
                 case SelectCommand select -> selectCandidate(select.getOrdinal());
                 case MoveCommand move -> move(move.getExitName());
                 case TimeCommand ignored -> checkTime();
-                case UnknownCommand unknown -> printLine(
-                        "Unknown command: '%s'. Try 'look', 'examine <target>', 'move <exit>', 'now', or 'bye'.".formatted(unknown.getInput()));
+                case UnknownCommand unknown -> guide(unknown.getInput());
             }
             if (quitRequested) {
                 break;
@@ -146,6 +148,15 @@ public class ConsoleSession {
         // use case presents the parting acknowledgement once the bank commits. Then the loop breaks.
         SuspendGameInputPort suspendGameUseCase = applicationContext.getBean(SuspendGameInputPort.class);
         suspendGameUseCase.playerLeavesTheGame();
+    }
+
+    private void guide(String input) {
+        // The player typed something we couldn't map to a command. Recognizing it as unknown is this adapter's
+        // job (the parser); deciding to guide the player, and which guidance to show, is the use case's and its
+        // presenter's. We only hand the raw input inward and let the use case present — no message is rendered
+        // here, so the controller never owns the command vocabulary or the outcome.
+        GuidanceInputPort guidanceUseCase = applicationContext.getBean(GuidanceInputPort.class);
+        guidanceUseCase.playerIssuesUnrecognizedCommand(input);
     }
 
     private void printLine(String text) {
