@@ -52,7 +52,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case (player-orientation output)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -319,7 +319,25 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   in `world/calendar.yaml`. Deferred: catch-up across boundaries skipped when the interval exceeds a game hour
   (detects only a phase at the *current* hour).
 
-Tests: 250 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Guidance` vertical **complete** (issues #45, #47) — player-orientation output; the console's last direct
+write removed, so `ConsoleSession` now presents nothing itself:
+
+- **Use case** — `Guidance` (`core/usecase/guidance/`): **presenter-only, no domain ports** (the project's
+  thinnest). Two interactions, one player audience: player-actor `playerIssuesUnrecognizedCommand(String)` →
+  `presentUnrecognizedCommand`, and system-actor `systemGreetsPlayer()` → `presentWelcome`. Abstract outcomes —
+  no command vocabulary crosses into core. Near-empty use case is intentional ("controllers never present" +
+  "a presenter port is mandated even with no human audience"); multi-actor in one use case is fine
+  (design-notes §4, §9).
+- **Presenter** — `TerminalGuidancePresenter` (`infrastructure/terminal/presenter/`) owns the curated command
+  list in one shared constant (welcome + unrecognized-nudge can't drift); welcome cyan, nudge yellow.
+- **Console as request-dispatcher** — `ConsoleSession.start()` no longer has `printLine` (deleted). The welcome
+  is the loop's **turn-1 system request** (`greetPlayer(); continue;`), dispatched directly — **not** a
+  `WelcomeCommand` in the parsed-intent `Command` set (the `Command` set stays = parser output; the parser
+  never produces a welcome). `bye` is intercepted before the dispatch switch (it must `break` the loop). The
+  loop is the internalized request-dispatcher; per turn, fire-and-forget holds with no exception
+  (design-notes §9).
+
+Tests: 255 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: NPCs, the `take` use case, `look <exit>` (awaits an `Exit`
 description), async/event processing (the ticker polls; the outbox event spine is still ahead).

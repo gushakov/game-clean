@@ -47,4 +47,22 @@ class GuidanceUseCaseTest {
 
         verify(presenter).presentError(boom);
     }
+
+    @Test
+    void greetsThePlayerWithTheWelcome() {
+        useCase.systemGreetsPlayer();
+
+        verify(presenter).presentWelcome();
+        verify(presenter, never()).presentError(any());
+    }
+
+    @Test
+    void routesAGreetingFailureToTheCatchAll() {
+        RuntimeException boom = new RuntimeException("rendering blew up");
+        doThrow(boom).when(presenter).presentWelcome();
+
+        useCase.systemGreetsPlayer();
+
+        verify(presenter).presentError(boom);
+    }
 }

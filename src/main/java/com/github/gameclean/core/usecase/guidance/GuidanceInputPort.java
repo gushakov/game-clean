@@ -1,20 +1,28 @@
 package com.github.gameclean.core.usecase.guidance;
 
 /**
- * Driving (input) port for the <b>Guidance</b> user goal: the player is steered toward what they can do. A
- * driving adapter — the interactive console, when the {@link com.github.gameclean.infrastructure.terminal.command
- * command parser} maps a line to no known intent — invokes it to respond to a lost player.
+ * Driving (input) port for the <b>Guidance</b> user goal: orient the player toward what they can do. Two
+ * driving triggers, both from the interactive console — one when the player types something the
+ * {@link com.github.gameclean.infrastructure.terminal.command command parser} maps to no known intent, and one
+ * when the session opens and the system greets the player.
  *
- * <p>One interaction, {@link #playerIssuesUnrecognizedCommand(String)}, whose initiating actor is the
- * <em>player</em>. Its name is the Cockburn step it implements — subject (the player) and predicate (issues an
- * unrecognized command) — naming the entry condition that triggers the guidance goal, not a bare service verb.
- * It takes the raw input only so the outcome can echo it back; the use case never interprets that string —
- * recognizing it as unknown already happened in the parser (design-notes §9), and the concrete command list
- * lives in the presenter, never here.
+ * <p>Two interactions with <em>different initiating actors</em>, grouped because they advance one coherent goal
+ * — telling the player how to interact — to one audience (the player console). A use case may host more than
+ * one actor: the cohesion unit is the goal, not the actor (clean-ddd-core §0).
  *
- * <p>It is {@code void}: the outcome (a guidance prompt, or an unexpected error) is reported through the
- * {@link GuidancePresenterOutputPort}, never returned. A presenter-only goal — it reads no domain state and
- * touches no transaction.
+ * <ul>
+ *   <li>{@link #playerIssuesUnrecognizedCommand(String)} — actor the <em>player</em>: they typed something
+ *       unrecognized. The raw input crosses inward only so the outcome can echo it; the use case never
+ *       interprets it (recognizing it as unknown already happened in the parser, design-notes §9).</li>
+ *   <li>{@link #systemGreetsPlayer()} — actor the <em>system</em> at session start: an input-less greeting,
+ *       fired as the console's first turn before any line is read (design-notes §9, the loop as the
+ *       internalized request-dispatcher).</li>
+ * </ul>
+ *
+ * <p>Both names are the Cockburn step — subject (player / system) and predicate — not a bare service verb.
+ * Both are {@code void}: outcomes are reported through the {@link GuidancePresenterOutputPort}, never returned.
+ * A presenter-only goal — it reads no domain state and touches no transaction. The concrete command list both
+ * outcomes show lives in the presenter, never here.
  */
 public interface GuidanceInputPort {
 
@@ -26,4 +34,11 @@ public interface GuidanceInputPort {
      * @param input the raw line the player typed that matched no known command
      */
     void playerIssuesUnrecognizedCommand(String input);
+
+    /**
+     * Greets the player as the session opens — the system's own first "turn", presenting the welcome and the
+     * available commands. Takes no parameter and reads no state: the greeting is fixed (it will gain inputs
+     * only if it ever grows domain-aware, e.g. greeting by time of day).
+     */
+    void systemGreetsPlayer();
 }
