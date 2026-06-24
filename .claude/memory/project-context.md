@@ -61,9 +61,10 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
-  by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring; `command/` the
-  sealed `Command` + `CommandParser`; `presenter/` the driven `Terminal*Presenter`s; `render/`
-  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
+  by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
+  (session-lifetime disambiguation buffer resource); `command/` the sealed `Command` + `CommandParser`;
+  `presenter/` the driven `Terminal*Presenter`s; `render/`
+  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
   `infrastructure/randomness/` (JDK randomness adapter).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
@@ -160,6 +161,34 @@ named exit into the target scene, then sees it):
   dispatches to a pulled prototype `MoveInputPort`.
 - **Persistence** — `savePlayer` is now an **upsert** (`existsById ? update : insert`); `@Version`/optimistic
   locking deferred to the concurrency thread (design-notes §5).
+
+`Examine` vertical **complete** (issue #43) — the project's first **multi-interaction** use case (`look <target>` /
+`examine <target>` describe one item on the ground; ambiguous descriptions disambiguate via a numbered menu):
+
+- **Domain** — `Item.matches(String)` SEFF (case-insensitive substring on short description; first behaviour on
+  `Item`, plain-NPE arg guard per design-notes §2). Items only; `look <exit>` deferred until `Exit` grows a
+  description.
+- **Use case** — `Examine` (`core/usecase/explore/`): two interactions converging on one outcome
+  (`presentItemDescription`) — `playerExaminesTarget(String)` (designate by description: orient → match → 0/1/N
+  branch) and `playerExaminesItem(String itemId)` (designate by identity, the disambiguation completion:
+  re-validates the id against live scene state → describe or `presentItemNoLongerHere`). Read-only, no tx, like
+  `look`. Disambiguation is a Cockburn **extension**; by-number selection is a **variation** of target
+  designation (design-notes §4).
+- **Conversational state** — `AffordanceContext` (`infrastructure/terminal/`, a session-lifetime resource
+  declared in `TerminalConfig`): remembers the offered `number→id-token` map. It trades in **raw `String` id
+  tokens, not the `ItemId` model VO** — the buffer is read by the primary console adapter, kept model-free per
+  "primitives inward" (§6); the driven presenter does the `getId().getValue()` flatten when it arms it
+  (design-notes §4). The **presenter** arms it as it renders the menu; the **controller** (`ConsoleSession`)
+  resolves a bare number against it and clears it; any other command abandons the offer. The use case never
+  sees it — conversational state is a delivery-mechanism concern (§9). Remembers identity tokens, not positions
+  (re-validated at the input-port gate against live state).
+- **Presenter port re-split (ISP)** — `OrientPlayerPresenterOutputPort` shrank to the two not-found outcomes the
+  subcase presents; `presentScene` moved down into a new `CurrentScenePresenterOutputPort` (look/move); `Examine`
+  extends the slim orient port + adds its four outcomes. Renderers mirror it: `OrientRenderer` (not-founds, shared
+  by all three), `CurrentSceneRenderer` (scene only), `ItemRenderer` (examine outcomes) (design-notes §4).
+- **Parsing** — `CommandParser` generalized to one factory per verb (returns command-or-null); `look`/`examine`/`x`
+  take the line remainder as a multi-word target; a bare positive integer → `SelectCommand`. New `ExamineCommand`
+  / `SelectCommand` in the sealed `Command` set.
 
 `orient` subcase + ad-hoc presenter wiring **complete** (issue #16) — the project's first **subcase**,
 factoring the shared `look`/`move` opening (resolve ambient player → resolve their current scene):
@@ -284,7 +313,7 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   in `world/calendar.yaml`. Deferred: catch-up across boundaries skipped when the interval exceeds a game hour
   (detects only a phase at the *current* hour).
 
-Tests: 222 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Tests: 250 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
-and from prior runs; issue #17). Not yet: NPCs, the `look <target>` / `take` use cases, async/event
-processing (the ticker polls; the outbox event spine is still ahead).
+and from prior runs; issue #17). Not yet: NPCs, the `take` use case, `look <exit>` (awaits an `Exit`
+description), async/event processing (the ticker polls; the outbox event spine is still ahead).

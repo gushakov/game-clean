@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure.terminal;
 
 import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
+import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
@@ -19,10 +20,17 @@ import java.util.Optional;
 /**
  * Primary (driving) adapter: the interactive player session — a blocking read loop on the main thread
  * that drives the application from the console. It is a thin <em>controller</em>: read a line, ask the
- * {@link CommandParser} for the player's intent, and delegate to a use case ({@code look}, {@code move},
- * {@code now}) and/or control the loop ({@code bye} both banks the session via the {@code SuspendGame} use
- * case and breaks the loop). It carries no game logic — that lives in the use cases, which present their own
- * output (the console no longer touches a presenter).
+ * {@link CommandParser} for the player's intent, and delegate to a use case ({@code look}, {@code examine},
+ * {@code move}, {@code now}) and/or control the loop ({@code bye} both banks the session via the
+ * {@code SuspendGame} use case and breaks the loop). It carries no game logic — that lives in the use cases,
+ * which present their own output (the console no longer touches a presenter).
+ *
+ * <p>It also holds the one piece of conversational state the design admits: a pending {@code examine}
+ * disambiguation offer, in the shared {@link AffordanceContext} resource. When {@code examine} finds an
+ * ambiguous target its presenter arms that buffer with the numbered candidates; a subsequent bare number
+ * ({@link SelectCommand}) is resolved against it to a specific item id and examined by identity, while any
+ * other command abandons the offer. The use cases never see this state — remembering "what was just offered"
+ * is a delivery-mechanism concern that stays in this driving adapter.
  *
  * <p>{@link #start()} blocks until {@code bye}. It is invoked by
  * {@link com.github.gameclean.infrastructure.BootSequence} <em>after</em> the world and player have
@@ -43,10 +51,11 @@ public class ConsoleSession {
 
     private final LineReader lineReader;
     private final CommandParser commandParser;
+    private final AffordanceContext affordanceContext;
     private final ApplicationContext applicationContext;
 
     public void start() {
-        printLine("Welcome to game-clean. Commands: 'look', 'move <exit>', 'now', 'bye'.");
+        printLine("Welcome to game-clean. Commands: 'look', 'look <target>' / 'examine <target>', 'move <exit>', 'now', 'bye'.");
         while (true) {
             String line;
             try {
@@ -61,19 +70,29 @@ public class ConsoleSession {
             if (parsed.isEmpty()) {               // blank line — nothing to do
                 continue;
             }
+            Command command = parsed.get();
+
+            // Any command other than picking a number abandons a pending disambiguation offer: doing something
+            // else means the player is no longer answering "which one?". (An ambiguous 'examine' re-arms it.)
+            if (!(command instanceof SelectCommand)) {
+                affordanceContext.clear();
+            }
+
             // Exhaustive over the sealed Command set (no default). Only 'bye' ends the loop; a switch
             // break would only break the switch, so it signals through quitRequested and we break after.
             boolean quitRequested = false;
-            switch (parsed.get()) {
+            switch (command) {
                 case QuitCommand ignored -> {
                     leaveGame();
                     quitRequested = true;
                 }
                 case LookCommand ignored -> lookAround();
+                case ExamineCommand examine -> examineTarget(examine.getTarget());
+                case SelectCommand select -> selectCandidate(select.getOrdinal());
                 case MoveCommand move -> move(move.getExitName());
                 case TimeCommand ignored -> checkTime();
                 case UnknownCommand unknown -> printLine(
-                        "Unknown command: '%s'. Try 'look', 'move <exit>', 'now', or 'bye'.".formatted(unknown.getInput()));
+                        "Unknown command: '%s'. Try 'look', 'examine <target>', 'move <exit>', 'now', or 'bye'.".formatted(unknown.getInput()));
             }
             if (quitRequested) {
                 break;
@@ -93,6 +112,31 @@ public class ConsoleSession {
         // The acting player is ambient; only the chosen exit crosses inward, as a primitive.
         MoveInputPort moveUseCase = applicationContext.getBean(MoveInputPort.class);
         moveUseCase.playerMovesThrough(exitName);
+    }
+
+    private void examineTarget(String target) {
+        // Designate the thing by description; if it is ambiguous the use case presents a menu and its presenter
+        // arms the AffordanceContext, so the next bare number resolves (handled by selectCandidate).
+        ExamineInputPort examineUseCase = applicationContext.getBean(ExamineInputPort.class);
+        examineUseCase.playerExaminesTarget(target);
+    }
+
+    private void selectCandidate(int ordinal) {
+        // Resolve the menu number against the remembered offer. "Nothing pending" and "out of range" are pure
+        // UI conditions the controller answers directly (no domain involved); only a hit reaches the use case.
+        if (!affordanceContext.hasPending()) {
+            printLine("There is nothing to choose right now. Try 'look <target>' to inspect something.");
+            return;
+        }
+        Optional<String> chosen = affordanceContext.resolve(ordinal);
+        if (chosen.isEmpty()) {
+            printLine("There is no option %d. Type one of the numbers shown.".formatted(ordinal));
+            return;   // leave the menu pending so the player can pick again
+        }
+        // A hit: examine by identity. The id token crosses inward as a primitive; the use case re-validates it.
+        ExamineInputPort examineUseCase = applicationContext.getBean(ExamineInputPort.class);
+        examineUseCase.playerExaminesItem(chosen.get());
+        affordanceContext.clear();   // the offer has been consumed
     }
 
     private void checkTime() {

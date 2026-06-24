@@ -9,8 +9,8 @@ package com.github.gameclean.core.usecase.explore;
  * Its name is the Cockburn step it implements — subject (the player) and predicate (looks around) —
  * not a bare service verb. It takes <b>no parameter</b>: the acting player is <em>ambient</em>, pulled
  * inside the use case from {@code PlayerOperationsOutputPort} rather than threaded across the boundary
- * as data. The unqualified "around" is deliberate, reserving a later {@code playerLooksAt(target)} for
- * examining a specific thing.
+ * as data. The unqualified "around" is deliberate: looking <em>at</em> a specific thing is a separate user
+ * goal, {@link ExamineInputPort}, reached by {@code look <target>} / {@code examine <target>}.
  *
  * <p>It is {@code void}: every outcome (the scene description, a missing player, a dangling
  * current-scene reference, or an unexpected error) is reported through the

@@ -445,6 +445,90 @@ subcase may return a result on its non-presenting success branch**. This is a pr
 The composition-root consequence — parent and subcase share one ad-hoc-`new`ed presenter instance — is
 in §6.
 
+**The first *multi-interaction* use case — `examine`, and where conversational state lives.** `[thread #4]`
+`[thread #3]` `look <target>` / `examine <target>` is the project's first goal whose presentation in *one*
+interaction sets up a *follow-up* interaction that completes it. The player names a target; if the fragment is
+ambiguous the system offers a numbered menu and the player picks "2". The pivotal question — *where do we
+remember the offered list so a later "2" resolves?* — answers itself once the list is named correctly: it is
+**conversational/parser state, a delivery-mechanism concern (§9), so it lives in the driving adapter
+(`AffordanceContext`, a terminal *resource* per §7), never in the core.** The use case stays a stateless
+subroutine: it presents the candidates and is done; it never learns a numbered re-entry follows. The candidate
+homes all fail except that one — the prototype use case (fresh per interaction), the ad-hoc-`new`ed presenter
+(per interaction), a domain aggregate (no invariant, no identity — UI scratch), and the database (wrong
+lifetime: the prompt must survive *to the next line*, not across `bye`/restart) — leaving the
+session-lifetime terminal resource as the only fit. The decisive payoff is concurrency-honesty (`[thread #3]`):
+the buffer remembers **identities, not positions**, and the follow-up interaction (`playerExaminesItem(id)`) is
+id-precise and **re-validates against live state**, so a candidate an NPC removed between offer and pick
+surfaces as an honest "no longer here" outcome rather than a number silently pointing at a different item.
+
+**The buffer holds a raw id *token* (`String`), not the `ItemId` model VO — and the reason sharpens "primitives
+inward".** `[thread #2]` The first cut had `AffordanceContext` trade in `ItemId`. The objection that corrected
+it: **trust flows with control direction.** The core hands its models *outward* to the driven adapters it drives
+(presenters, the persistence gateway reconstituting aggregates), so those are legitimately model-aware; but a
+*primary* adapter — the console loop that **reads** this buffer — is the "primitives inward" edge (§6), where
+the core owns value-object construction at the single gate. Every other inbound console path already obeys this
+(`move(String exitName)`, and `PlayerOperationsOutputPort.currentPlayerId()` returns a `String` on purpose), so
+a driving adapter holding a model would be a lone exception with no precedent — all the model-in-infra cases are
+on the *driven* side. The decisive move is not merely tolerable but *more* faithful: do the `ItemId → String`
+flatten on the **driven** side, in the presenter, where the model legitimately lives (rendering an identity to a
+stable token is a presentation act, like rendering a description to styled text); the buffer then carries a pure
+correlation token and the primary adapter stays model-free. A model type would have bought nothing here anyway —
+the token is **relay-only** (written once by the presenter, read once by the controller, forwarded straight into
+the input port), and a type earns its keep by guarding *operations*, of which there are none; its only effect
+would be to drag the core onto the primary adapter. This is the domain-agnostic `Console` precedent (§7) applied
+on the axis that matters — *a shared terminal resource touched by the driving loop is kept model-free* — not the
+"does it segregate behaviour" axis. The forward fit confirms the cut: when `look <exit>` adds a second
+examinable kind, "how do I tag a selection token by kind?" is answered **inside infrastructure** (a tagged token,
+or separate buffers), explicitly *not* by reaching for a core `Examinable` type — further evidence the buffer
+should not touch the core at all. (Promotion candidate, flagged not promoted: *the carrier type at a
+driving-adapter edge follows the trust direction — primitives inward, even for a value that began life as a
+domain VO on the driven side; flatten on the trusted side, relay a token on the untrusted one.*)
+
+**Variation vs. extension — two interaction methods, one goal.** `[thread #4]` The Cockburn structure is the
+finding worth recording. The "more than one match" branch is an **extension** — entered on a *condition* (the
+fragment is ambiguous), opening a sub-dialogue. The player's act of picking by number is a **variation** of the
+main scenario's "designate the target" step: same target kind, same goal, a different *modality* (an ordinal
+into an offered set vs. a free description). The proof it is a variation and not a separate goal is that both
+designations end at the *identical* presentation — `presentItemDescription`. So `ExamineUseCase` carries two
+interaction methods (`playerExaminesTarget` by description, `playerExaminesItem` by identity) that converge on
+one outcome; the extension is precisely what *makes the variation reachable* (you can only pick "#2" from a
+list you were shown), and the `AffordanceContext` is the controller-side bridge between them. The `Target` vs.
+`Item` naming encodes the designation kind — an unresolved description to be matched vs. a resolved identity to
+be reconstituted — the §3 boundary-currency distinction visible in a method name.
+
+**ISP forces the orient presenter port to re-split — and port granularity tracks *outcomes a consumer can
+present*, not the shared prologue.** `[thread #2]` `examine` opens with the same `orient` prologue as
+`look`/`move`, so it genuinely needs that subcase's two not-found outcomes — but it renders an *item*, never a
+scene, so it would never call `presentScene`. Leaving `presentScene` on `OrientPlayerPresenterOutputPort` would
+force the examine presenter to implement a method it can never receive: an **Interface Segregation violation**.
+So `presentScene` was re-split *down* into a new `CurrentScenePresenterOutputPort` (the capability `look`/`move`
+share and `examine` does not), and the orient port shrank to exactly what the subcase itself presents. This
+**re-separates what the `move`-era coincidence had collapsed**: the cluster was first lifted as three outcomes
+because its only two consumers then both ended by rendering a scene; `examine` breaks the coincidence and
+proves the sharper rule — **presenter-port granularity tracks the set of outcomes a consumer can actually
+present, not the prologue they happen to share.** Sharing the *opening* (the subcase) and sharing the *ending*
+(scene rendering) are two different axes; conflating them over-couples the third consumer the moment it shares
+the opening without the ending. The renderer side mirrors the port split (the not-found rendering extracted
+into a shared `OrientRenderer`, `presentScene` rendering left on `CurrentSceneRenderer`, a new `ItemRenderer`
+for examine), so composition tracks the interface segregation. (Promotion candidate, flagged not promoted:
+*port granularity follows distinguishable outcomes per consumer; a shared prologue is not a reason to share an
+ending.*)
+
+**Why the candidate *ordering* lives in the presenter, not the use case.** `[thread #2]` The disambiguation
+outcome has two faces of one affordance — the visible numbered menu and the latent number→identity mapping —
+and both must agree on the order, so the order is decided in exactly one place: the **presenter**. Two reasons.
+First, **ordering is a presentation concern**: which candidate is "1." and which is "2." is a property of the
+rendered menu, not of the domain; the use case's outcome is "these things are ambiguous" (a *set*), and
+imposing a display sequence on a set is rendering — sorting it in the use case would push a delivery-mechanism
+detail (that *this* UI numbers a list) into the core, the very leak we keep the whole affordance out of the
+core to avoid. Second, **a single source of order cannot drift**: the presenter sorts once, hands the ordered
+list to the renderer to number 1..N, and offers the *same* ordered identities to the `AffordanceContext`; if
+the use case sorted and the presenter re-derived the numbering, two places would have to agree forever. So the
+use case passes the matches *unordered* (repository order) and the unit test asserts membership, not order —
+pinning the division of labour. The presenter stays humble throughout: the use case already decided *that* the
+match was ambiguous (by calling `presentAmbiguousTarget` rather than `presentItemDescription`); the presenter
+only renders that outcome and records the numbering it produced.
+
 **Interaction methods are named as the Cockburn step, not as a service verb.** `[thread #4]` An
 interaction method's name is its *actor + predicate* — `playerLooksAround`,
 `systemInitializesGame` — the subject being the initiating actor (the player, or the system at

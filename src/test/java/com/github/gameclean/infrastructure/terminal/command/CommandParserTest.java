@@ -16,13 +16,49 @@ class CommandParserTest {
     private final CommandParser parser = new CommandParser();
 
     @Test
-    void parses_look_into_a_look_command() {
+    void parses_bare_look_into_a_look_command() {
         assertThat(parser.parse("look")).contains(new LookCommand());
     }
 
     @Test
     void is_case_and_whitespace_insensitive() {
         assertThat(parser.parse("  LOOK  ")).contains(new LookCommand());
+    }
+
+    @Test
+    void parses_look_with_a_target_into_an_examine_command() {
+        assertThat(parser.parse("look dagger")).contains(new ExamineCommand("dagger"));
+    }
+
+    @Test
+    void parses_examine_and_its_x_synonym_carrying_the_target() {
+        assertThat(parser.parse("examine dagger")).contains(new ExamineCommand("dagger"));
+        assertThat(parser.parse("x dagger")).contains(new ExamineCommand("dagger"));
+    }
+
+    @Test
+    void takes_the_whole_remainder_as_a_multi_word_target() {
+        assertThat(parser.parse("look rusty sword")).contains(new ExamineCommand("rusty sword"));
+        assertThat(parser.parse("examine  rusty   sword")).contains(new ExamineCommand("rusty sword"));
+    }
+
+    @Test
+    void bare_examine_without_a_target_is_unknown() {
+        assertThat(parser.parse("examine")).contains(new UnknownCommand("examine"));
+    }
+
+    @Test
+    void parses_a_bare_positive_integer_into_a_select_command() {
+        assertThat(parser.parse("2")).contains(new SelectCommand(2));
+        assertThat(parser.parse("  10 ")).contains(new SelectCommand(10));
+    }
+
+    @Test
+    void zero_and_non_numeric_are_not_selections() {
+        // 0 is not a 1-based menu pick; it is not a verb either, so it falls through to unknown.
+        assertThat(parser.parse("0")).contains(new UnknownCommand("0"));
+        assertThat(parser.parse("-1")).contains(new UnknownCommand("-1"));
+        assertThat(parser.parse("2 3")).contains(new UnknownCommand("2 3"));
     }
 
     @Test
@@ -62,9 +98,9 @@ class CommandParserTest {
     }
 
     @Test
-    void a_known_verb_with_unexpected_arguments_is_unknown_this_round() {
-        // 'look <target>' is deferred — look takes no argument yet, so an argument makes it unknown.
-        Optional<Command> parsed = parser.parse("look east");
-        assertThat(parsed).contains(new UnknownCommand("look east"));
+    void a_known_verb_with_unexpected_arity_is_unknown_this_round() {
+        // 'move' takes exactly one exit token; two arguments fit no factory form.
+        Optional<Command> parsed = parser.parse("move east west");
+        assertThat(parsed).contains(new UnknownCommand("move east west"));
     }
 }
