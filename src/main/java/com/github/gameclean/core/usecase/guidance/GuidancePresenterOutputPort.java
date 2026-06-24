@@ -4,13 +4,13 @@ import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
 
 /**
  * Presenter (driven) output port for {@code Guidance}, co-located with its use case. Extends the catch-all
- * {@link ErrorHandlingPresenterOutputPort#presentError(Exception)} and adds this goal's one outcome.
+ * {@link ErrorHandlingPresenterOutputPort#presentError(Exception)} and adds this goal's outcomes.
  *
- * <p>One outcome, {@link #presentUnrecognizedCommand(String)}. It is deliberately <b>abstract</b>: the use
- * case knows only that the player's input was not recognized, never the concrete commands that <em>are</em>.
- * That vocabulary is delivery-mechanism detail (design-notes §9) the presenter owns — so this method carries
- * just the raw input to echo, and the presenter decides what guidance (the command list, styling) to render
- * around it.
+ * <p>Both outcomes are deliberately <b>abstract</b>: the use case knows only <em>that</em> the player should be
+ * oriented (because their input was unrecognized, or because the session just opened), never the concrete
+ * commands that orient them. That vocabulary is delivery-mechanism detail (design-notes §9) the presenter
+ * owns — so these methods carry no command list, and the presenter decides what guidance (the command list,
+ * styling) to render. Both outcomes share that command list, factored in the presenter so they cannot drift.
  */
 public interface GuidancePresenterOutputPort extends ErrorHandlingPresenterOutputPort {
 
@@ -21,4 +21,10 @@ public interface GuidancePresenterOutputPort extends ErrorHandlingPresenterOutpu
      * @param input the raw line the player typed that matched no known command
      */
     void presentUnrecognizedCommand(String input);
+
+    /**
+     * Outcome: the session has opened and the player is greeted. The presenter renders the welcome and the
+     * available commands; the use case supplies no vocabulary.
+     */
+    void presentWelcome();
 }

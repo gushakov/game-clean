@@ -1158,6 +1158,68 @@ disambiguation), is a change confined to this one adapter and costs the core and
 nothing. **Defer the tool, keep the seam tool-ready** — the same emergence discipline applied
 to a build decision rather than to the model.
 
+**The driving loop is the console's internalized request-dispatcher — and naming it that dissolves an
+apparent exception to fire-and-forget.** `[thread #4]` The unidirectional rule (§4) says a controller fires a
+`void` use case and renounces its outcome — control flows forward, never back to branch on a result. A
+*long-running* primary adapter appears to break this: its `while` loop plainly *continues* after each
+use-case call, to read the next command. The resolution is to see the loop for what it is. A web controller
+or a telnet server gets its request-dispatch loop *from the container* (servlet dispatch; the server's
+accept-loop); a console adapter has no container, so it **embeds the loop itself**. The loop is therefore not
+"code that runs after a use-case call" — it is the mechanism that *re-arms for the next request*. The
+invariant each turn upholds, stated precisely:
+
+> Within one iteration, the controller obtains exactly one unit of work, dispatches it to at most one use
+> case, and then yields to the loop top. The only statements allowed after the dispatch are loop control
+> (`continue` / `break`) — never result-inspection, outcome-branching, or a second use-case call.
+
+Under that statement, fire-and-forget holds *per turn with no exception*: `break`/`continue` are *dispatcher*
+control (stop accepting / accept the next request), not business continuation. There is nothing to carve out —
+the loop is the in-process stand-in for the request/response cycle the web environment hands you for free.
+The earlier instinct to call the loop "the one allowed exception to fire-and-forget" conceded too much; the
+honest framing is that there is no exception, only a dispatcher the console must supply itself. (Promotion
+candidate, flagged not promoted: *a long-running primary adapter's command loop is the internalized
+request-dispatcher; per turn fire-and-forget holds without exception — the loop re-arms, it does not continue
+a call.*)
+
+**The welcome is the system's turn-1 request — dispatched directly, not minted as a `Command`.** `[thread #4]`
+The session-opening greeting is player-facing output, so by "controllers never present" it must be a use-case
+outcome, not a controller `printLine` (its removal finally deletes the last direct write from the console —
+the milestone the §9 parser work set up). Removing it also completes the **read/write split on the shared
+`Terminal`/`LineReader` resource** (§7): the driving adapter now touches JLine *only to acquire the request*
+(`readLine` and its prompt), while *all* output is the driven presenters' — so the read/write asymmetry is the
+driving/driven boundary made concrete on one shared resource, with no output leaking from the controller. It
+is fired as the loop's *first turn* (`greetPlayer(); continue;`),
+before any line is read — the one turn whose unit of work originates from the *system*, not from a read. The
+tempting unification — synthesize a `WelcomeCommand` so *every* turn is "obtain a Command, dispatch it" — was
+**weighed and deferred**, and the discriminator is **does the parser produce it?** The `Command` set *is* the
+parser's output and the swappable grammar seam (above), and the parser can never produce a welcome (there is
+no line to parse). `UnknownCommand` does *not* license `WelcomeCommand`: the parser genuinely produces
+`UnknownCommand` (the parsed intent "unrecognized") but never a welcome. Keeping `Command` = parser-output
+protects the seam's meaning, so the welcome stays a direct turn-1 dispatch. The alternative — redefining
+`Command` as "a unit of work the dispatcher handles" with *two* producers (the parser for player intents, the
+session for lifecycle signals) — becomes the principled shape only once a *family* of system-issued signals
+appears (an autosave notice, an idle "still there?" prompt, an NPC interruption surfaced to the console); then
+`WelcomeCommand` is that family's first member, dispatched uniformly (a labeled `break` lets the `bye` arm
+exit the loop without a flag). One welcome does not earn that redefinition (emergence, as with
+`KnownScenes`/`AuthoredItem` in §10). The greeting *use case* is a second interaction on `Guidance` —
+system-actor `systemGreetsPlayer()` beside player-actor `playerIssuesUnrecognizedCommand` — sharing one player
+audience and the "orient the player toward what they can do" goal (a use case may host multiple actors;
+clean-ddd-core §0), with the shared command-list text factored into one presenter constant so the welcome and
+the unrecognized-command nudge cannot drift. (This is the resolution of the §4 "the welcome is a separate
+interaction with its own port" note: *separate interaction, yes — but a sibling on `Guidance`, not on
+`InitializeGame`*, whose `presentGameInitialized` speaks to an operator/log audience and whose lifecycle moment
+is world-construction, not session-start. Folding the player greeting there would reopen exactly the
+two-audience overload that note warned against, and would force a second presentation into a single-success
+interaction.)
+
+**`bye` is intercepted before the dispatch switch.** Quitting both fires `SuspendGame` (fire-and-forget) *and*
+must stop the loop — and a `switch` arm cannot `break` the enclosing `while` without a flag or a labeled
+break. Rather than a `quitRequested` flag read *after* the switch (harmless, but it reads as "continue past
+the dispatch"), `bye` is handled by an early `if (command instanceof QuitCommand) { leaveGame(); break; }`; the
+`break` is unconditional — the loop exit is never contingent on what `SuspendGame` did. The switch then keeps a
+no-op `QuitCommand` arm purely for sealed-set exhaustiveness, and that dead arm is the honest signal that `bye`
+is the one command whose handling carries a loop-control effect the switch cannot express.
+
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 
 This refines §4. An **inter-aggregate consistency rule** (every exit target resolves to an authored scene;
