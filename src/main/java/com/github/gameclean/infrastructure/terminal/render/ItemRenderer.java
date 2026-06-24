@@ -67,4 +67,14 @@ public class ItemRenderer {
     public void renderItemNoLongerHere(ItemId itemId) {
         console.printError("That is no longer here.");
     }
+
+    /** The player typed a number with no disambiguation menu pending. */
+    public void renderNoPendingSelection() {
+        console.printError("There is nothing to choose right now. Try 'look <target>' to inspect something.");
+    }
+
+    /** The player picked a number outside the offered menu; the menu still stands. */
+    public void renderNoSuchOption(int ordinal) {
+        console.printError("There is no option %d. Type one of the numbers shown.".formatted(ordinal));
+    }
 }

@@ -91,38 +91,58 @@ class ExamineUseCaseTest {
         verifyNoMoreInteractions(presenter);
     }
 
-    // --- playerExaminesItem (designation by identity) ----------------------------------------------
+    // --- playerExaminesChosenCandidate (designation by choosing from the offer) --------------------
 
     @Test
-    void describes_the_chosen_item_when_it_is_still_present() {
+    void describes_the_chosen_candidate_when_it_is_still_present() {
         Item dagger = item("itm1", "A rusty dagger.");
         orientReturns("scn1");
         when(itemOps.findItemsInScene(new SceneId("scn1"))).thenReturn(List.of(dagger));
 
-        useCase.playerExaminesItem("itm1");
+        // The console hands in the offer it remembered and the player's 1-based pick.
+        useCase.playerExaminesChosenCandidate(1, List.of("itm1", "itm2"));
 
         verify(presenter).presentItemDescription(dagger);
         verifyNoMoreInteractions(presenter);
     }
 
     @Test
-    void reports_no_longer_here_when_the_chosen_item_has_left_the_scene() {
+    void reports_no_longer_here_when_the_chosen_candidate_has_left_the_scene() {
         orientReturns("scn1");
-        // The id was offered earlier, but the item is no longer on the ground (taken / despawned).
+        // The token was offered earlier, but the item is no longer on the ground (taken / despawned).
         when(itemOps.findItemsInScene(new SceneId("scn1"))).thenReturn(List.of(item("itm9", "A brass lantern.")));
 
-        useCase.playerExaminesItem("itm1");
+        useCase.playerExaminesChosenCandidate(1, List.of("itm1"));
 
         verify(presenter).presentItemNoLongerHere(new ItemId("itm1"));
         verifyNoMoreInteractions(presenter);
     }
 
     @Test
-    void routes_a_malformed_chosen_id_to_the_catch_all() {
-        // The id comes from our own remembered offer, so a malformed one is an internal fault, not a
+    void presents_no_pending_selection_when_nothing_was_offered() {
+        // A bare number with an empty offer — the use case owns this outcome, not the controller.
+        useCase.playerExaminesChosenCandidate(1, List.of());
+
+        verify(presenter).presentNoPendingSelection();
+        verifyNoMoreInteractions(presenter);
+        verifyNoInteractions(orientPlayerSubcase, itemOps);
+    }
+
+    @Test
+    void presents_no_such_option_when_the_pick_is_out_of_range() {
+        useCase.playerExaminesChosenCandidate(5, List.of("itm1", "itm2"));
+
+        verify(presenter).presentNoSuchOption(5);
+        verifyNoMoreInteractions(presenter);
+        verifyNoInteractions(orientPlayerSubcase, itemOps);
+    }
+
+    @Test
+    void routes_a_malformed_chosen_token_to_the_catch_all() {
+        // A token comes from our own remembered offer, so a malformed one is an internal fault, not a
         // player-authored value: it must reach presentError, never an invalid-parameter outcome. The id is
         // built before orient, so the subcase is never reached.
-        useCase.playerExaminesItem("not-an-item-id");
+        useCase.playerExaminesChosenCandidate(1, List.of("not-an-item-id"));
 
         verify(presenter).presentError(any(Exception.class));
         verifyNoInteractions(orientPlayerSubcase, itemOps);

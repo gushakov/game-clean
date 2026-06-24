@@ -47,4 +47,14 @@ public interface ExaminePresenterOutputPort extends OrientPlayerPresenterOutputP
      * re-validates against live state, so this surfaces as an honest domain outcome rather than a stale render.
      */
     void presentItemNoLongerHere(ItemId itemId);
+
+    /**
+     * The player tried to choose a candidate, but no disambiguation menu is pending (a bare number with nothing
+     * offered). A selection-conversation outcome owned by the use case — not a stray message the controller
+     * prints.
+     */
+    void presentNoPendingSelection();
+
+    /** The player picked a menu number outside the offered candidates. The menu stands, so they can pick again. */
+    void presentNoSuchOption(int ordinal);
 }

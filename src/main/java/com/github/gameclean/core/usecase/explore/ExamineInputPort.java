@@ -1,5 +1,7 @@
 package com.github.gameclean.core.usecase.explore;
 
+import java.util.List;
+
 /**
  * Driving (input) port for the <b>Examine</b> user goal: the player inspects one specific thing in their
  * current surroundings (an item on the ground this round). It is the project's first <b>multi-interaction</b>
@@ -12,33 +14,34 @@ package com.github.gameclean.core.usecase.explore;
  *
  * <ul>
  *   <li>{@link #playerExaminesTarget(String)} — the <b>main success scenario</b>: the player designates by a
- *       descriptive fragment ({@code look <target>} / {@code examine <target>}). It resolves the things present
- *       and branches three ways — no match (an outcome), exactly one match (present it), or
- *       <em>more than one</em> match.</li>
- *   <li>{@link #playerExaminesItem(String)} — designation <b>by identity</b>, the completion of the
- *       disambiguation flow: invoked when the driving adapter resolves a chosen menu number back to a specific
- *       item id and asks to examine it.</li>
+ *       descriptive fragment ({@code look <target>} / {@code examine <target>}). It branches three ways — no
+ *       match, exactly one match, or <em>more than one</em> match.</li>
+ *   <li>{@link #playerExaminesChosenCandidate(int, List)} — designation <b>by choosing from the offered
+ *       candidates</b>, the completion of the disambiguation flow: the player picks a candidate by its menu
+ *       number.</li>
  * </ul>
  *
  * <p><b>Variation vs. extension (why two methods, one goal).</b> The "more than one match" branch is an
- * <em>extension</em> — it is entered on a <em>condition</em> (the fragment is ambiguous) and opens a
- * sub-dialogue (the system offers a numbered menu, the player picks). The player's act of picking by number is
- * a <em>variation</em> of the main scenario's "designate the target" step: the same kind of target, the same
- * goal, reached by a different modality (an ordinal into an offered set instead of a free description). The
- * proof it is a variation and not a separate goal is that both designations end at the identical presentation —
- * the item's full description. The extension is what <em>makes the variation reachable</em>: you can only pick
- * "#2" from a list you were shown.
+ * <em>extension</em> — entered on a <em>condition</em> (the fragment is ambiguous), opening a sub-dialogue.
+ * The player's act of choosing by number is a <em>variation</em> of the main scenario's "designate the target"
+ * step: the same kind of target, the same goal, reached by a different modality (a pick among offered candidates
+ * instead of a free description). The proof it is a variation and not a separate goal is that both designations
+ * end at the identical presentation — the item's full description. The extension is what <em>makes the variation
+ * reachable</em>: you can only pick "#2" from a list you were shown. (Resolving a chosen candidate to its identity
+ * is then an internal step, not a public designation of its own — the only driver that designates by raw id
+ * today is the menu pick.)
  *
- * <p><b>The use case is oblivious to the menu.</b> Remembering "what was offered" so a later bare number means
- * something is conversational state — a delivery-mechanism concern that lives in the driving adapter, not here.
- * On the ambiguous branch this use case merely presents the candidates; the presenter records the
- * number→identity mapping and the controller consumes it. So {@link #playerExaminesItem(String)} receives a
- * fully-resolved id and re-validates it against live state — it never learns a disambiguation took place.
+ * <p><b>The use case owns the conversation; the controller only detects intent.</b> Presenting every selection
+ * outcome — success, "nothing offered to choose", "no such option", "no longer here" — is this use case's
+ * prerogative, not the driving adapter's. The controller merely detects that the player is making a selection
+ * and delegates. It is the <em>imperative shell</em>: it resolves its own conversational context (the candidate
+ * tokens it last offered) and <b>hands them in as a value</b> alongside the pick, so this use case stays a
+ * stateless subroutine fed its inputs (dependency rejection) rather than reaching for a buffer through a port.
+ * The use case stays oblivious to the <em>form</em> of the offer (a numbered terminal menu) — it knows only the
+ * <em>conversation</em>: candidates were offered, the player picked one, present the outcome.
  *
  * <p>Both methods are {@code void}: every outcome is reported through {@link ExaminePresenterOutputPort},
- * never returned. Method names are their Cockburn step (actor + predicate), not bare service verbs; the
- * {@code Target}/{@code Item} contrast encodes the designation kind — an unresolved description to be matched
- * vs. a resolved identity to be reconstituted.
+ * never returned. Method names are their Cockburn step (actor + predicate), not bare service verbs.
  */
 public interface ExamineInputPort {
 
@@ -53,13 +56,16 @@ public interface ExamineInputPort {
     void playerExaminesTarget(String target);
 
     /**
-     * The player designates a thing to examine <em>by identity</em> — the completion of the disambiguation
-     * flow, after the driving adapter has resolved a chosen menu number to a specific item id. Re-validates
-     * that the item is still on the ground in the player's current scene (a concurrent removal surfaces as a
-     * "no longer here" outcome) and presents its description.
+     * The player designates a thing to examine <em>by choosing from the candidates last offered</em> — the
+     * completion of the disambiguation flow. The use case resolves the pick against the offered tokens it is
+     * handed (an empty list means nothing was offered; a number outside it means no such option), then
+     * re-validates the chosen item against live scene state (a concurrent removal surfaces as "no longer here")
+     * and presents the outcome. Every one of those outcomes is presented here, never by the controller.
      *
-     * @param itemId the chosen item's id, as a primitive carrier; the use case reconstitutes and validates the
-     *               {@code ItemId} value object
+     * @param ordinal the 1-based menu number the player picked
+     * @param offeredCandidateTokens the candidate id tokens last offered, in display order — supplied as a value
+     *                               by the driving adapter (the conversational state it holds), never read by the
+     *                               core through a port. Empty when no offer is pending.
      */
-    void playerExaminesItem(String itemId);
+    void playerExaminesChosenCandidate(int ordinal, List<String> offeredCandidateTokens);
 }

@@ -170,18 +170,24 @@ named exit into the target scene, then sees it):
   description.
 - **Use case** — `Examine` (`core/usecase/explore/`): two interactions converging on one outcome
   (`presentItemDescription`) — `playerExaminesTarget(String)` (designate by description: orient → match → 0/1/N
-  branch) and `playerExaminesItem(String itemId)` (designate by identity, the disambiguation completion:
-  re-validates the id against live scene state → describe or `presentItemNoLongerHere`). Read-only, no tx, like
-  `look`. Disambiguation is a Cockburn **extension**; by-number selection is a **variation** of target
+  branch) and `playerExaminesChosenCandidate(int ordinal, List<String> offeredTokens)` (designate by choosing
+  from the offer, the disambiguation completion). The selection interaction is **handed the offered tokens as a
+  value** by the controller (dependency rejection) and **presents every selection outcome itself**
+  (`presentNoPendingSelection` / `presentNoSuchOption` / `presentItemNoLongerHere` / `presentItemDescription`),
+  re-validating the chosen token against live scene state. By-identity resolution is **inlined** into that
+  interaction (not a helper — keeps each checkpoint's present-and-return visible in one method); no driver
+  designates by raw id yet (a future GUI row-click would get its own interaction). Read-only, no tx, like
+  `look`. Disambiguation is a Cockburn **extension**; choosing-by-number is a **variation** of target
   designation (design-notes §4).
 - **Conversational state** — `AffordanceContext` (`infrastructure/terminal/`, a session-lifetime resource
-  declared in `TerminalConfig`): remembers the offered `number→id-token` map. It trades in **raw `String` id
-  tokens, not the `ItemId` model VO** — the buffer is read by the primary console adapter, kept model-free per
-  "primitives inward" (§6); the driven presenter does the `getId().getValue()` flatten when it arms it
-  (design-notes §4). The **presenter** arms it as it renders the menu; the **controller** (`ConsoleSession`)
-  resolves a bare number against it and clears it; any other command abandons the offer. The use case never
-  sees it — conversational state is a delivery-mechanism concern (§9). Remembers identity tokens, not positions
-  (re-validated at the input-port gate against live state).
+  declared in `TerminalConfig`): remembers the offered candidate **id tokens** in display order. It trades in
+  **raw `String` tokens, not the `ItemId` model VO** — the driven presenter does the `getId().getValue()` flatten
+  when it arms it; the primary console adapter stays model-free per "primitives inward" (§6) (design-notes §4).
+  Surface is `offer` / `currentOffer` / `clear` — a dumb store that resolves nothing and presents nothing. The
+  **presenter** arms it as it renders the menu; the **controller** (`ConsoleSession`) only detects the selection
+  intent, hands `currentOffer()` to the use case as a value, and abandons (clears) the offer on any other
+  command. The use case owns the conversation — it resolves the pick and presents all outcomes; the controller
+  decides and renders nothing (design-notes §4).
 - **Presenter port re-split (ISP)** — `OrientPlayerPresenterOutputPort` shrank to the two not-found outcomes the
   subcase presents; `presentScene` moved down into a new `CurrentScenePresenterOutputPort` (look/move); `Examine`
   extends the slim orient port + adds its four outcomes. Renderers mirror it: `OrientRenderer` (not-founds, shared

@@ -451,15 +451,46 @@ interaction sets up a *follow-up* interaction that completes it. The player name
 ambiguous the system offers a numbered menu and the player picks "2". The pivotal question — *where do we
 remember the offered list so a later "2" resolves?* — answers itself once the list is named correctly: it is
 **conversational/parser state, a delivery-mechanism concern (§9), so it lives in the driving adapter
-(`AffordanceContext`, a terminal *resource* per §7), never in the core.** The use case stays a stateless
-subroutine: it presents the candidates and is done; it never learns a numbered re-entry follows. The candidate
-homes all fail except that one — the prototype use case (fresh per interaction), the ad-hoc-`new`ed presenter
+(`AffordanceContext`, a terminal *resource* per §7), never in the core.** The candidate homes for that buffer
+all fail except that one — the prototype use case (fresh per interaction), the ad-hoc-`new`ed presenter
 (per interaction), a domain aggregate (no invariant, no identity — UI scratch), and the database (wrong
 lifetime: the prompt must survive *to the next line*, not across `bye`/restart) — leaving the
 session-lifetime terminal resource as the only fit. The decisive payoff is concurrency-honesty (`[thread #3]`):
-the buffer remembers **identities, not positions**, and the follow-up interaction (`playerExaminesItem(id)`) is
-id-precise and **re-validates against live state**, so a candidate an NPC removed between offer and pick
-surfaces as an honest "no longer here" outcome rather than a number silently pointing at a different item.
+the buffer remembers **identities, not positions**, and the follow-up interaction
+(`playerExaminesChosenCandidate`) is id-precise and **re-validates against live state**, so a candidate an NPC
+removed between offer and pick surfaces as an honest "no longer here" outcome rather than a number silently
+pointing at a different item.
+
+**But the core is oblivious to the *form*, not to the *conversation* — and a controller that presents is the bug
+that hides the difference.** `[thread #4]` A first cut had the console *resolve* the pick against the buffer and
+*present* the "nothing pending" / "no such option" failures itself (raw `printLine`s), re-calling a
+`playerExaminesItem(id)` interaction only on a hit. That is the classic Clean Architecture violation twice over:
+the controller *decides* (hit vs. miss) and *renders* an outcome, bypassing the presenter every other outcome
+goes through. The fix forces a sharper line than "conversational state is infra, core is oblivious": the core is
+oblivious to the **form** of the offer (the numbered menu, the styling, the buffer) but it **owns the
+conversation** — *presenting* every selection outcome (described, nothing-offered, no-such-option, no-longer-here)
+is the use case's prerogative. So selection becomes a real examine interaction,
+`playerExaminesChosenCandidate(ordinal, offeredTokens)`, and the console *only detects the selection intent and
+delegates*. The earlier obliviousness was only purchased by letting the controller present — the very thing being
+fixed; honoring "no presentation in controllers" necessarily pulls the *conversation* (not the *form*) into the
+core. This makes examine a textbook multi-interaction use case: a stateless use case whose between-interaction
+state lives outside it and is **supplied per interaction**, each interaction loading what it needs.
+
+**Dependency rejection picks the carrier: the controller hands the offer in as a *value*, not a *port*.**
+`[thread #4]` Once the use case must resolve the pick, it needs the offered set — so either it reads a new
+output port, or the controller (the imperative shell) hands it the remembered tokens as a parameter. We chose the
+value: `playerExaminesChosenCandidate(int ordinal, List<String> offeredTokens)`. This is the methodology's own
+"functional core, imperative shell" / dependency-rejection rule generalized from domain rules to conversational
+input — *pass a value when the input is read once, unconditionally; reach for a port only when the core owns the
+cardinality.* The offer is read exactly once per selection, so a value beats a port: no new port, the
+`examineUseCase` bean's dependencies are unchanged, and the core gains no "selection buffer" abstraction — it is
+simply told "these were offered, here is the pick." The shell resolves its own I/O (its `currentOffer()`) and
+hands the core the result; the core decides and presents. Robustness is unaffected because the chosen token is
+re-validated against live state regardless of what the offer claimed, so a stale or wrong list cannot mislead —
+worst case it resolves to "no longer here." (Promotion candidate, flagged not promoted: *conversational state for
+a multi-interaction use case is supplied to each interaction as a value by the driving shell — dependency
+rejection — not fetched by the core through a port, when it is read once per interaction; and presenting the
+outcomes of that conversation is the use case's prerogative, never the controller's.*)
 
 **The buffer holds a raw id *token* (`String`), not the `ItemId` model VO — and the reason sharpens "primitives
 inward".** `[thread #2]` The first cut had `AffordanceContext` trade in `ItemId`. The objection that corrected
@@ -490,11 +521,14 @@ fragment is ambiguous), opening a sub-dialogue. The player's act of picking by n
 main scenario's "designate the target" step: same target kind, same goal, a different *modality* (an ordinal
 into an offered set vs. a free description). The proof it is a variation and not a separate goal is that both
 designations end at the *identical* presentation — `presentItemDescription`. So `ExamineUseCase` carries two
-interaction methods (`playerExaminesTarget` by description, `playerExaminesItem` by identity) that converge on
-one outcome; the extension is precisely what *makes the variation reachable* (you can only pick "#2" from a
-list you were shown), and the `AffordanceContext` is the controller-side bridge between them. The `Target` vs.
-`Item` naming encodes the designation kind — an unresolved description to be matched vs. a resolved identity to
-be reconstituted — the §3 boundary-currency distinction visible in a method name.
+interaction methods (`playerExaminesTarget` by description, `playerExaminesChosenCandidate` by picking from the
+offer) that converge on one outcome; the extension is precisely what *makes the variation reachable* (you can
+only pick "#2" from a list you were shown), and the `AffordanceContext` is the bridge between them — written by
+the presenter, handed by the controller into the second interaction. Resolving a chosen pick to a concrete
+identity is *internal* to that interaction (kept inline, not a public designation of its own — and inline
+rather than a private helper, so every checkpoint's present-and-return stays visible in the one method): the
+only driver that would designate by raw id is a future GUI clicking a row, which would earn its own interaction
+then (emergence), and the public variation today is the by-selection one the terminal actually performs.
 
 **ISP forces the orient presenter port to re-split — and port granularity tracks *outcomes a consumer can
 present*, not the shared prologue.** `[thread #2]` `examine` opens with the same `orient` prologue as

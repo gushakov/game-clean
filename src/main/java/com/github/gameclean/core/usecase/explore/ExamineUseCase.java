@@ -25,17 +25,21 @@ import java.util.List;
  * count — 0 (no such target), 1 (describe it), or N (offer the candidates to disambiguate). It does
  * <em>not</em> order or number the candidates; that is presentation, deferred to the presenter (see below).
  *
- * <p>{@link #playerExaminesItem(String)} designates by identity, completing a disambiguation: it reconstitutes
- * the {@link ItemId} (the validity gate) and re-fetches the current scene's items to confirm the chosen one is
- * <em>still there</em> — a concurrent removal becomes a "no longer here" outcome rather than a stale render.
- * Re-validating by re-reading live state (not trusting the offered list) is what makes the remembered identity
- * concurrency-honest.
+ * <p>{@link #playerExaminesChosenCandidate(int, List)} designates by choosing from the offered candidates,
+ * completing a disambiguation. The driving adapter hands in the candidate tokens it last offered (a value, not a
+ * port — dependency rejection), and this use case decides and presents <em>every</em> outcome: an empty offer
+ * means nothing was offered to choose, a number outside it means no such option, otherwise it resolves the token,
+ * reconstitutes the {@link ItemId} (the validity gate) and re-fetches the current scene's items to confirm the
+ * chosen one is <em>still there</em> — a concurrent removal becomes a "no longer here" outcome rather than a
+ * stale render. Re-validating by re-reading live state (not trusting the handed-in token) is what makes the
+ * remembered identity concurrency-honest, so a stale or wrong offer cannot mislead. The by-identity resolution
+ * is kept inline (not a helper) so every checkpoint's present-and-return is visible in the one interaction.
  *
  * <p>On every path exactly one {@code present*} is reached: the orient subcase presents the two not-found
  * outcomes and throws {@link SubcaseAlreadyPresented} (swallowed as a no-op); the explicit branches present and
- * return; and the outermost {@code catch} routes anything unhandled to {@code presentError}. A malformed id in
- * {@code playerExaminesItem} lands there too — it originates from the terminal's own remembered offer, never a
- * player-authored value, so it is an internal fault, not an invalid-parameter outcome to show the player.
+ * return; and the outermost {@code catch} routes anything unhandled to {@code presentError}. A malformed chosen
+ * token lands there too — it originates from the terminal's own remembered offer, never a player-authored value,
+ * so it is an internal fault, not an invalid-parameter outcome to show the player.
  */
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
@@ -71,15 +75,28 @@ public class ExamineUseCase implements ExamineInputPort {
     }
 
     @Override
-    public void playerExaminesItem(String itemId) {
+    public void playerExaminesChosenCandidate(int ordinal, List<String> offeredCandidateTokens) {
         try {
-            // Reconstitute the id (validity gate). A malformed id is an internal fault — it came from our own
-            // remembered offer, not from the player — so it propagates to the catch-all, not a parameter error.
-            ItemId id = new ItemId(itemId);
+            // Resolve the pick against the offer handed in by the driving adapter. Both miss cases are presented
+            // outcomes of this conversation, not the controller's to decide: nothing offered, or no such option.
+            if (offeredCandidateTokens.isEmpty()) {
+                presenter.presentNoPendingSelection();
+                return;
+            }
+            if (ordinal < 1 || ordinal > offeredCandidateTokens.size()) {
+                presenter.presentNoSuchOption(ordinal);
+                return;
+            }
+
+            // Reconstitute the chosen token (validity gate). A malformed token is an internal fault — it came
+            // from our own remembered offer, not the player — so it propagates to the catch-all below, not a
+            // parameter error.
+            ItemId id = new ItemId(offeredCandidateTokens.get(ordinal - 1));
 
             OrientPlayerResult bearings = orientPlayerSubcase.playerGetsBearings();
 
-            // Re-validate against live state: the chosen item must still be on the ground here.
+            // Re-validate against live state: the chosen item must still be on the ground here. Re-reading
+            // (not trusting the handed-in token) is what makes the remembered identity concurrency-honest.
             Item chosen = itemOps.findItemsInScene(bearings.getScene().getId()).stream()
                     .filter(item -> item.getId().equals(id))
                     .findFirst()

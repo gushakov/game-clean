@@ -85,6 +85,16 @@ public class TerminalExaminePresenter implements ExaminePresenterOutputPort {
     }
 
     @Override
+    public void presentNoPendingSelection() {
+        itemRenderer.renderNoPendingSelection();
+    }
+
+    @Override
+    public void presentNoSuchOption(int ordinal) {
+        itemRenderer.renderNoSuchOption(ordinal);
+    }
+
+    @Override
     public void presentPlayerNotFound(PlayerId playerId) {
         orientRenderer.renderPlayerNotFound(playerId);
     }

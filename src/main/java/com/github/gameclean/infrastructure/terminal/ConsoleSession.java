@@ -27,10 +27,12 @@ import java.util.Optional;
  *
  * <p>It also holds the one piece of conversational state the design admits: a pending {@code examine}
  * disambiguation offer, in the shared {@link AffordanceContext} resource. When {@code examine} finds an
- * ambiguous target its presenter arms that buffer with the numbered candidates; a subsequent bare number
- * ({@link SelectCommand}) is resolved against it to a specific item id and examined by identity, while any
- * other command abandons the offer. The use cases never see this state — remembering "what was just offered"
- * is a delivery-mechanism concern that stays in this driving adapter.
+ * ambiguous target its presenter arms that buffer with the numbered candidates; on a subsequent bare number
+ * ({@link SelectCommand}) the console <em>only detects the selection intent</em> and delegates — it hands the
+ * remembered offer to {@code playerExaminesChosenCandidate} as a value and lets the use case resolve the pick
+ * and present every outcome. Any other command abandons the offer (clearing the buffer). The console makes no
+ * selection decision and renders no selection outcome itself; remembering "what was just offered" is a
+ * delivery-mechanism concern that stays in this driving adapter, but acting on it is the use case's.
  *
  * <p>{@link #start()} blocks until {@code bye}. It is invoked by
  * {@link com.github.gameclean.infrastructure.BootSequence} <em>after</em> the world and player have
@@ -83,8 +85,11 @@ public class ConsoleSession {
             boolean quitRequested = false;
             switch (command) {
                 case QuitCommand ignored -> {
-                    leaveGame();
+                    // Quitting is a lifecycle decision from the intent alone — commit it *before* firing the
+                    // (void, outcome-less) SuspendGame interaction, so the loop exit never reads as contingent
+                    // on the use case's result. Unidirectional flow: we renounce its outcome the moment we call.
                     quitRequested = true;
+                    leaveGame();
                 }
                 case LookCommand ignored -> lookAround();
                 case ExamineCommand examine -> examineTarget(examine.getTarget());
@@ -122,21 +127,12 @@ public class ConsoleSession {
     }
 
     private void selectCandidate(int ordinal) {
-        // Resolve the menu number against the remembered offer. "Nothing pending" and "out of range" are pure
-        // UI conditions the controller answers directly (no domain involved); only a hit reaches the use case.
-        if (!affordanceContext.hasPending()) {
-            printLine("There is nothing to choose right now. Try 'look <target>' to inspect something.");
-            return;
-        }
-        Optional<String> chosen = affordanceContext.resolve(ordinal);
-        if (chosen.isEmpty()) {
-            printLine("There is no option %d. Type one of the numbers shown.".formatted(ordinal));
-            return;   // leave the menu pending so the player can pick again
-        }
-        // A hit: examine by identity. The id token crosses inward as a primitive; the use case re-validates it.
+        // The controller only detects the selection intent and delegates. It hands the use case the offer it
+        // last remembered (a value — dependency rejection) plus the pick; the use case resolves it and presents
+        // every outcome (nothing offered, no such option, no longer here, described). No decision or rendering
+        // happens here — that would be a Clean Architecture violation.
         ExamineInputPort examineUseCase = applicationContext.getBean(ExamineInputPort.class);
-        examineUseCase.playerExaminesItem(chosen.get());
-        affordanceContext.clear();   // the offer has been consumed
+        examineUseCase.playerExaminesChosenCandidate(ordinal, affordanceContext.currentOffer());
     }
 
     private void checkTime() {
