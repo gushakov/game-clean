@@ -515,6 +515,72 @@ should not touch the core at all. (Promotion candidate, flagged not promoted: *t
 driving-adapter edge follows the trust direction — primitives inward, even for a value that began life as a
 domain VO on the driven side; flatten on the trusted side, relay a token on the untrusted one.*)
 
+**A multi-interaction conversation has two layers — and the *continuation* logic belongs to the infra one, not
+the use case and not the controller's body.** `[thread #4]` `examine`'s disambiguation raises a lifecycle
+question the single-interaction use cases never did: *what ends the pending offer?* The menu persists across
+turns (it is conversational state, above), so something must decide when a later line still answers "which
+one?" versus moves on. The reflex is to read that as *conversation logic* and recoil from finding it in the
+driving adapter (`!(command instanceof SelectCommand) → clear`), because "the conversation is the use case."
+The recoil is half-right, and splitting the two halves is the finding. A conversation has a **semantic** layer
+— the dialogue's steps, decisions, and outcomes (is the target ambiguous? menu-or-describe? re-validate the
+pick? which outcome?) — which *is* the use case, and which already lives wholly inside `ExamineUseCase`: the
+controller decides nothing and renders nothing, it hands `currentOffer()` in as a value and the use case
+presents every outcome (above). And it has a **modal input-routing** layer — given a *line-oriented* channel,
+which interaction does the next raw line invoke while an offer is open — which is the *shape of the input
+device*, not the dialogue: a GUI barely has it (the menu is buttons; clicking "2" invokes selection directly),
+a voice UI has another form again. The `clear` predicate is purely this second layer.
+
+**That layer is irreducibly infrastructural — it cannot move to the core even in principle, and it is the same
+category of logic the adapter already owns.** `[thread #4]` The continuation predicate quantifies over
+`Command` types (`SelectCommand` continues the examine offer; a future card-play continues a tavern game), and
+the `Command` set is the parser's output that §9 deliberately keeps out of the core (Guidance presents
+*abstract* outcomes precisely so no command vocabulary crosses inward). "A bare number continues the examine
+conversation" is therefore *unspeakable* in the core without importing the very vocabulary we engineer to
+exclude. And `CommandParser` is already logic in the primary adapter (tokenizer, verb registry, intent
+production) that no one calls a violation, because parsing *is* the adapter's job — a conversation mode is just
+a **context-sensitive parser**, reading the next line differently because an offer is open. Clean DDD evicts
+*business decisions* from adapters; it does not evict *delivery-mechanism logic* — parsing, rendering,
+input-mode management *are* the adapter. So `clear` is not use-case logic leaking outward; it is
+input-interpretation, sitting where the parser already sits. Proliferation (combat, spells, a tavern card
+game, trading, each with its own continuation rule) is then an *intra-infrastructure* structuring problem, not
+a boundary breach, with an infra-local answer that keeps the dispatcher flat: give each conversation a small
+infra **mode object** owning its pending affordance *and* its own "does this line continue me?", and reduce
+the dispatcher to generic plumbing — an active mode gets first crack at the line, on refusal it is abandoned
+and the line falls through to normal parsing. New conversations are new mode objects; `ConsoleSession` never
+grows an `instanceof` tangle. This is the classic modal-input-stack / REPL structure. The core is *not* absent
+from the lifecycle — it *opens* the pending state by presenting the ambiguous outcome (`presentAmbiguousTarget`),
+the presenter arms the mode as it renders the menu (the core-signal → infra-realization handoff, above), and
+infra alone decides which keystroke continues it. By emergence (§2) the framework waits: one conversation
+today, so the one-line predicate stays; the mode object earns itself at conversation #2. (Promotion candidate,
+flagged not promoted: *a multi-interaction conversation splits into a semantic layer owned by the use case and
+a modal input-routing layer owned by the delivery mechanism; the continuation predicate is the latter,
+irreducibly infra because it quantifies over the command vocabulary the core excludes, and scales by
+per-conversation mode objects under a generic dispatcher — a context-sensitive parser, not use-case logic in
+the adapter.*)
+
+**Two other homes for the continuation logic were weighed and rejected.** `[thread #4]` *Moving `clear` into
+the presenters* — only `presentAmbiguousTarget` arms, every other present-method clears — restores a tidy
+"presenter writes / controller only reads" symmetry but fails on the discriminator: clearing keys on the
+*input intent* (select vs. anything-else), which the presenter cannot see, and the shared success outcome
+`presentItemDescription` is reached by *two* paths (designate-by-description and designate-by-selection) whose
+clearing needs are opposite — clear it and repeatable selection plus retry-after-a-bad-pick break; don't and a
+fresh `examine` leaves a stale offer armed. A presenter method cannot tell the paths apart, and splitting the
+converged outcome to carry clearing semantics would re-introduce, for an infra-lifecycle reason, the very
+distinction "variation vs. extension" (below) was glad to collapse. *Reifying a Spring custom conversation
+scope* (`AffordanceContext` as a `@Scope("conversation")` bean, arming as scope-begin, a `@PreDestroy` home
+for end-logic) was rejected twice over: it commits the design to a framework SPI at exactly the layer Clean
+Architecture keeps framework-free, and it founders on a **push/pull impedance mismatch** — Spring scopes are
+*pull-based*, the container instantiating on first access within an *ambient* lifecycle (request thread, HTTP/
+STOMP session) and destroying at its end, whereas a console conversation is *push-based* (the presenter pushes
+content, the dispatcher signals end) with *no* container-recognized ambient unit to key on. You would
+hand-build the id, holder, and store and then wear Spring's `Scope` interface as an awkward veneer, for a
+`@PreDestroy` that would hold almost nothing (discarding the buffer is what scope-end already does). The
+lightweight realization of the same concept — a plain object with named `begin`/`end` — needs none of that,
+and is exactly what the mode object above already is. The through-line of both rejections: the continuation
+decision keys on a fact (the parsed input intent) that only the dispatcher holds, so neither a downstream
+presenter nor an upstream container scope is the right owner — the dispatcher is, exercising it *generically*
+over per-conversation mode objects rather than in a growing switch.
+
 **Variation vs. extension — two interaction methods, one goal.** `[thread #4]` The Cockburn structure is the
 finding worth recording. The "more than one match" branch is an **extension** — entered on a *condition* (the
 fragment is ambiguous), opening a sub-dialogue. The player's act of picking by number is a **variation** of the
