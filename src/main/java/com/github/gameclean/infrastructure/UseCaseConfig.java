@@ -19,6 +19,8 @@ import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.AskForTimeUseCase;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameUseCase;
+import com.github.gameclean.core.usecase.explore.ExamineInputPort;
+import com.github.gameclean.core.usecase.explore.ExamineUseCase;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.LookUseCase;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
@@ -26,14 +28,18 @@ import com.github.gameclean.core.usecase.explore.MoveUseCase;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
+import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
 import com.github.gameclean.infrastructure.terminal.render.CalendarRenderer;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
+import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
+import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
 import com.github.gameclean.infrastructure.world.LoggingInitializeGamePresenter;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Bean;
@@ -82,13 +88,14 @@ public class UseCaseConfig {
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public LookInputPort lookUseCase(
+            OrientRenderer orientRenderer,
             CurrentSceneRenderer sceneRenderer,
             Console console,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
             ItemRepositoryOperationsOutputPort itemOps) {
-        TerminalLookPresenter presenter = new TerminalLookPresenter(sceneRenderer, console);
+        TerminalLookPresenter presenter = new TerminalLookPresenter(orientRenderer, sceneRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         return new LookUseCase(presenter, orient, itemOps);
     }
@@ -96,6 +103,7 @@ public class UseCaseConfig {
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public MoveInputPort moveUseCase(
+            OrientRenderer orientRenderer,
             CurrentSceneRenderer sceneRenderer,
             Console console,
             PlayerOperationsOutputPort playerOps,
@@ -103,9 +111,26 @@ public class UseCaseConfig {
             SceneRepositoryOperationsOutputPort sceneOps,
             ItemRepositoryOperationsOutputPort itemOps,
             TransactionOperationsOutputPort txOps) {
-        TerminalMovePresenter presenter = new TerminalMovePresenter(sceneRenderer, console);
+        TerminalMovePresenter presenter = new TerminalMovePresenter(orientRenderer, sceneRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         return new MoveUseCase(presenter, playerRepositoryOps, sceneOps, itemOps, txOps, orient);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public ExamineInputPort examineUseCase(
+            OrientRenderer orientRenderer,
+            ItemRenderer itemRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            ItemRepositoryOperationsOutputPort itemOps) {
+        TerminalExaminePresenter presenter =
+                new TerminalExaminePresenter(orientRenderer, itemRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        return new ExamineUseCase(presenter, orient, itemOps);
     }
 
     @Bean

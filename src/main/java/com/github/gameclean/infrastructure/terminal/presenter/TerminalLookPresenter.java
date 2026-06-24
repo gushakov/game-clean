@@ -8,6 +8,7 @@ import com.github.gameclean.core.usecase.explore.LookPresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
+import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -31,6 +32,7 @@ import java.util.List;
 @Slf4j
 public class TerminalLookPresenter implements LookPresenterOutputPort {
 
+    OrientRenderer orientRenderer;
     CurrentSceneRenderer sceneRenderer;
     Console console;
 
@@ -41,12 +43,12 @@ public class TerminalLookPresenter implements LookPresenterOutputPort {
 
     @Override
     public void presentPlayerNotFound(PlayerId playerId) {
-        sceneRenderer.renderPlayerNotFound(playerId);
+        orientRenderer.renderPlayerNotFound(playerId);
     }
 
     @Override
     public void presentCurrentSceneNotFound(SceneId sceneId) {
-        sceneRenderer.renderCurrentSceneNotFound(sceneId);
+        orientRenderer.renderCurrentSceneNotFound(sceneId);
     }
 
     @Override
