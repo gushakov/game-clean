@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.explore.MovePresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
+import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -26,6 +27,7 @@ import java.util.List;
 @Slf4j
 public class TerminalMovePresenter implements MovePresenterOutputPort {
 
+    OrientRenderer orientRenderer;
     CurrentSceneRenderer sceneRenderer;
     Console console;
 
@@ -36,12 +38,12 @@ public class TerminalMovePresenter implements MovePresenterOutputPort {
 
     @Override
     public void presentPlayerNotFound(PlayerId playerId) {
-        sceneRenderer.renderPlayerNotFound(playerId);
+        orientRenderer.renderPlayerNotFound(playerId);
     }
 
     @Override
     public void presentCurrentSceneNotFound(SceneId sceneId) {
-        sceneRenderer.renderCurrentSceneNotFound(sceneId);
+        orientRenderer.renderCurrentSceneNotFound(sceneId);
     }
 
     @Override

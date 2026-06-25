@@ -133,34 +133,68 @@ scenes:
       - name: east
         target: scn9
 
-# Authored items — deliberately rare (low spawn chance), scattered through the coast.
+# Authored items — tuned to exercise `examine` and its disambiguation. Every spawn is
+# *certain* (chance 1/1) and lands in the starting scene scn1 (a single candidate scene,
+# so the uniform pick can only choose scn1), so a fresh game shows them all on the ground
+# at once — no navigation needed to test.
+#
+# Three ambiguity surfaces, all in scn1:
+#   - `examine lantern` matches itm1/itm2/itm3  -> a 3-way disambiguation menu
+#   - `examine rusty`   matches itm1/itm4        -> a 2-way menu (cross-cutting the lanterns)
+#   - `examine storm` / `compass` / `brass`      -> exactly one match -> straight to the reveal
+#   - `examine float`   matches the two itm5 instances -> a menu of identical-looking entries
+#                       (distinct ids behind the same description)
+#   - `examine spoon`                            -> no match
+#
+# NOTE: spawning is idempotent — a restart never re-rolls. To see these on a DB that already
+# seeded a previous world, start from a clean play database first.
 items:
   - id: itm1
-    shortDescription: A barnacled brass compass.
+    shortDescription: A rusty ship's lantern.
     fullDescription: >
-      A heavy brass compass crusted with tiny barnacles. The needle turns slowly,
-      settling on no north you can trust.
+      A heavy iron ship's lantern, its panes clouded with salt and its body bled orange
+      with rust. The wick is long gone.
     spawn:
-      scenes: scn3, scn6
-      chance: 1/12
-      max: 2
+      scenes: scn1
+      chance: 1/1
+      max: 1
 
   - id: itm2
-    shortDescription: A scrimshaw charm.
+    shortDescription: A cracked storm lantern.
     fullDescription: >
-      A sliver of whalebone scratched with a fish-tailed figure, threaded on a frayed
-      cord. Sailors carried these against drowning.
+      A storm lantern with a star-cracked glass globe. It would gutter in the first gust,
+      yet it has plainly weathered many.
     spawn:
-      scenes: scn9, scn10
-      chance: 1/15
+      scenes: scn1
+      chance: 1/1
       max: 1
 
   - id: itm3
-    shortDescription: A corroded harbor key.
+    shortDescription: A salt-pitted hand lantern.
     fullDescription: >
-      A long iron key eaten thin by salt. Whatever it locked is almost certainly under
-      water by now.
+      A small tin hand lantern, pitted grey-white where the salt air has gnawed at it for
+      season after season.
     spawn:
-      scenes: scn5, scn8
-      chance: 1/10
+      scenes: scn1
+      chance: 1/1
+      max: 1
+
+  - id: itm4
+    shortDescription: A rusty brass compass.
+    fullDescription: >
+      A brass pocket compass gone green and rust-streaked. The needle swings free,
+      settling on no north you can trust.
+    spawn:
+      scenes: scn1
+      chance: 1/1
+      max: 1
+
+  - id: itm5
+    shortDescription: A pale glass net-float.
+    fullDescription: >
+      A hand-blown glass float, pale sea-green and clouded, the kind that once held a
+      fishing net up against the swell.
+    spawn:
+      scenes: scn1
+      chance: 1/1
       max: 2

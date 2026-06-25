@@ -59,4 +59,15 @@ public class TerminalConfig {
     public Console console(Terminal terminal, LineReader lineReader) {
         return new Console(terminal, lineReader);
     }
+
+    /**
+     * The session-lifetime disambiguation buffer — a shared infrastructure resource (not an adapter): the
+     * {@code examine} presenter arms it with the offered candidates as it renders the menu, and the console
+     * loop resolves a bare number against it and clears it. Holding it here, beside the other terminal
+     * resources, is what keeps conversational state out of the core; the use cases stay stateless subroutines.
+     */
+    @Bean
+    public AffordanceContext affordanceContext() {
+        return new AffordanceContext();
+    }
 }

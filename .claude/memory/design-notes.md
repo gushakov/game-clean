@@ -445,6 +445,190 @@ subcase may return a result on its non-presenting success branch**. This is a pr
 The composition-root consequence — parent and subcase share one ad-hoc-`new`ed presenter instance — is
 in §6.
 
+**The first *multi-interaction* use case — `examine`, and where conversational state lives.** `[thread #4]`
+`[thread #3]` `look <target>` / `examine <target>` is the project's first goal whose presentation in *one*
+interaction sets up a *follow-up* interaction that completes it. The player names a target; if the fragment is
+ambiguous the system offers a numbered menu and the player picks "2". The pivotal question — *where do we
+remember the offered list so a later "2" resolves?* — answers itself once the list is named correctly: it is
+**conversational/parser state, a delivery-mechanism concern (§9), so it lives in the driving adapter
+(`AffordanceContext`, a terminal *resource* per §7), never in the core.** The candidate homes for that buffer
+all fail except that one — the prototype use case (fresh per interaction), the ad-hoc-`new`ed presenter
+(per interaction), a domain aggregate (no invariant, no identity — UI scratch), and the database (wrong
+lifetime: the prompt must survive *to the next line*, not across `bye`/restart) — leaving the
+session-lifetime terminal resource as the only fit. The decisive payoff is concurrency-honesty (`[thread #3]`):
+the buffer remembers **identities, not positions**, and the follow-up interaction
+(`playerExaminesChosenCandidate`) is id-precise and **re-validates against live state**, so a candidate an NPC
+removed between offer and pick surfaces as an honest "no longer here" outcome rather than a number silently
+pointing at a different item.
+
+**But the core is oblivious to the *form*, not to the *conversation* — and a controller that presents is the bug
+that hides the difference.** `[thread #4]` A first cut had the console *resolve* the pick against the buffer and
+*present* the "nothing pending" / "no such option" failures itself (raw `printLine`s), re-calling a
+`playerExaminesItem(id)` interaction only on a hit. That is the classic Clean Architecture violation twice over:
+the controller *decides* (hit vs. miss) and *renders* an outcome, bypassing the presenter every other outcome
+goes through. The fix forces a sharper line than "conversational state is infra, core is oblivious": the core is
+oblivious to the **form** of the offer (the numbered menu, the styling, the buffer) but it **owns the
+conversation** — *presenting* every selection outcome (described, nothing-offered, no-such-option, no-longer-here)
+is the use case's prerogative. So selection becomes a real examine interaction,
+`playerExaminesChosenCandidate(ordinal, offeredTokens)`, and the console *only detects the selection intent and
+delegates*. The earlier obliviousness was only purchased by letting the controller present — the very thing being
+fixed; honoring "no presentation in controllers" necessarily pulls the *conversation* (not the *form*) into the
+core. This makes examine a textbook multi-interaction use case: a stateless use case whose between-interaction
+state lives outside it and is **supplied per interaction**, each interaction loading what it needs.
+
+**Dependency rejection picks the carrier: the controller hands the offer in as a *value*, not a *port*.**
+`[thread #4]` Once the use case must resolve the pick, it needs the offered set — so either it reads a new
+output port, or the controller (the imperative shell) hands it the remembered tokens as a parameter. We chose the
+value: `playerExaminesChosenCandidate(int ordinal, List<String> offeredTokens)`. This is the methodology's own
+"functional core, imperative shell" / dependency-rejection rule generalized from domain rules to conversational
+input — *pass a value when the input is read once, unconditionally; reach for a port only when the core owns the
+cardinality.* The offer is read exactly once per selection, so a value beats a port: no new port, the
+`examineUseCase` bean's dependencies are unchanged, and the core gains no "selection buffer" abstraction — it is
+simply told "these were offered, here is the pick." The shell resolves its own I/O (its `currentOffer()`) and
+hands the core the result; the core decides and presents. Robustness is unaffected because the chosen token is
+re-validated against live state regardless of what the offer claimed, so a stale or wrong list cannot mislead —
+worst case it resolves to "no longer here." (Promotion candidate, flagged not promoted: *conversational state for
+a multi-interaction use case is supplied to each interaction as a value by the driving shell — dependency
+rejection — not fetched by the core through a port, when it is read once per interaction; and presenting the
+outcomes of that conversation is the use case's prerogative, never the controller's.*)
+
+**The buffer holds a raw id *token* (`String`), not the `ItemId` model VO — and the reason sharpens "primitives
+inward".** `[thread #2]` The first cut had `AffordanceContext` trade in `ItemId`. The objection that corrected
+it: **trust flows with control direction.** The core hands its models *outward* to the driven adapters it drives
+(presenters, the persistence gateway reconstituting aggregates), so those are legitimately model-aware; but a
+*primary* adapter — the console loop that **reads** this buffer — is the "primitives inward" edge (§6), where
+the core owns value-object construction at the single gate. Every other inbound console path already obeys this
+(`move(String exitName)`, and `PlayerOperationsOutputPort.currentPlayerId()` returns a `String` on purpose), so
+a driving adapter holding a model would be a lone exception with no precedent — all the model-in-infra cases are
+on the *driven* side. The decisive move is not merely tolerable but *more* faithful: do the `ItemId → String`
+flatten on the **driven** side, in the presenter, where the model legitimately lives (rendering an identity to a
+stable token is a presentation act, like rendering a description to styled text); the buffer then carries a pure
+correlation token and the primary adapter stays model-free. A model type would have bought nothing here anyway —
+the token is **relay-only** (written once by the presenter, read once by the controller, forwarded straight into
+the input port), and a type earns its keep by guarding *operations*, of which there are none; its only effect
+would be to drag the core onto the primary adapter. This is the domain-agnostic `Console` precedent (§7) applied
+on the axis that matters — *a shared terminal resource touched by the driving loop is kept model-free* — not the
+"does it segregate behaviour" axis. The forward fit confirms the cut: when `look <exit>` adds a second
+examinable kind, "how do I tag a selection token by kind?" is answered **inside infrastructure** (a tagged token,
+or separate buffers), explicitly *not* by reaching for a core `Examinable` type — further evidence the buffer
+should not touch the core at all. (Promotion candidate, flagged not promoted: *the carrier type at a
+driving-adapter edge follows the trust direction — primitives inward, even for a value that began life as a
+domain VO on the driven side; flatten on the trusted side, relay a token on the untrusted one.*)
+
+**A multi-interaction conversation has two layers — and the *continuation* logic belongs to the infra one, not
+the use case and not the controller's body.** `[thread #4]` `examine`'s disambiguation raises a lifecycle
+question the single-interaction use cases never did: *what ends the pending offer?* The menu persists across
+turns (it is conversational state, above), so something must decide when a later line still answers "which
+one?" versus moves on. The reflex is to read that as *conversation logic* and recoil from finding it in the
+driving adapter (`!(command instanceof SelectCommand) → clear`), because "the conversation is the use case."
+The recoil is half-right, and splitting the two halves is the finding. A conversation has a **semantic** layer
+— the dialogue's steps, decisions, and outcomes (is the target ambiguous? menu-or-describe? re-validate the
+pick? which outcome?) — which *is* the use case, and which already lives wholly inside `ExamineUseCase`: the
+controller decides nothing and renders nothing, it hands `currentOffer()` in as a value and the use case
+presents every outcome (above). And it has a **modal input-routing** layer — given a *line-oriented* channel,
+which interaction does the next raw line invoke while an offer is open — which is the *shape of the input
+device*, not the dialogue: a GUI barely has it (the menu is buttons; clicking "2" invokes selection directly),
+a voice UI has another form again. The `clear` predicate is purely this second layer.
+
+**That layer is irreducibly infrastructural — it cannot move to the core even in principle, and it is the same
+category of logic the adapter already owns.** `[thread #4]` The continuation predicate quantifies over
+`Command` types (`SelectCommand` continues the examine offer; a future card-play continues a tavern game), and
+the `Command` set is the parser's output that §9 deliberately keeps out of the core (Guidance presents
+*abstract* outcomes precisely so no command vocabulary crosses inward). "A bare number continues the examine
+conversation" is therefore *unspeakable* in the core without importing the very vocabulary we engineer to
+exclude. And `CommandParser` is already logic in the primary adapter (tokenizer, verb registry, intent
+production) that no one calls a violation, because parsing *is* the adapter's job — a conversation mode is just
+a **context-sensitive parser**, reading the next line differently because an offer is open. Clean DDD evicts
+*business decisions* from adapters; it does not evict *delivery-mechanism logic* — parsing, rendering,
+input-mode management *are* the adapter. So `clear` is not use-case logic leaking outward; it is
+input-interpretation, sitting where the parser already sits. Proliferation (combat, spells, a tavern card
+game, trading, each with its own continuation rule) is then an *intra-infrastructure* structuring problem, not
+a boundary breach, with an infra-local answer that keeps the dispatcher flat: give each conversation a small
+infra **mode object** owning its pending affordance *and* its own "does this line continue me?", and reduce
+the dispatcher to generic plumbing — an active mode gets first crack at the line, on refusal it is abandoned
+and the line falls through to normal parsing. New conversations are new mode objects; `ConsoleSession` never
+grows an `instanceof` tangle. This is the classic modal-input-stack / REPL structure. The core is *not* absent
+from the lifecycle — it *opens* the pending state by presenting the ambiguous outcome (`presentAmbiguousTarget`),
+the presenter arms the mode as it renders the menu (the core-signal → infra-realization handoff, above), and
+infra alone decides which keystroke continues it. By emergence (§2) the framework waits: one conversation
+today, so the one-line predicate stays; the mode object earns itself at conversation #2. (Promotion candidate,
+flagged not promoted: *a multi-interaction conversation splits into a semantic layer owned by the use case and
+a modal input-routing layer owned by the delivery mechanism; the continuation predicate is the latter,
+irreducibly infra because it quantifies over the command vocabulary the core excludes, and scales by
+per-conversation mode objects under a generic dispatcher — a context-sensitive parser, not use-case logic in
+the adapter.*)
+
+**Two other homes for the continuation logic were weighed and rejected.** `[thread #4]` *Moving `clear` into
+the presenters* — only `presentAmbiguousTarget` arms, every other present-method clears — restores a tidy
+"presenter writes / controller only reads" symmetry but fails on the discriminator: clearing keys on the
+*input intent* (select vs. anything-else), which the presenter cannot see, and the shared success outcome
+`presentItemDescription` is reached by *two* paths (designate-by-description and designate-by-selection) whose
+clearing needs are opposite — clear it and repeatable selection plus retry-after-a-bad-pick break; don't and a
+fresh `examine` leaves a stale offer armed. A presenter method cannot tell the paths apart, and splitting the
+converged outcome to carry clearing semantics would re-introduce, for an infra-lifecycle reason, the very
+distinction "variation vs. extension" (below) was glad to collapse. *Reifying a Spring custom conversation
+scope* (`AffordanceContext` as a `@Scope("conversation")` bean, arming as scope-begin, a `@PreDestroy` home
+for end-logic) was rejected twice over: it commits the design to a framework SPI at exactly the layer Clean
+Architecture keeps framework-free, and it founders on a **push/pull impedance mismatch** — Spring scopes are
+*pull-based*, the container instantiating on first access within an *ambient* lifecycle (request thread, HTTP/
+STOMP session) and destroying at its end, whereas a console conversation is *push-based* (the presenter pushes
+content, the dispatcher signals end) with *no* container-recognized ambient unit to key on. You would
+hand-build the id, holder, and store and then wear Spring's `Scope` interface as an awkward veneer, for a
+`@PreDestroy` that would hold almost nothing (discarding the buffer is what scope-end already does). The
+lightweight realization of the same concept — a plain object with named `begin`/`end` — needs none of that,
+and is exactly what the mode object above already is. The through-line of both rejections: the continuation
+decision keys on a fact (the parsed input intent) that only the dispatcher holds, so neither a downstream
+presenter nor an upstream container scope is the right owner — the dispatcher is, exercising it *generically*
+over per-conversation mode objects rather than in a growing switch.
+
+**Variation vs. extension — two interaction methods, one goal.** `[thread #4]` The Cockburn structure is the
+finding worth recording. The "more than one match" branch is an **extension** — entered on a *condition* (the
+fragment is ambiguous), opening a sub-dialogue. The player's act of picking by number is a **variation** of the
+main scenario's "designate the target" step: same target kind, same goal, a different *modality* (an ordinal
+into an offered set vs. a free description). The proof it is a variation and not a separate goal is that both
+designations end at the *identical* presentation — `presentItemDescription`. So `ExamineUseCase` carries two
+interaction methods (`playerExaminesTarget` by description, `playerExaminesChosenCandidate` by picking from the
+offer) that converge on one outcome; the extension is precisely what *makes the variation reachable* (you can
+only pick "#2" from a list you were shown), and the `AffordanceContext` is the bridge between them — written by
+the presenter, handed by the controller into the second interaction. Resolving a chosen pick to a concrete
+identity is *internal* to that interaction (kept inline, not a public designation of its own — and inline
+rather than a private helper, so every checkpoint's present-and-return stays visible in the one method): the
+only driver that would designate by raw id is a future GUI clicking a row, which would earn its own interaction
+then (emergence), and the public variation today is the by-selection one the terminal actually performs.
+
+**ISP forces the orient presenter port to re-split — and port granularity tracks *outcomes a consumer can
+present*, not the shared prologue.** `[thread #2]` `examine` opens with the same `orient` prologue as
+`look`/`move`, so it genuinely needs that subcase's two not-found outcomes — but it renders an *item*, never a
+scene, so it would never call `presentScene`. Leaving `presentScene` on `OrientPlayerPresenterOutputPort` would
+force the examine presenter to implement a method it can never receive: an **Interface Segregation violation**.
+So `presentScene` was re-split *down* into a new `CurrentScenePresenterOutputPort` (the capability `look`/`move`
+share and `examine` does not), and the orient port shrank to exactly what the subcase itself presents. This
+**re-separates what the `move`-era coincidence had collapsed**: the cluster was first lifted as three outcomes
+because its only two consumers then both ended by rendering a scene; `examine` breaks the coincidence and
+proves the sharper rule — **presenter-port granularity tracks the set of outcomes a consumer can actually
+present, not the prologue they happen to share.** Sharing the *opening* (the subcase) and sharing the *ending*
+(scene rendering) are two different axes; conflating them over-couples the third consumer the moment it shares
+the opening without the ending. The renderer side mirrors the port split (the not-found rendering extracted
+into a shared `OrientRenderer`, `presentScene` rendering left on `CurrentSceneRenderer`, a new `ItemRenderer`
+for examine), so composition tracks the interface segregation. (Promotion candidate, flagged not promoted:
+*port granularity follows distinguishable outcomes per consumer; a shared prologue is not a reason to share an
+ending.*)
+
+**Why the candidate *ordering* lives in the presenter, not the use case.** `[thread #2]` The disambiguation
+outcome has two faces of one affordance — the visible numbered menu and the latent number→identity mapping —
+and both must agree on the order, so the order is decided in exactly one place: the **presenter**. Two reasons.
+First, **ordering is a presentation concern**: which candidate is "1." and which is "2." is a property of the
+rendered menu, not of the domain; the use case's outcome is "these things are ambiguous" (a *set*), and
+imposing a display sequence on a set is rendering — sorting it in the use case would push a delivery-mechanism
+detail (that *this* UI numbers a list) into the core, the very leak we keep the whole affordance out of the
+core to avoid. Second, **a single source of order cannot drift**: the presenter sorts once, hands the ordered
+list to the renderer to number 1..N, and offers the *same* ordered identities to the `AffordanceContext`; if
+the use case sorted and the presenter re-derived the numbering, two places would have to agree forever. So the
+use case passes the matches *unordered* (repository order) and the unit test asserts membership, not order —
+pinning the division of labour. The presenter stays humble throughout: the use case already decided *that* the
+match was ambiguous (by calling `presentAmbiguousTarget` rather than `presentItemDescription`); the presenter
+only renders that outcome and records the numbering it produced.
+
 **Interaction methods are named as the Cockburn step, not as a service verb.** `[thread #4]` An
 interaction method's name is its *actor + predicate* — `playerLooksAround`,
 `systemInitializesGame` — the subject being the initiating actor (the player, or the system at
@@ -1039,6 +1223,68 @@ language ever grows real grammar (multi-token noun phrases, quoting, preposition
 disambiguation), is a change confined to this one adapter and costs the core and the controller
 nothing. **Defer the tool, keep the seam tool-ready** — the same emergence discipline applied
 to a build decision rather than to the model.
+
+**The driving loop is the console's internalized request-dispatcher — and naming it that dissolves an
+apparent exception to fire-and-forget.** `[thread #4]` The unidirectional rule (§4) says a controller fires a
+`void` use case and renounces its outcome — control flows forward, never back to branch on a result. A
+*long-running* primary adapter appears to break this: its `while` loop plainly *continues* after each
+use-case call, to read the next command. The resolution is to see the loop for what it is. A web controller
+or a telnet server gets its request-dispatch loop *from the container* (servlet dispatch; the server's
+accept-loop); a console adapter has no container, so it **embeds the loop itself**. The loop is therefore not
+"code that runs after a use-case call" — it is the mechanism that *re-arms for the next request*. The
+invariant each turn upholds, stated precisely:
+
+> Within one iteration, the controller obtains exactly one unit of work, dispatches it to at most one use
+> case, and then yields to the loop top. The only statements allowed after the dispatch are loop control
+> (`continue` / `break`) — never result-inspection, outcome-branching, or a second use-case call.
+
+Under that statement, fire-and-forget holds *per turn with no exception*: `break`/`continue` are *dispatcher*
+control (stop accepting / accept the next request), not business continuation. There is nothing to carve out —
+the loop is the in-process stand-in for the request/response cycle the web environment hands you for free.
+The earlier instinct to call the loop "the one allowed exception to fire-and-forget" conceded too much; the
+honest framing is that there is no exception, only a dispatcher the console must supply itself. (Promotion
+candidate, flagged not promoted: *a long-running primary adapter's command loop is the internalized
+request-dispatcher; per turn fire-and-forget holds without exception — the loop re-arms, it does not continue
+a call.*)
+
+**The welcome is the system's turn-1 request — dispatched directly, not minted as a `Command`.** `[thread #4]`
+The session-opening greeting is player-facing output, so by "controllers never present" it must be a use-case
+outcome, not a controller `printLine` (its removal finally deletes the last direct write from the console —
+the milestone the §9 parser work set up). Removing it also completes the **read/write split on the shared
+`Terminal`/`LineReader` resource** (§7): the driving adapter now touches JLine *only to acquire the request*
+(`readLine` and its prompt), while *all* output is the driven presenters' — so the read/write asymmetry is the
+driving/driven boundary made concrete on one shared resource, with no output leaking from the controller. It
+is fired as the loop's *first turn* (`greetPlayer(); continue;`),
+before any line is read — the one turn whose unit of work originates from the *system*, not from a read. The
+tempting unification — synthesize a `WelcomeCommand` so *every* turn is "obtain a Command, dispatch it" — was
+**weighed and deferred**, and the discriminator is **does the parser produce it?** The `Command` set *is* the
+parser's output and the swappable grammar seam (above), and the parser can never produce a welcome (there is
+no line to parse). `UnknownCommand` does *not* license `WelcomeCommand`: the parser genuinely produces
+`UnknownCommand` (the parsed intent "unrecognized") but never a welcome. Keeping `Command` = parser-output
+protects the seam's meaning, so the welcome stays a direct turn-1 dispatch. The alternative — redefining
+`Command` as "a unit of work the dispatcher handles" with *two* producers (the parser for player intents, the
+session for lifecycle signals) — becomes the principled shape only once a *family* of system-issued signals
+appears (an autosave notice, an idle "still there?" prompt, an NPC interruption surfaced to the console); then
+`WelcomeCommand` is that family's first member, dispatched uniformly (a labeled `break` lets the `bye` arm
+exit the loop without a flag). One welcome does not earn that redefinition (emergence, as with
+`KnownScenes`/`AuthoredItem` in §10). The greeting *use case* is a second interaction on `Guidance` —
+system-actor `systemGreetsPlayer()` beside player-actor `playerIssuesUnrecognizedCommand` — sharing one player
+audience and the "orient the player toward what they can do" goal (a use case may host multiple actors;
+clean-ddd-core §0), with the shared command-list text factored into one presenter constant so the welcome and
+the unrecognized-command nudge cannot drift. (This is the resolution of the §4 "the welcome is a separate
+interaction with its own port" note: *separate interaction, yes — but a sibling on `Guidance`, not on
+`InitializeGame`*, whose `presentGameInitialized` speaks to an operator/log audience and whose lifecycle moment
+is world-construction, not session-start. Folding the player greeting there would reopen exactly the
+two-audience overload that note warned against, and would force a second presentation into a single-success
+interaction.)
+
+**`bye` is intercepted before the dispatch switch.** Quitting both fires `SuspendGame` (fire-and-forget) *and*
+must stop the loop — and a `switch` arm cannot `break` the enclosing `while` without a flag or a labeled
+break. Rather than a `quitRequested` flag read *after* the switch (harmless, but it reads as "continue past
+the dispatch"), `bye` is handled by an early `if (command instanceof QuitCommand) { leaveGame(); break; }`; the
+`break` is unconditional — the loop exit is never contingent on what `SuspendGame` did. The switch then keeps a
+no-op `QuitCommand` arm purely for sealed-set exhaustiveness, and that dead arm is the honest signal that `bye`
+is the one command whose handling carries a loop-control effect the switch cannot express.
 
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 

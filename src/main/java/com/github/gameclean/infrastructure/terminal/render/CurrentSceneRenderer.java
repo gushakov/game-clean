@@ -1,11 +1,9 @@
 package com.github.gameclean.infrastructure.terminal.render;
 
 import com.github.gameclean.core.model.item.Item;
-import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
-import com.github.gameclean.core.model.scene.SceneId;
-import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
+import com.github.gameclean.core.usecase.explore.CurrentScenePresenterOutputPort;
 import lombok.RequiredArgsConstructor;
 import org.jline.utils.AttributedStringBuilder;
 import org.jline.utils.AttributedStyle;
@@ -17,16 +15,16 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Renders the outcomes of "operate from the acting player's current scene" — the
- * {@link OrientPlayerPresenterOutputPort} cluster — to the
- * shared console. It is the single home of that rendering, injected by both the {@code look} and
- * {@code move} presenter beans so the scene description and the two not-found messages are written one
- * way, not copied per use case.
+ * Renders the scene-description outcome — the {@link CurrentScenePresenterOutputPort#presentScene} capability —
+ * to the shared console. It is the single home of that rendering, injected by the {@code look} and {@code move}
+ * presenter beans (the two use cases that render a scene) so a scene is written one way, not copied per use case.
  *
  * <p>This is the form chosen for sharing presentation between use cases: a shared <em>collaborator</em>
  * (composition), not a presenter base class (inheritance) and not a grab-bag presenter port. It is
  * domain-aware (it knows {@link Scene}) and delegates the actual terminal writing to the domain-agnostic
- * {@link Console}.
+ * {@link Console}. The orient not-found outcomes it once also rendered moved to {@link OrientRenderer} when
+ * {@code examine} (which shares the orient opening but renders an item, not a scene) arrived — mirroring the
+ * presenter-port re-split.
  */
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
@@ -53,16 +51,6 @@ public class CurrentSceneRenderer {
                 .append(exitNames(scene));
         appendItemsOnGround(sb, itemsOnGround);
         console.write(sb);
-    }
-
-    /** The acting player does not exist — a configuration or data fault, surfaced plainly. */
-    public void renderPlayerNotFound(PlayerId playerId) {
-        console.printError("There is no player '%s'.".formatted(playerId.getValue()));
-    }
-
-    /** The player's recorded current scene resolves to nothing. */
-    public void renderCurrentSceneNotFound(SceneId sceneId) {
-        console.printError("You seem to be nowhere — scene '%s' does not exist.".formatted(sceneId.getValue()));
     }
 
     /**

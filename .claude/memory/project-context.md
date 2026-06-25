@@ -52,7 +52,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case (player-orientation output)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -61,9 +61,10 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
-  by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring; `command/` the
-  sealed `Command` + `CommandParser`; `presenter/` the driven `Terminal*Presenter`s; `render/`
-  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
+  by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
+  (session-lifetime disambiguation buffer resource); `command/` the sealed `Command` + `CommandParser`;
+  `presenter/` the driven `Terminal*Presenter`s; `render/`
+  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
   `infrastructure/randomness/` (JDK randomness adapter).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
@@ -160,6 +161,40 @@ named exit into the target scene, then sees it):
   dispatches to a pulled prototype `MoveInputPort`.
 - **Persistence** — `savePlayer` is now an **upsert** (`existsById ? update : insert`); `@Version`/optimistic
   locking deferred to the concurrency thread (design-notes §5).
+
+`Examine` vertical **complete** (issue #43) — the project's first **multi-interaction** use case (`look <target>` /
+`examine <target>` describe one item on the ground; ambiguous descriptions disambiguate via a numbered menu):
+
+- **Domain** — `Item.matches(String)` SEFF (case-insensitive substring on short description; first behaviour on
+  `Item`, plain-NPE arg guard per design-notes §2). Items only; `look <exit>` deferred until `Exit` grows a
+  description.
+- **Use case** — `Examine` (`core/usecase/explore/`): two interactions converging on one outcome
+  (`presentItemDescription`) — `playerExaminesTarget(String)` (designate by description: orient → match → 0/1/N
+  branch) and `playerExaminesChosenCandidate(int ordinal, List<String> offeredTokens)` (designate by choosing
+  from the offer, the disambiguation completion). The selection interaction is **handed the offered tokens as a
+  value** by the controller (dependency rejection) and **presents every selection outcome itself**
+  (`presentNoPendingSelection` / `presentNoSuchOption` / `presentItemNoLongerHere` / `presentItemDescription`),
+  re-validating the chosen token against live scene state. By-identity resolution is **inlined** into that
+  interaction (not a helper — keeps each checkpoint's present-and-return visible in one method); no driver
+  designates by raw id yet (a future GUI row-click would get its own interaction). Read-only, no tx, like
+  `look`. Disambiguation is a Cockburn **extension**; choosing-by-number is a **variation** of target
+  designation (design-notes §4).
+- **Conversational state** — `AffordanceContext` (`infrastructure/terminal/`, a session-lifetime resource
+  declared in `TerminalConfig`): remembers the offered candidate **id tokens** in display order. It trades in
+  **raw `String` tokens, not the `ItemId` model VO** — the driven presenter does the `getId().getValue()` flatten
+  when it arms it; the primary console adapter stays model-free per "primitives inward" (§6) (design-notes §4).
+  Surface is `offer` / `currentOffer` / `clear` — a dumb store that resolves nothing and presents nothing. The
+  **presenter** arms it as it renders the menu; the **controller** (`ConsoleSession`) only detects the selection
+  intent, hands `currentOffer()` to the use case as a value, and abandons (clears) the offer on any other
+  command. The use case owns the conversation — it resolves the pick and presents all outcomes; the controller
+  decides and renders nothing (design-notes §4).
+- **Presenter port re-split (ISP)** — `OrientPlayerPresenterOutputPort` shrank to the two not-found outcomes the
+  subcase presents; `presentScene` moved down into a new `CurrentScenePresenterOutputPort` (look/move); `Examine`
+  extends the slim orient port + adds its four outcomes. Renderers mirror it: `OrientRenderer` (not-founds, shared
+  by all three), `CurrentSceneRenderer` (scene only), `ItemRenderer` (examine outcomes) (design-notes §4).
+- **Parsing** — `CommandParser` generalized to one factory per verb (returns command-or-null); `look`/`examine`/`x`
+  take the line remainder as a multi-word target; a bare positive integer → `SelectCommand`. New `ExamineCommand`
+  / `SelectCommand` in the sealed `Command` set.
 
 `orient` subcase + ad-hoc presenter wiring **complete** (issue #16) — the project's first **subcase**,
 factoring the shared `look`/`move` opening (resolve ambient player → resolve their current scene):
@@ -284,7 +319,25 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   in `world/calendar.yaml`. Deferred: catch-up across boundaries skipped when the interval exceeds a game hour
   (detects only a phase at the *current* hour).
 
-Tests: 222 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Guidance` vertical **complete** (issues #45, #47) — player-orientation output; the console's last direct
+write removed, so `ConsoleSession` now presents nothing itself:
+
+- **Use case** — `Guidance` (`core/usecase/guidance/`): **presenter-only, no domain ports** (the project's
+  thinnest). Two interactions, one player audience: player-actor `playerIssuesUnrecognizedCommand(String)` →
+  `presentUnrecognizedCommand`, and system-actor `systemGreetsPlayer()` → `presentWelcome`. Abstract outcomes —
+  no command vocabulary crosses into core. Near-empty use case is intentional ("controllers never present" +
+  "a presenter port is mandated even with no human audience"); multi-actor in one use case is fine
+  (design-notes §4, §9).
+- **Presenter** — `TerminalGuidancePresenter` (`infrastructure/terminal/presenter/`) owns the curated command
+  list in one shared constant (welcome + unrecognized-nudge can't drift); welcome cyan, nudge yellow.
+- **Console as request-dispatcher** — `ConsoleSession.start()` no longer has `printLine` (deleted). The welcome
+  is the loop's **turn-1 system request** (`greetPlayer(); continue;`), dispatched directly — **not** a
+  `WelcomeCommand` in the parsed-intent `Command` set (the `Command` set stays = parser output; the parser
+  never produces a welcome). `bye` is intercepted before the dispatch switch (it must `break` the loop). The
+  loop is the internalized request-dispatcher; per turn, fire-and-forget holds with no exception
+  (design-notes §9).
+
+Tests: 255 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
-and from prior runs; issue #17). Not yet: NPCs, the `look <target>` / `take` use cases, async/event
-processing (the ticker polls; the outbox event spine is still ahead).
+and from prior runs; issue #17). Not yet: NPCs, the `take` use case, `look <exit>` (awaits an `Exit`
+description), async/event processing (the ticker polls; the outbox event spine is still ahead).
