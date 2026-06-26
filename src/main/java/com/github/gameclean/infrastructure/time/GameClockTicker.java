@@ -2,7 +2,9 @@ package com.github.gameclean.infrastructure.time;
 
 import com.github.gameclean.core.usecase.clock.AnnounceTimeOfDayInputPort;
 import com.github.gameclean.infrastructure.GameConfigurationProperties;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
@@ -47,10 +49,11 @@ import java.time.Duration;
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class GameClockTicker implements SchedulingConfigurer {
 
-    private final ApplicationContext applicationContext;
-    private final GameConfigurationProperties properties;
+    ApplicationContext applicationContext;
+    GameConfigurationProperties properties;
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {

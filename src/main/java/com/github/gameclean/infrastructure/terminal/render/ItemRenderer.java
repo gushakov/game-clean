@@ -2,7 +2,9 @@ package com.github.gameclean.infrastructure.terminal.render;
 
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.jline.utils.AttributedStringBuilder;
 import org.jline.utils.AttributedStyle;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -24,9 +26,10 @@ import java.util.List;
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class ItemRenderer {
 
-    private final Console console;
+    Console console;
 
     /** The reveal: the item's short description as a heading, then its full description beneath. */
     public void renderItemDescription(Item item) {

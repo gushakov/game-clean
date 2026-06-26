@@ -1,4 +1,4 @@
-package com.github.gameclean.core.model.item;
+package com.github.gameclean.core.model.dice;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import lombok.Value;
@@ -8,17 +8,17 @@ import lombok.Value;
  * whether a single random draw hits it. A Value Object: always-valid (the denominator is positive and the
  * numerator lies in {@code [0, denominator]}, so the probability is in {@code [0, 1]}), equality by value.
  *
- * <p>{@code Chance} owns <em>what the probability is</em>; it does <em>not</em> own the randomness. The draw
- * comes from {@code RandomnessOutputPort} so the spawning use case stays deterministic under test, and this
- * VO merely interprets it. This is the probability value object parked during early modelling, now demanded
- * by item spawning — the source of entropy and the meaning of the odds are kept on opposite sides of the
- * boundary.
+ * <p>{@code Chance} owns <em>what the probability is</em>; it does <em>not</em> own the randomness. It lives
+ * beside {@link Dice} (the game's own source of chance) and is the odds {@link Dice#roll(Chance)} rolls
+ * against: the dice draw, and this VO interprets the draw. Keeping the odds and the entropy as separate model
+ * collaborators is why a {@link SeededDice} makes spawning deterministic under test while {@code Chance} stays
+ * a pure, independently-tested rule.
  */
 @Value
 public class Chance {
 
-    private final int numerator;
-    private final int denominator;
+    int numerator;
+    int denominator;
 
     public Chance(int numerator, int denominator) {
         if (denominator <= 0) {
@@ -36,9 +36,9 @@ public class Chance {
     }
 
     /**
-     * Whether a random draw hits this chance. The draw is expected in {@code [0, 1)} (the
-     * {@code RandomnessOutputPort.nextDouble()} contract); a hit is {@code draw < numerator/denominator}.
-     * A zero numerator never hits; a numerator equal to the denominator always hits.
+     * Whether a random draw hits this chance. The draw is expected in {@code [0, 1)} (the contract of a
+     * {@link Dice} draw); a hit is {@code draw < numerator/denominator}. A zero numerator never hits; a
+     * numerator equal to the denominator always hits.
      *
      * @param draw a uniform random draw in {@code [0, 1)}
      * @return {@code true} if the draw falls within this probability

@@ -1,9 +1,11 @@
 package com.github.gameclean.core.model.daytime;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.experimental.FieldDefaults;
 
 /**
  * How far day-phase announcements have progressed: a world-singleton aggregate holding the
@@ -39,16 +41,17 @@ import lombok.Getter;
  */
 @Getter
 @EqualsAndHashCode
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class DayPhaseLog {
 
     /** The watermark value meaning no day phase has been announced yet. */
     public static final long NONE = -1L;
 
-    private final long announcedThroughHour;
+    long announcedThroughHour;
 
     /** Optimistic-locking token — opaque to the domain, managed by persistence, not part of value equality. */
     @EqualsAndHashCode.Exclude
-    private final long version;
+    long version;
 
     @Builder
     public DayPhaseLog(long announcedThroughHour, long version) {

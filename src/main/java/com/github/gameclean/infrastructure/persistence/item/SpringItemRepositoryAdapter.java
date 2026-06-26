@@ -5,7 +5,9 @@ import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
@@ -34,11 +36,12 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class SpringItemRepositoryAdapter implements ItemRepositoryOperationsOutputPort {
 
-    private final ItemSpringDataRepository repository;
-    private final JdbcAggregateTemplate aggregateTemplate;
-    private final ItemDbEntityMapper mapper;
+    ItemSpringDataRepository repository;
+    JdbcAggregateTemplate aggregateTemplate;
+    ItemDbEntityMapper mapper;
 
     @Override
     public List<Item> findItemsInScene(SceneId sceneId) {

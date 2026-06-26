@@ -72,6 +72,21 @@ reviewer vigilance: `core ↛ infrastructure` (the headline boundary) and
 `core.model ↛ core.port` (the model depends on *no* other layer, not even ports — see
 §2).
 
+**The dependency rule is a *proxy* — relocation can satisfy it while defeating it.** `[thread #4]`
+`core ↛ infrastructure` is a *mechanical* check standing in for a *semantic* invariant: **the core must
+not be shaped by a delivery mechanism.** The two come apart the moment someone moves an infra type (a
+parser `Command`, the terminal's `AffordanceContext`) *into* `core` to make a forbidden edge compile —
+the build goes green while the invariant is *defeated*. So an edge that relocation makes legal is the tell
+that the **type is misfiled**, not that the coupling was harmless. The honest test is not "does it import
+infra" but **"would this type still make sense if a second adapter existed?"**: `ItemId`/`SceneId`/`Player`
+survive any driver (core); `Command`/`SelectCommand(ordinal)`/`AffordanceContext` are meaningful only to a
+line-oriented terminal (infra). The async ticker is the standing proof — it drives a use case with *no*
+`Command` at all, so the core's input ports are already device-neutral, and importing a command vocabulary
+would break that. (Surfaced rejecting a *core* `Conversation` interface for the conversation dispatcher,
+§9.) (Promotion candidate, flagged not promoted: *the dependency rule proxies "the core is not shaped by
+any delivery mechanism"; an edge that relocation makes legal means the type is misfiled — test by "would
+it survive a second adapter?"*)
+
 **The framework must never scan the core.** `@SpringBootApplication` roots component
 scanning at its *own* package, so the entry point's location is load-bearing: placed
 at the project root it would scan `core` too. It therefore lives in
@@ -135,26 +150,47 @@ triggers rollback on the rare construction that runs inside one. (Promotion cand
 *a reconstitution failure is an integrity fault, wrapped into the persistence port's currency — never the
 input gate's type*.)
 
-**The "single source of truth" conundrum — and its resolution.** An always-valid id VO
-appears to need to validate the very character pattern that the *infrastructure* id
-generator emits — yet the dependency rule forbids the model from knowing the generator,
-and two drifting copies of the pattern are unacceptable. The resolution is to **untangle
-the two concerns the pattern conflates.** The *prefix* (e.g. `scn`) is a domain concern
-— it says which kind of identity this is — so the model owns it. The *body alphabet and
-length* are an encoding artifact of the generation scheme, **not** a domain invariant, so
-the generator owns them privately. The model validates **prefix + structure only**
-(non-empty, single token, no whitespace) and never the charset, because "always-valid"
-constrains *domain* state and the charset is not a domain rule. The conundrum dissolves:
-there is exactly one knower of the alphabet, so nothing can drift. Reinforced by authored
-seed ids being *logical short keys* (`scn1`), deliberately distinct in body from generated
-ids — the model could not own a single body-format even if it wanted to. Parked
-alternatives: (a) a shared `IdFormat` type in `core` consumed inward by the generator —
-coherent only if authored ids were full generated-shape ids, which they are not;
-(b) validating authored-id format in the YAML driving adapter against the generator's
-pattern — held in reserve for rejecting malformed authored ids at parse time *without the
-model knowing the alphabet*; (c) a duplicate-plus-drift-guard test as last resort. This is
-the **correct boundary**, not a shortcut — and `core.model ↛ core.port` makes it
-structural.
+**The "single source of truth" conundrum — its first resolution, then its dissolution.** An always-valid id
+VO appears to need to validate the very character pattern an id *generator* emits, and two drifting copies of
+the pattern are unacceptable. The first resolution **untangled the two concerns the pattern conflates.** The
+*prefix* (e.g. `scn`) is a domain concern — it says which kind of identity this is — so the model owns it. The
+*body alphabet and length* are an encoding artifact of the generation scheme, **not** a domain invariant; the
+model validates **prefix + structure only** (non-empty, single token, no whitespace) and never the charset,
+because "always-valid" constrains *domain* state and the charset is not a domain rule. Reinforced by authored
+seed ids being *logical short keys* (`scn1`), deliberately distinct in body from generated ids — the model
+could not own a single body-format even if it wanted to.
+
+The original framing then said the *generator adapter* owns the alphabet privately, because "the dependency
+rule forbids the model from knowing the generator." **That premise is now gone (#53): the model mints its own
+ids by rolling its own `Dice` — there is no external generator for it to be forbidden from knowing.** Once
+randomness became a domain `Dice` (§4), an id minted from dice reaches nowhere outside the hexagon, so the id
+*output port* was the remaining inconsistency and was deleted. The split *survives the dissolution* but both
+halves now live inside the model: the **prefix** on each id VO (`ItemId`), the **body encoding** (alphabet +
+length) in a single `Ids` helper (`core/model/id/`) — the in-hexagon successor of the generator adapter, and
+the one knower of the alphabet. So "exactly one knower, no drift" holds *verbatim*; the knower simply moved
+from the adapter to `Ids`. It is arguably **cleaner**: there is no longer a hexagon boundary to split the
+prefix from the alphabet across — the prefix/alphabet split the §2 conundrum invented to cross the boundary
+safely is now an *intra-model* cohesion choice, not a boundary device. The validation rule is unchanged
+(prefix + structure only, so authored `scn1`/`itm1` still pass); the alphabet is a *generation* concern owned
+by `Ids`, never a *validation* rule — generation ≠ validation, still. The parked alternatives all fall away:
+(a) a shared `IdFormat` consumed inward by an external generator is moot — `Ids` *is* the in-core minter, not a
+contract handed outward; (b) validating authored-id format in the YAML adapter is still held in reserve. (The
+NanoID dependency is gone with the adapter: NanoID *was* "roll a uniform RNG N times over an alphabet," which
+is exactly what `Ids.randomBody(Dice)` now does in the model — identical algorithm, identical probabilistic
+uniqueness, one fewer dependency.) (Promotion candidate, flagged not promoted: *when a domain `Dice` exists,
+identity minting is a domain concern too — an `Ids` helper fed the dice replaces the id output port; the
+single-knower-of-the-encoding invariant is preserved by relocating the knower into the model, not by hiding it
+behind a port.*)
+
+**The remaining hazard, parked by emergence.** A pure dice-rolled id carries only *probabilistic* uniqueness —
+exactly as NanoID always did, so nothing regressed. But the deleted port's contract had reserved a future
+("sufficient entropy, *or a sequence* — its private choice") that was the natural seam to evolve uniqueness
+(collision-retry, a monotonic sequence) *without the model knowing*. Folding minting into the model gives that
+up: a future collision-*checked* scheme would need the model to consult the store (a port) or would
+re-introduce a generator port. Today this is moot — init-time spawn-if-none against an empty world, no
+collision surface — so by emergence we don't keep the seam on speculation. The concrete trigger to revisit:
+**runtime minting against a populated store** (`take`, drops, NPC spawns) *if* probabilistic uniqueness ever
+stops being enough. A welcome mind-change then, not a regret now.
 
 **Emergence over speculation.** `[thread #1]` Aggregates and VOs are taken only as far
 as the *current* interactions demand. `Scene`/`Exit`/`SceneId` were modelled to the
@@ -172,13 +208,15 @@ VO** this section had parked became `Chance` the moment spawning needed odds. `S
 ≥1 candidate scene) and `ItemTemplate` (descriptions + rule) followed — and `ItemTemplate` is the sharp
 case: it exists not for tidiness but because a blank description must fail the validity gate *regardless of
 how the random spawn rolls fall*; validating it on the template, up front, closes a gap where an invalid
-item might otherwise never be exercised. The **id generator** the `SceneId`/`PlayerId` javadocs had long
-promised ("owned solely by the generator adapter") had never actually existed, because authored/configured
-ids (`scn1`, `plr1`) are never generated; item *instances* are the first identity the system itself mints —
-one template spawns several — so the generator finally has a consumer, landing exactly where this section
-predicted: the prefix in the VO (`ItemId.fromGeneratedBody`), the body alphabet (NanoID) private to the
-adapter, one knower, no drift. That also retires parked alternative (a): authored ids are not
-generated-shape, so a shared `IdFormat` still earns nothing.
+item might otherwise never be exercised. **Runtime-generated identity** also arrived here: item *instances*
+are the first identity the system itself mints (authored/configured ids like `scn1`, `plr1` are never
+generated; one template spawns several instances, each needing a distinct id). It first landed as an *id
+output port* (NanoID adapter, the body alphabet private to it) — then, once `Dice` existed, was pulled inside
+the hexagon (#53): `ItemId.mint(Dice)` composes the prefix with a body rolled by `Ids` (the model's one
+knower of the alphabet). Either way the prefix lives in the VO and the alphabet has exactly one knower, so
+nothing drifts — the move only changed *which side of the boundary* that knower sits on (see the dissolution
+above). That also retires parked alternative (a): authored ids are not generated-shape, so a shared
+`IdFormat` still earns nothing.
 
 **The item aggregate boundary — by identity, not containment.** `[thread #1]` `[thread #3]` An item is its
 *own* aggregate, not a child of `Scene`. The test is invariants: there is no scene↔item consistency rule that
@@ -367,13 +405,66 @@ spawn into), checked in-memory against the world being built, exactly like the e
 resolutions. It folds into the one success (`presentGameInitialized`) and the one atomic unit: a third
 idempotency guard, **spawn-if-none**, joins seed-if-empty and create-if-absent inside the single
 `doInTransaction`, so a restart never re-rolls. What is *new* is that the phase is **non-deterministic**, and
-the resolution is the lesson: the entropy is an **output port** (`RandomnessOperationsOutputPort`), so the
-use case stays deterministic under test (stub the draws) even though production spawns at random — the random
-rolls run *outside* the transaction (a pure in-memory construction with no persistence effect), and only the
-saves sit inside it. Two *distinct* randomness roles are kept on two ports, not conflated: opaque **identity**
-(`IdGeneratorOperationsOutputPort`) and domain **dice** (`RandomnessOperationsOutputPort`). The single success
-also carries the items *spawned this run* (empty on an idempotent re-run) — generated effects, reported
-distinctly from the authored scenes, which are the full world on every path.
+the resolution is the lesson: the random rolls run *outside* the transaction (a pure in-memory construction
+with no persistence effect), and only the saves sit inside it, while the use case stays deterministic under
+test even though production spawns at random. The single success also carries the items *spawned this run*
+(empty on an idempotent re-run) — generated effects, reported distinctly from the authored scenes, which are
+the full world on every path.
+
+**The source of that non-determinism is a *domain* capability, not an output port — this reverses the earlier
+"entropy is an output port" stance.** `[thread #2]` This section first concluded that the entropy was an
+**output port** (`RandomnessOperationsOutputPort`), kept *distinct* from the opaque-identity port
+(`IdGeneratorOperationsOutputPort`) as "two randomness roles on two ports." That has been reversed: game
+randomness is now a domain type, **`Dice`** (`core/model/dice/`), with `roll(Chance) -> boolean` and
+`pick(List) -> T` — and `RandomnessOperationsOutputPort` and its JDK adapter are deleted. **For an RPG, dice
+are domain, not infrastructure.** The model already owned the probability *semantics* — `Chance`,
+`SpawnRule.rollPlacements`, `DayPhase.pickMessage` — and only the raw entropy bit (`nextDouble()`) ever reached
+out through the port; completing the ownership (the model rolls its own dice) is the DDD-faithful framing. It
+is also the **cardinality rule taken to its conclusion** (clean-ddd-core → *Where inter-aggregate business
+rules live*): *value when read once, supplier/source only when the model owns the cardinality.* The spawn loop
+draws N times — the model owns the cardinality — so handing it a *port-closure* (`randomnessOps::nextDouble`)
+was the half-measure: own the source as a domain collaborator, don't smuggle an effect-function over an adapter
+into the model's loop. `Dice.pick(List)` also *absorbs* the scale-and-clamp uniform-selection mechanic that
+`SpawnRule.pickScene` and `DayPhase.pickMessage` had each duplicated, and `roll(Chance)` keeps `Chance` (now in
+`core/model/dice/` beside `Dice`, which also breaks the `item`↔`dice` package cycle `roll(Chance)` would
+otherwise create) as the pure odds authority it asks.
+
+**Determinism — the port's whole justification — survives the reversal, achieved with a domain abstraction
+instead of a mocked port.** A **seeded** `Dice` (`SeededDice`) gives deterministic tests (and opens a
+reproducible-world-from-a-seed feature later — noted, deferred; no config-seed is wired now), while production
+uses a thread-safe `SystemDice` (`ThreadLocalRandom.current()` per draw — safe to share across the boot/seeder
+and ticker threads that roll dice). Tests script a tiny `ScriptedDice` (fixed roll booleans + pick indices),
+which reads cleaner than computing what a seed produces and keeps the exact-placement / draw-ordering
+assertions. The move also **avoids a global-state trap**: a "domain service over `ThreadLocalRandom.current()`"
+would put global mutable state in `core/model/` (a Clean-Arch smell); an injected/seedable `Dice` keeps the
+dependency explicit and confines the entropy to one clearly-labelled `SystemDice`.
+
+**The principled line — and the asymmetry with the time port is the lesson, not an inconsistency.** Wall-clock
+*time* is the world *outside* the game, delivered as a **value read once** in the shell, so it stays an
+infrastructure port (`GameTimeSourceOutputPort`); *dice* are *part* of the game, so they are a domain
+capability the model owns. **Id minting followed the dice across the same line — and that reverses a stance
+this section held for exactly one session.** The first cut of this passage argued the **id generator stays a
+port** (id-encoding is infrastructural, the NanoID alphabet the generator's private concern), so
+`ItemTemplate.spawnInto(Supplier<ItemId>, Dice)` *deliberately mixed* an infra-closure (ids, behind a port)
+with a domain collaborator (dice). The very next session (#53) judged that the inconsistency, not the design:
+that `spawnInto` signature was the **only** place a camouflaged output-port closure still crossed into the
+model. Once `Dice` is a domain capability, an id *rolled from dice* reaches nowhere outside the hexagon — and
+NanoID was only ever "roll a uniform RNG N times over an alphabet," the same algorithm — so the id port earned
+nothing the model couldn't do itself. It was deleted: `ItemTemplate.spawnInto(Dice)` now takes *only* the
+dice, and `ItemId.mint(Dice)` rolls its own body via the in-model `Ids` helper (§2's dissolution). The
+remaining asymmetry is clean and *purely* time-vs-game: wall-clock time stays a port (world outside, a value
+read once); dice — *and the identities minted by rolling them* — are domain.
+
+**Sharpened boundary rule, now fully realized** (superseding the old "entropy is an output port" *and* the
+one-session "id generator stays a port"): *no infrastructure crosses into the model as a callable; the model's
+own domain collaborators (`Dice`) are fine; ports deliver values read in the shell.* With the id supplier
+gone, this isn't just stated — there is no longer **any** port-closure threaded into a model method. The lesson
+that the old "two randomness roles on two ports" framing got wrong also generalizes: identity and dice were
+never *one role split in two ports*; they were two concerns mis-filed as ports, and both turned out to be the
+*same* domain capability (rolling) once examined. (Promotion candidate, flagged not promoted: *when an RPG has
+a domain `Dice`, both stochastic outcomes and generated identities are the model's own — neither is an output
+port; determinism is preserved by a seeded `Dice`; the discriminator is "is this part of the game or the world
+outside it," and the acid test is that no infrastructure crosses into the model as a callable.*)
 
 **Read-only and read-write interactions over one shared scene presentation.** `[thread #2]`
 `Look` (read-only) and `move` (read-write, the first interaction to *update* an aggregate) both
@@ -697,6 +788,76 @@ exit target, an unknown starting scene) to an **operator/log** audience at *buil
 cases report readiness gaps to a **player** audience at *play* time — same invariant guarded twice, two
 audiences, two homes; merging them would be the same overload the system-seeder's logging presenter was kept
 apart to avoid (above). (Promotion candidate, flagged not promoted.)
+
+**The `select` subcase — sharing the *disambiguation* dialogue, orthogonally to `orient`.** `[thread #4]`
+`take`/`drop` will disambiguate a target exactly as `examine` does, so the dialogue is factored into the
+project's *second* subcase — and the factoring sharpened what a subcase *is*. A first cut handed the subcase
+its candidates as a `List<Item>` value and let the parent fetch them; that was **rejected**. A subcase is not
+a pure function over inputs the parent prepared — it is the **owner of a reusable scenario slice and its
+outcomes**, exactly as `orient` owns the whole "where does the player stand" slice (holding and calling its
+own ports, not handing back a half-resolved result). "Resolve which thing the player means among the available
+candidates" *includes deciding what those candidates are*, so the select subcase **holds the item port and
+provisions its own candidates**; the parent passes only the coordinate and drops its own item dependency
+(`examine` no longer touches persistence at all). Pushing the fetch up to the parent would fragment the shared
+slice and re-duplicate it across `examine`/`take` — the very thing extraction removes. (It also tightened the
+gate: provisioning *inside* the subcase lets the ordinal check run *before* any read, so a bad pick costs no
+fetch — a small improvement over the parent-fetches sketch.)
+
+**`select` ⟂ `orient` — composition, not the inheritance chain.** `[thread #2]` `[thread #4]` Disambiguating
+*which* (intent) is orthogonal to locating *where* (geospatial): a card to play, a spell to cast, a combat
+maneuver to choose involve no orientation. So `select` does **not** telescope `orient`, and
+`SelectTargetPresenterOutputPort` does **not** extend `OrientPlayerPresenterOutputPort` — the parent composes
+the two subcases *sequentially*, and one concrete presenter implements three **flat, narrow** ports (orient /
+select / parent-outcome), bound per role by the composition root, with the parent use case's presenter field
+typed to *only its own* outcome. This is the §6 composition-over-inheritance stance carried to the port layer:
+a `Select extends Orient` chain would assert a false is-a (select is-not-a orient); flat composition asserts
+none. The disambiguation outcomes (`presentNoSuchTarget`, the ambiguity menu, `presentItemNoLongerHere`, the
+two selection-gate misses) moved *off* `examine`'s port *onto* the select port; `examine` keeps only its
+terminal `presentItemDescription`. (Promotion candidate, flagged not promoted: *a shared sub-dialogue
+orthogonal to the shared prologue is composed beside it, not nested under it; presenter ports compose as flat
+narrow interfaces on one concrete presenter, never an inheritance chain that asserts a false is-a.*)
+
+**Values between procedures; suppliers only into the model — the direction the "can of worms" hides.**
+`[thread #4]` The provisioning question first reached for a `Function<…, List<Item>>` handed into the subcase —
+a category error worth recording. §10's dependency rejection passes `Supplier`s to the **model** (the
+functional core, e.g. `SpawnRule.rollPlacements`), never between use cases. A subcase is a **procedure** read
+as a Jacobson requirements spec; passing it a function inverts control and hides a chunk of the procedure
+behind a lambda, defeating the down-the-stripes readability the methodology exists to protect. The codebase
+already obeyed the rule without naming it (`examine` hands the offered tokens in as a **value**; only the model
+gets suppliers), so the discipline is: **values flow between procedures; functions terminate *into* the
+model.** With provisioning owned by the subcase the question is moot anyway — the subcase fetches, the parent
+passes a value coordinate. (Promotion candidate, flagged not promoted: *within the procedural shell, compose
+subcases with values and sequential calls; reserve function-passing for the shell→model boundary, and even
+there prefer a value unless the model owns the cardinality.*)
+
+**A plain `SceneId`, not a one-field request DTO — and why the asymmetry with `OrientPlayerResult` is
+principled.** `[thread #2]` The select subcase needs one coordinate (the scene to read), so it crosses as a
+**plain `SceneId`**, not a `SelectItemRequest` envelope. This is the methodology's own input-DTO rule applied
+honestly: *a DTO earns its place by carrying structure — a composite or a collection — not by wrapping a
+scalar that could be a plain parameter* (the same call that gave `look` a bare `playerId` and no `LookRequest`).
+The non-symmetry with `orient`'s returned `OrientPlayerResult` is the *same rule* giving opposite verdicts:
+`OrientPlayerResult` carries two things (player + scene) — a composite, earned; a one-`SceneId` request would
+not be. Matching the `…Request`/`…Result` names for symmetry's sake would violate the rule.
+
+**One concrete subcase now; the Template-Method base emerges at provisioner #2.** `[thread #1]` `[thread #4]`
+There is one provisioner today — items on the scene ground (`examine`, and later `take`, share it) — so there
+is one concrete `SelectSceneItemSubcase` with a private `provisionCandidates`, *not* an abstract base with a
+single subclass. When `drop` brings the **second** provisioner (an inventory, keyed on a `PlayerId`),
+`provisionCandidates` is extracted onto an `AbstractSelectTargetSubcase` as a `protected abstract` hook — a
+one-level **Template Method** whose concretes are genuine is-a target-selectors, the *legitimate* face of
+inheritance that the composition-over-inheritance heuristic guards the flip side of (it forbids stealing
+implementation through a base you are not a kind of; it does not forbid a true taxonomic specialization
+varying one hook bound at wiring time). Crucially, the **abstract base and its generic context type are the
+same deferred decision**: a request abstraction "to work generically" cannot be designed over one provisioner
+without guessing (fat DTO? sealed hierarchy? generic parameter?); two real context shapes (`SceneId`,
+`PlayerId`) make the right one obvious. So the plain-`SceneId` parameter and the concrete subcase are the
+*matched* choice — concrete subcase, concrete input — and both generalize together when the second instance
+lands; the localized cost (the select signature changes at that point) is the right time to introduce the
+abstraction, not before. Residual tension named for later: today's `SceneId` context presumes a *grounded*
+selection — a future non-grounded one (the card game) forces the generic context then, the same emergence
+beat. (Promotion candidate, flagged not promoted: *composition-over-inheritance is not absolute — a one-level
+Template Method varying a single hook, over genuine is-a subtypes bound at wiring time, is legitimate; defer
+both the base and its generic input until the second concrete makes the generalization visible.*)
 
 ## 5. Explicit transaction demarcation
 
@@ -1190,8 +1351,8 @@ save inside `doInTransaction` is version-checked — a concurrent observer that 
 surfaced as `OptimisticLockingError` and presented as "nothing to announce." This is the §5 *detector* lesson:
 the transaction boundary gives atomic rollback, the version gives the actual conflict detection (an earlier
 inside-transaction re-read was the *proxy* that §5 shows is toothless, and it was removed once the real detector
-landed). The random message pick runs *outside* the transaction (a pure choice with no persistence effect,
-exactly like the item-spawn rolls, §4). Persisting the watermark (rather than holding "last hour" in the ticker
+landed). The random message pick is made by an injected domain `Dice` (§4) and runs *outside* the transaction
+(a pure choice with no persistence effect, exactly like the item-spawn rolls). Persisting the watermark (rather than holding "last hour" in the ticker
 thread) is what makes it restart-safe: a `bye`/restart mid-dawn-hour does not re-announce. And the quiet poll —
 no phase, already past the watermark, or the concurrent-loss — is always a *presented* outcome
 (`presentNothingToAnnounce`), never a silent return, so "exactly one `present*` per run" (§4) holds even for the
@@ -1286,6 +1447,40 @@ the dispatch"), `bye` is handled by an early `if (command instanceof QuitCommand
 no-op `QuitCommand` arm purely for sealed-set exhaustiveness, and that dead arm is the honest signal that `bye`
 is the one command whose handling carries a loop-control effect the switch cannot express.
 
+**Resuming a multi-step conversation — substance (use case) vs. modality (infra), the container as the
+resumer map.** `[thread #4]` When a follow-up line must resume a pending dialogue (`examine`'s pick, and the
+same for `take`/`drop`), the §4 split decides the wiring: the use case is the conversation's **substance** —
+its semantic steps are the converging interaction methods (`playerExaminesChosenCandidate`) — while the
+**modality** (the affordance buffer, the continuation predicate, the resume routing) is a delivery-mechanism
+concern kept in infra. So we **"dress up" each use case as a conversation** with a thin *infra* handler
+(`Conversation { SelectionKind kind(); void resume(Command, List<String>); }`) declared in the composition
+root (the §6 ad-hoc-`new` convention, *named* — not anonymous-in-`@Bean` — so it is testable, grows a state
+machine for >2 steps, and can share a base), and we let the **DI container be the resumer map**:
+`ConsoleSession` injects `List<Conversation>` and matches the armed `kind()`, instead of a hand-maintained
+`kind→useCase` table that would duplicate wiring the container already holds. Each handler **looks its use
+case up from `ApplicationContext` per `resume`** — the established prototype-pull idiom (§6, `getBean` over
+`ObjectProvider`), because a singleton handler that *captured* its prototype use case would silently defeat
+the scope (scope is freshness *per lookup*; a `List<Conversation>` is injected once). The cast-and-call
+factors into an `AbstractSelectionConversation` (concretes vary only the use-case method), mirroring
+`AbstractSelectTargetSubcase` (§4) and emerging at the second conversation; the `continuedBy` predicate stays
+inline in the dispatcher until conversation #3 (one continuing on something other than a bare number) —
+staged emergence, so at `drop` a handler carries only `kind()`+`resume()`.
+
+**Why not a *core* `Conversation` the input ports implement.** `[thread #4]` The tempting unification —
+`*InputPort extends Conversation`, `resume` on the use case — was **rejected**: a *generic* `Conversation`
+must speak the routing vocabulary (`Command`), dragging the parser's delivery types into `core`; relocating
+`Command`/`AffordanceContext`/a `@ConversationKind` annotation inward to satisfy ArchUnit only *passes the
+proxy while defeating it* (§1). The device-neutral conversation vocabulary the core needs already exists —
+the converging interaction methods and their **primitive** parameters (`int ordinal, List<String>
+offeredTokens`); a core `Conversation`/`Command` type would be the reflexive envelope DTO + parallel
+hierarchy the methodology rejects (clean-ddd-core §8, applied on the input side), and routing would *still*
+need the active-conversation identity, which is infra session state. DCI agrees: the Context coordinates the
+interaction; it never makes domain participants speak the UI's input format. (Promotion candidate, flagged
+not promoted: *model a use case as a conversation's substance and its modality — affordance, continuation,
+resume routing — as a delivery-mechanism concern; dress the use case as an infra conversation handler at the
+composition root and let the DI container be the resumer registry; never give the core a `Conversation`
+interface, which would import the delivery vocabulary the core excludes.*)
+
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 
 This refines §4. An **inter-aggregate consistency rule** (every exit target resolves to an authored scene;
@@ -1320,27 +1515,69 @@ tests, where before the logic was only reachable through the use-case test. That
 for side-effect-free functions: safe to call, trivial to test. (Promotion candidate for the methodology —
 flagged, not promoted, per Prompt-4 discipline.)
 
-**The spawn loop resolved — the whole stochastic policy pushed onto the model, fed suppliers.** `[thread #1]`
-`[thread #2]` The spawn roll loop is now pushed down. The use case had been driving the algorithm itself — `item.getTemplate().getSpawnRule()`,
-then a `maxTries` loop interleaving `isHitBy`/`pickScene` with the randomness and id-generator *port* calls.
-The fix is the **batch form**: `SpawnRule.rollPlacements(DoubleSupplier)` owns the entire placement policy (the
-attempt count, the hit and scene decisions, *and* the draw-ordering — one draw per attempt, a second only on a
-hit, knowledge that had leaked into the use case); `ItemTemplate.spawnInto(Supplier<ItemId>, DoubleSupplier)`
-turns each placement into a valid `Item`, pulling an id *only for an actual placement* (no eager minting for
-misses); the use-case-private `AuthoredItem` forwards `spawnInto` one level, exactly as it forwards
-`candidateScenesNotIn`. `spawnItems` collapses to a loop that adapts the two output ports to suppliers
-(`idGeneratorOps::generateItemId`, `randomnessOps::nextDouble`) and collects — pure orchestration.
+**The spawn loop resolved — the whole stochastic policy pushed onto the model, fed only a `Dice`.**
+`[thread #1]` `[thread #2]` The spawn roll loop is now pushed down. The use case had been driving the algorithm
+itself — `item.getTemplate().getSpawnRule()`, then a `maxTries` loop interleaving `isHitBy`/`pickScene` with the
+randomness and id-generator *port* calls. The fix is the **batch form**: `SpawnRule.rollPlacements(Dice)` owns
+the entire placement policy (the attempt count, the hit and scene decisions, *and* the ordering — one roll per
+attempt, a pick only on a hit, knowledge that had leaked into the use case); `ItemTemplate.spawnInto(Dice)`
+turns each placement into a valid `Item`, **minting its id from the same dice** (`ItemId.mint(Dice)`) only for
+an actual placement (no eager minting for misses); the use-case-private `AuthoredItem` forwards `spawnInto` one
+level, exactly as it forwards `candidateScenesNotIn`. `spawnItems` collapses to a loop that holds *only* the
+`Dice` (a domain collaborator) and collects — pure orchestration. **The id supplier is gone (#53):** an earlier
+form threaded `idGeneratorOps::generateItemId` in as a second argument — the last camouflaged output-port
+closure crossing into a model method — and removing it is what made `spawnInto` take the dice alone (§2's
+dissolution, §4's "id minting followed the dice").
 
-This is game-clean's instance of the now-promoted doctrine: the computation lives in the domain, fed values
-and JDK suppliers, never ports; the use case keeps the orchestration (§3's boundary currency one layer in —
-values/suppliers inward, valid model out). The general rule — functional core / imperative shell, the home
-test, value-by-default / supplier-only-when-the-core-owns-the-cardinality, and why the instability objection
-*dissolves* rather than relocates — lives canonically in `clean-ddd-core` → *Where inter-aggregate business
-rules live*, promoted out of this project and not restated here. `SpawnRule` needed a `DoubleSupplier` for
-exactly the cardinality the rule names — one draw per attempt, a second only on a hit, a count the domain owns
-— so a *value* would not do here, unlike the day-of-week in the module's `customer.buy` example. The
-`maxTries` leak closes; the "rolls run outside the transaction" property is untouched, since the use case
-still chooses *where* to call `spawnInto`.
+This is game-clean's instance of the now-promoted doctrine: the computation lives in the domain, fed values,
+JDK suppliers, and the model's own collaborators, never infrastructure ports; the use case keeps the
+orchestration (§3's boundary currency one layer in — values inward, valid model out). The general rule —
+functional core / imperative shell, the home test, value-by-default /
+supplier-or-source-only-when-the-core-owns-the-cardinality, and why the instability objection *dissolves*
+rather than relocates — lives canonically in `clean-ddd-core` → *Where inter-aggregate business rules live*,
+promoted out of this project and not restated here. **The draw source evolved from a `DoubleSupplier` to a
+domain `Dice`** (§4's reversal): a supplier was first reached for because `SpawnRule` owns *exactly the
+cardinality* the rule names (one roll per attempt, a pick only on a hit, a count the domain owns), so a *value*
+would not do — but the cardinality argument's conclusion is to own the **source** outright as a domain `Dice`,
+not to thread a port-closure (`randomnessOps::nextDouble`) through the loop. **The same conclusion then retired
+the id port-closure (#53):** `idGeneratorOps::generateItemId` was the one remaining adapter-function threaded
+into a model method, and once the model rolls its own dice it mints its own ids too (`ItemId.mint(Dice)` via
+`Ids`), so `spawnInto` is fed *only* the domain `Dice`. The `maxTries` leak closes; the "rolls run outside the
+transaction" property is untouched, since the use case still chooses *where* to call `spawnInto`.
+
+**`Dice` sharpens the vague application-service / domain-service line — and testability is the operational
+litmus.** `[thread #2]` The use case is the **application service** (the imperative shell — orchestrate, hold
+ports, demarcate the tx, present); `Dice` is a **domain service** — a stateless domain operation
+(`roll(Chance)`, `pick(List)`) consumed by *several* aggregates' methods (`SpawnRule.rollPlacements`,
+`DayPhase.pickMessage`, `ItemId.mint`). That boundary is classically fuzzy — both are "stateless services" —
+and `Dice` makes it concrete on three axes:
+
+- **Inject-vs-`new`: testability is the litmus.** The model never does `new SystemDice()`; the composition
+  root does (`UseCaseConfig`), injects it into the use case (a `Dice dice` field), which *hands it to the
+  model* (`rollPlacements(dice)`). The forcing criterion is **testability** — substitute a
+  `SeededDice`/`ScriptedDice` and the domain logic is deterministic, both in the use-case test and in a direct
+  VO test. But testability is the *detector*, not the law: the law is **functional-core purity** (entropy is
+  an *input*, never something a domain method conjures) plus **no ambient global state in core**
+  (`ThreadLocalRandom` is sealed inside one labelled `SystemDice`, never reached for statically by a rule). A
+  domain rule you can't unit-test deterministically without infrastructure has an un-injected environment
+  dependency — the failing test is the signal, injection the fix.
+- **"Domain service" classifies the *logic*, not the *wiring*.** `Dice`'s type lives in `core/model/dice/`,
+  yet it is *wired by the composition root* and *flows through the application service*. Wiring location ≠
+  conceptual layer — conflating them is half the original vagueness.
+- **Consumption locus splits domain-service from port** — testability alone does not, since *both* are
+  injected and substitutable. A **domain service** is consumed *inside the model* (handed in as a collaborator
+  the model calls — `SpawnRule` rolls the dice); an **output port** is consumed *by the shell* (the use case
+  calls it and hands the *value* inward — `GameTimeSource.elapsedSessionSeconds()`). This operationalizes the
+  §4 *part-of-the-game vs world-outside* split: dice are part of the game → a domain service handed to the
+  model; wall-clock time is the world outside → a port called by the shell. The app service's whole
+  relationship to `Dice` is **provision, not computation** — hold and forward; a use case that *itself* rolled
+  the dice to decide a domain outcome would be domain logic leaking into the shell.
+
+(Promotion candidate, flagged not promoted: *resolve the application-service/domain-service boundary on two
+axes — testability is the litmus for inject-vs-`new` (a domain rule must be deterministically unit-testable,
+so its environment-coupled collaborators are injected, never `new`ed in the model), and consumption locus
+splits the injected collaborators (a domain service is consumed inside the model and handed in; an output port
+is consumed by the shell, its result handed in as a value). "Domain service" names the logic, not the wiring.*)
 
 **Why `AuthoredItem` is *not* promoted to the model.** It looks like it embodies a Domain-Entity rule once it
 has `spawnInto`, but it does not — it *forwards* to `ItemTemplate`, which already is the domain model, and a
@@ -1425,8 +1662,11 @@ bounded — a `GameDate` is unreachable except by placing an instant.
 `placeInstant` takes a plain `long`, so the whole calendar is unit-testable with no port, clock, or database.
 Two pieces are parked with their shapes already chosen. (1) When time becomes a *live* query, `now` enters as
 an **output port** — the wall-clock is non-deterministic infrastructure, so stubbing it keeps the use case
-deterministic, exactly the role `RandomnessOperationsOutputPort` plays for spawning (§4); the persisted real
-epoch is the anchor that port's readings are measured against. (2) The authored `calendar:` block is *world
+deterministic; the persisted real epoch is the anchor that port's readings are measured against. (This time
+port and game *dice* sit on opposite sides of a deliberate line — see §4: wall-clock time is the world outside
+the game, a value read once, so it stays a port; dice are part of the game, a domain capability the model owns.
+An earlier version of this note compared the time port to a now-deleted randomness *port*; that comparison no
+longer holds, which is itself the §4 lesson.) (2) The authored `calendar:` block is *world
 content*, so it flows through the existing seed carrier and is constructed into a `GameCalendar` at the
 `InitializeGame` gate (§3/§4 — invalid-capable carrier in, valid model out), distinct from operational
 `game.*` configuration. A consequence worth stating because it confirms the wall-clock-derived design: closing

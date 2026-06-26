@@ -5,7 +5,9 @@ import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
@@ -40,11 +42,12 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class SpringSceneRepositoryAdapter implements SceneRepositoryOperationsOutputPort {
 
-    private final SceneSpringDataRepository repository;
-    private final JdbcAggregateTemplate aggregateTemplate;
-    private final SceneDbEntityMapper mapper;
+    SceneSpringDataRepository repository;
+    JdbcAggregateTemplate aggregateTemplate;
+    SceneDbEntityMapper mapper;
 
     @Override
     public boolean worldIsEmpty() {

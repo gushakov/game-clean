@@ -26,7 +26,7 @@ import java.util.Optional;
 @Value
 public class DayPhaseSchedule {
 
-    private final List<DayPhase> phases;
+    List<DayPhase> phases;
 
     public DayPhaseSchedule(List<DayPhase> phases) {
         this.phases = List.copyOf(DomainValidation.requireNonNull(phases, "day phases must not be null"));

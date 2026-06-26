@@ -7,7 +7,9 @@ import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
@@ -64,12 +66,13 @@ import java.util.Optional;
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class ConsoleSession {
 
-    private final LineReader lineReader;
-    private final CommandParser commandParser;
-    private final AffordanceContext affordanceContext;
-    private final ApplicationContext applicationContext;
+    LineReader lineReader;
+    CommandParser commandParser;
+    AffordanceContext affordanceContext;
+    ApplicationContext applicationContext;
 
     public void start() {
         boolean greeted = false;

@@ -1,5 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.render;
 
+import lombok.AccessLevel;
+import lombok.experimental.FieldDefaults;
 import org.jline.reader.LineReader;
 import org.jline.terminal.Terminal;
 import org.jline.utils.AttributedStringBuilder;
@@ -25,10 +27,11 @@ import org.jline.utils.AttributedStyle;
  * the live {@code game> } prompt. This is the Phase-3 seam design-notes §7 reserved: one line editor, N async
  * {@code printAbove} writers onto one terminal buffer.
  */
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class Console {
 
-    private final Terminal terminal;
-    private final LineReader lineReader;
+    Terminal terminal;
+    LineReader lineReader;
 
     public Console(Terminal terminal, LineReader lineReader) {
         this.terminal = terminal;

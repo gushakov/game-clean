@@ -19,7 +19,7 @@ public class PlayerId {
     /** Three-letter aggregate prefix for players. */
     public static final String PREFIX = "plr";
 
-    private final String value;
+    String value;
 
     public PlayerId(String value) {
         String trimmed = DomainValidation.requireNonNull(value, "player id must not be null").strip();

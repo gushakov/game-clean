@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.model.daytime.DayPhase;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.daytime.DayPhaseSchedule;
+import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
@@ -11,12 +12,12 @@ import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOu
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
-import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -40,7 +41,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>The transaction port is stubbed to run its action inline and fire after-commit callbacks immediately,
  * exactly as {@code InitializeGameUseCaseTest} does — so a deferred presentation is observed synchronously.
- * Randomness is pinned (0.0 → the first message) to make the pick reproducible.
+ * The {@link ScriptedDice} is scripted to pick the first message, making the pick reproducible.
  */
 @ExtendWith(MockitoExtension.class)
 class AnnounceTimeOfDayUseCaseTest {
@@ -57,8 +58,8 @@ class AnnounceTimeOfDayUseCaseTest {
     private DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
     @Mock
     private GameTimeSourceOutputPort gameTimeSourceOps;
-    @Mock
-    private RandomnessOperationsOutputPort randomnessOps;
+    @Spy
+    private ScriptedDice dice = new ScriptedDice();
     @Mock
     private TransactionOperationsOutputPort txOps;
 
@@ -70,7 +71,7 @@ class AnnounceTimeOfDayUseCaseTest {
         givenTimeAt(1800);                       // hour 6 of day 0, absolute hour 6
         when(dayPhaseScheduleSourceOps.loadDayPhases()).thenReturn(dawnAtHourSix());
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
-        when(randomnessOps.nextDouble()).thenReturn(0.0);   // pick the first message
+        dice.willPick(0);   // pick the first message
         runLockAwareTransactionAndFireAfterCommit(txOps);
 
         useCase.systemObservesTimeOfDay();
@@ -113,7 +114,7 @@ class AnnounceTimeOfDayUseCaseTest {
         givenTimeAt(1800);                       // hour 6, absolute hour 6 — pending on our read
         when(dayPhaseScheduleSourceOps.loadDayPhases()).thenReturn(dawnAtHourSix());
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
-        when(randomnessOps.nextDouble()).thenReturn(0.0);
+        dice.willPick(0);
         // The version-checked save loses to a concurrent advance that happened since our read.
         doThrow(new OptimisticLockingError("stale version"))
                 .when(dayPhaseLogRepositoryOps).saveDayPhaseLog(any());
