@@ -45,10 +45,11 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
-  `item/`, `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate)) plus the `model/` root holding the always-valid construction gate's failure type
+  `item/`, `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
+  `dice/` (the `Dice` domain capability — interface + `AbstractDice`/`SystemDice`/`SeededDice` impls — and the `Chance` VO it rolls; design-notes §4)) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
-  `port/id/`, `port/randomness/`, `port/seed/`, `port/calendar/` (calendar-source port + error), `port/daytime/`
+  `port/id/`, `port/seed/`, `port/calendar/` (calendar-source port + error), `port/daytime/`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
@@ -64,8 +65,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
   (session-lifetime disambiguation buffer resource); `command/` the sealed `Command` + `CommandParser`;
   `presenter/` the driven `Terminal*Presenter`s; `render/`
-  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter),
-  `infrastructure/randomness/` (JDK randomness adapter).
+  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`CalendarRenderer`/`English`), `infrastructure/id/` (NanoID generator adapter).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
 
@@ -219,9 +219,12 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
 
 - **Domain** — `Item` aggregate (`core/model/item/`): `ItemId` (prefix `itm`; reconstitution ctor +
   `fromGeneratedBody`), `location` (`SceneId` reference — items are their own aggregate, not held by `Scene`),
-  short/full descriptions. Plus VOs `Chance` (probability), `SpawnRule` (chance + maxTries + ≥1 candidate
-  scene; `isHitBy`/`pickScene`/`candidateScenesNotIn`), `ItemTemplate` (descriptions + rule; `instanceAt`,
-  `candidateScenesNotIn`). `Scene.exitsWithTargetNotIn` added for symmetry. (design-notes §2, §10.)
+  short/full descriptions. Plus VOs `SpawnRule` (chance + maxTries + ≥1 candidate scene;
+  `rollPlacements(Dice)`/`candidateScenesNotIn`), `ItemTemplate` (descriptions + rule; `instanceAt`,
+  `spawnInto(Supplier<ItemId>, Dice)`, `candidateScenesNotIn`). The probability VO `Chance` and the entropy
+  source live in `core/model/dice/` as the domain `Dice` (reclassified from an output port — #52, design-notes
+  §4), so `SpawnRule`/`ItemTemplate` roll/pick through a `Dice` rather than a `DoubleSupplier`.
+  `Scene.exitsWithTargetNotIn` added for symmetry. (design-notes §2, §4, §10.)
 - **Use case** — folded into `InitializeGame` as a **third phase** (world → player → items): input **pulled**
   as a `GameSeed` carrier (`core/port/seed/`: `SceneEntry`/`ItemEntry`/`SpawnEntry`) via
   `GameSeedSourceOperationsOutputPort`; spawn rolls (chance per try, uniform scene
@@ -229,14 +232,15 @@ factoring the shared `look`/`move` opening (resolve ambient player → resolve t
   seed-if-empty/create-if-absent in the single transaction. `presentGameInitialized(scenes, playerId, items)`
   reports items spawned *this run*; new `presentItemSpawnSceneUnknown` stripe. (design-notes §4.)
 - **Ports** — `ItemRepositoryOperationsOutputPort` (`findItemsInScene`/`saveItem`/`itemsAlreadySpawned`),
-  `IdGeneratorOperationsOutputPort.generateItemId()` (returns valid `ItemId`), `RandomnessOperationsOutputPort.nextDouble()`.
+  `IdGeneratorOperationsOutputPort.generateItemId()` (returns valid `ItemId`). The spawn entropy was a
+  `RandomnessOperationsOutputPort` here, since reclassified to the domain `Dice` and its port deleted (#52).
 - **Presentation** — items belong to the *presented* scene, fetched per use case (`look` current, `move`
   target), **not** in `orient`; `presentScene(Scene, List<Item>)` on the shared port, `CurrentSceneRenderer`
   appends an "On the ground:" list. (design-notes §4.)
 - **Persistence / infra** — Flyway `V3__create_item.sql` (`item`; no FK on `scene_id`), `ItemDbEntity` +
   MapStruct mapper + Spring Data repo (`findBySceneId`) + `SpringItemRepositoryAdapter`; `JNanoIdGenerator`
-  (`infrastructure/id/`, JNanoId `com.aventrix.jnanoid:jnanoid:2.0.0` — not in the Boot BOM, version pinned),
-  `JdkRandomnessAdapter` (`infrastructure/randomness/`). `SceneYamlReader` renamed `GameSeedYamlReader`
+  (`infrastructure/id/`, JNanoId `com.aventrix.jnanoid:jnanoid:2.0.0` — not in the Boot BOM, version pinned).
+  `SceneYamlReader` renamed `GameSeedYamlReader`
   (parses scenes + items, assembles `GameSeed`), now invoked by `YamlGameSeedSource` behind the seed port.
 
 Calendar core model **complete** (issue #31) — time/date value objects + arithmetic only, no ports or
@@ -282,7 +286,7 @@ Dawn/dusk announcements + background time ticker **complete** (issue #36) — th
 time-driven interaction and first parallel actor (Package B: "dumb metronome, smart use case"):
 
 - **Domain** — `core/model/daytime/`: `DayPhase` (name + 0-based `hourOfDay` + ≥1 non-blank messages; owns the
-  uniform `pickMessage(DoubleSupplier)`, mirroring `SpawnRule.pickScene`), `DayPhaseSchedule` (distinct phase
+  uniform `pickMessage(Dice)`, delegating to `Dice.pick` like `SpawnRule` rolls with a `Dice`), `DayPhaseSchedule` (distinct phase
   hours; `phaseBeginningAt(hourIndex)`), and `DayPhaseLog` — a **world-singleton aggregate** holding
   `announcedThroughHour` (the dedup watermark; `-1` = none, monotonic `announceThrough`/`isPending`) plus an
   optimistic-locking `version` carried **on the model** (opaque, excluded from value equality, carried through
@@ -337,7 +341,7 @@ write removed, so `ConsoleSession` now presents nothing itself:
   loop is the internalized request-dispatcher; per turn, fire-and-forget holds with no exception
   (design-notes §9).
 
-Tests: 255 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Tests: 262 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: NPCs, the `take` use case, `look <exit>` (awaits an `Exit`
 description), async/event processing (the ticker polls; the outbox event spine is still ahead).

@@ -1,4 +1,4 @@
-package com.github.gameclean.core.model.item;
+package com.github.gameclean.core.model.dice;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import org.junit.jupiter.api.Test;
@@ -7,8 +7,8 @@ import static org.assertj.core.api.Assertions.*;
 
 /**
  * Tests for {@link Chance} — its always-valid construction (a positive denominator and a numerator within
- * {@code [0, denominator]}) and the {@code isHitBy} rule that interprets a random draw. The draw comes from
- * a port in production, so pinning the interpretation here keeps the probability logic deterministic and
+ * {@code [0, denominator]}) and the {@code isHitBy} rule that interprets a random draw. The draw comes from a
+ * {@link Dice} in production, so pinning the interpretation here keeps the probability logic deterministic and
  * independent of any real randomness.
  */
 class ChanceTest {

@@ -367,13 +367,54 @@ spawn into), checked in-memory against the world being built, exactly like the e
 resolutions. It folds into the one success (`presentGameInitialized`) and the one atomic unit: a third
 idempotency guard, **spawn-if-none**, joins seed-if-empty and create-if-absent inside the single
 `doInTransaction`, so a restart never re-rolls. What is *new* is that the phase is **non-deterministic**, and
-the resolution is the lesson: the entropy is an **output port** (`RandomnessOperationsOutputPort`), so the
-use case stays deterministic under test (stub the draws) even though production spawns at random — the random
-rolls run *outside* the transaction (a pure in-memory construction with no persistence effect), and only the
-saves sit inside it. Two *distinct* randomness roles are kept on two ports, not conflated: opaque **identity**
-(`IdGeneratorOperationsOutputPort`) and domain **dice** (`RandomnessOperationsOutputPort`). The single success
-also carries the items *spawned this run* (empty on an idempotent re-run) — generated effects, reported
-distinctly from the authored scenes, which are the full world on every path.
+the resolution is the lesson: the random rolls run *outside* the transaction (a pure in-memory construction
+with no persistence effect), and only the saves sit inside it, while the use case stays deterministic under
+test even though production spawns at random. The single success also carries the items *spawned this run*
+(empty on an idempotent re-run) — generated effects, reported distinctly from the authored scenes, which are
+the full world on every path.
+
+**The source of that non-determinism is a *domain* capability, not an output port — this reverses the earlier
+"entropy is an output port" stance.** `[thread #2]` This section first concluded that the entropy was an
+**output port** (`RandomnessOperationsOutputPort`), kept *distinct* from the opaque-identity port
+(`IdGeneratorOperationsOutputPort`) as "two randomness roles on two ports." That has been reversed: game
+randomness is now a domain type, **`Dice`** (`core/model/dice/`), with `roll(Chance) -> boolean` and
+`pick(List) -> T` — and `RandomnessOperationsOutputPort` and its JDK adapter are deleted. **For an RPG, dice
+are domain, not infrastructure.** The model already owned the probability *semantics* — `Chance`,
+`SpawnRule.rollPlacements`, `DayPhase.pickMessage` — and only the raw entropy bit (`nextDouble()`) ever reached
+out through the port; completing the ownership (the model rolls its own dice) is the DDD-faithful framing. It
+is also the **cardinality rule taken to its conclusion** (clean-ddd-core → *Where inter-aggregate business
+rules live*): *value when read once, supplier/source only when the model owns the cardinality.* The spawn loop
+draws N times — the model owns the cardinality — so handing it a *port-closure* (`randomnessOps::nextDouble`)
+was the half-measure: own the source as a domain collaborator, don't smuggle an effect-function over an adapter
+into the model's loop. `Dice.pick(List)` also *absorbs* the scale-and-clamp uniform-selection mechanic that
+`SpawnRule.pickScene` and `DayPhase.pickMessage` had each duplicated, and `roll(Chance)` keeps `Chance` (now in
+`core/model/dice/` beside `Dice`, which also breaks the `item`↔`dice` package cycle `roll(Chance)` would
+otherwise create) as the pure odds authority it asks.
+
+**Determinism — the port's whole justification — survives the reversal, achieved with a domain abstraction
+instead of a mocked port.** A **seeded** `Dice` (`SeededDice`) gives deterministic tests (and opens a
+reproducible-world-from-a-seed feature later — noted, deferred; no config-seed is wired now), while production
+uses a thread-safe `SystemDice` (`ThreadLocalRandom.current()` per draw — safe to share across the boot/seeder
+and ticker threads that roll dice). Tests script a tiny `ScriptedDice` (fixed roll booleans + pick indices),
+which reads cleaner than computing what a seed produces and keeps the exact-placement / draw-ordering
+assertions. The move also **avoids a global-state trap**: a "domain service over `ThreadLocalRandom.current()`"
+would put global mutable state in `core/model/` (a Clean-Arch smell); an injected/seedable `Dice` keeps the
+dependency explicit and confines the entropy to one clearly-labelled `SystemDice`.
+
+**The principled line — and the asymmetry with the time port is the lesson, not an inconsistency.** Wall-clock
+*time* is the world *outside* the game, delivered as a **value read once** in the shell, so it stays an
+infrastructure port (`GameTimeSourceOutputPort`); *dice* are *part* of the game, so they are a domain
+capability the model owns. And the **id generator stays a port**: id-encoding is genuinely infrastructural (the
+NanoID alphabet is the generator's private concern, §2). So `ItemTemplate.spawnInto(Supplier<ItemId>, Dice)`
+deliberately mixes an infra-closure (ids, behind a port) with a domain collaborator (dice, not behind a port) —
+the two are not the same kind of thing, which is exactly why the old "two randomness roles on two ports"
+framing was wrong: identity and dice were never *the same role split in two*, but a *port concern* and a
+*domain concern* mistakenly filed together. **Sharpened boundary rule** (superseding the old "entropy is an
+output port"): *no infrastructure crosses into the model as a callable; the model's own domain collaborators
+(`Dice`) are fine; ports deliver values read in the shell.* (Promotion candidate, flagged not promoted: *an
+RPG's randomness is a domain `Dice` the model owns, not an output port; determinism is preserved by a seeded
+implementation; the discriminator against a port is "is the entropy part of the game or the world outside it,"
+and infrastructure never crosses into the model as a callable.*)
 
 **Read-only and read-write interactions over one shared scene presentation.** `[thread #2]`
 `Look` (read-only) and `move` (read-write, the first interaction to *update* an aggregate) both
@@ -1260,8 +1301,8 @@ save inside `doInTransaction` is version-checked — a concurrent observer that 
 surfaced as `OptimisticLockingError` and presented as "nothing to announce." This is the §5 *detector* lesson:
 the transaction boundary gives atomic rollback, the version gives the actual conflict detection (an earlier
 inside-transaction re-read was the *proxy* that §5 shows is toothless, and it was removed once the real detector
-landed). The random message pick runs *outside* the transaction (a pure choice with no persistence effect,
-exactly like the item-spawn rolls, §4). Persisting the watermark (rather than holding "last hour" in the ticker
+landed). The random message pick is made by an injected domain `Dice` (§4) and runs *outside* the transaction
+(a pure choice with no persistence effect, exactly like the item-spawn rolls). Persisting the watermark (rather than holding "last hour" in the ticker
 thread) is what makes it restart-safe: a `bye`/restart mid-dawn-hour does not re-announce. And the quiet poll —
 no phase, already past the watermark, or the concurrent-loss — is always a *presented* outcome
 (`presentNothingToAnnounce`), never a silent return, so "exactly one `present*` per run" (§4) holds even for the
@@ -1390,27 +1431,31 @@ tests, where before the logic was only reachable through the use-case test. That
 for side-effect-free functions: safe to call, trivial to test. (Promotion candidate for the methodology —
 flagged, not promoted, per Prompt-4 discipline.)
 
-**The spawn loop resolved — the whole stochastic policy pushed onto the model, fed suppliers.** `[thread #1]`
-`[thread #2]` The spawn roll loop is now pushed down. The use case had been driving the algorithm itself — `item.getTemplate().getSpawnRule()`,
-then a `maxTries` loop interleaving `isHitBy`/`pickScene` with the randomness and id-generator *port* calls.
-The fix is the **batch form**: `SpawnRule.rollPlacements(DoubleSupplier)` owns the entire placement policy (the
-attempt count, the hit and scene decisions, *and* the draw-ordering — one draw per attempt, a second only on a
-hit, knowledge that had leaked into the use case); `ItemTemplate.spawnInto(Supplier<ItemId>, DoubleSupplier)`
-turns each placement into a valid `Item`, pulling an id *only for an actual placement* (no eager minting for
-misses); the use-case-private `AuthoredItem` forwards `spawnInto` one level, exactly as it forwards
-`candidateScenesNotIn`. `spawnItems` collapses to a loop that adapts the two output ports to suppliers
-(`idGeneratorOps::generateItemId`, `randomnessOps::nextDouble`) and collects — pure orchestration.
+**The spawn loop resolved — the whole stochastic policy pushed onto the model, fed a `Dice` and an id
+supplier.** `[thread #1]` `[thread #2]` The spawn roll loop is now pushed down. The use case had been driving
+the algorithm itself — `item.getTemplate().getSpawnRule()`, then a `maxTries` loop interleaving
+`isHitBy`/`pickScene` with the randomness and id-generator *port* calls. The fix is the **batch form**:
+`SpawnRule.rollPlacements(Dice)` owns the entire placement policy (the attempt count, the hit and scene
+decisions, *and* the ordering — one roll per attempt, a pick only on a hit, knowledge that had leaked into the
+use case); `ItemTemplate.spawnInto(Supplier<ItemId>, Dice)` turns each placement into a valid `Item`, pulling
+an id *only for an actual placement* (no eager minting for misses); the use-case-private `AuthoredItem`
+forwards `spawnInto` one level, exactly as it forwards `candidateScenesNotIn`. `spawnItems` collapses to a loop
+that holds the `Dice` (a domain collaborator) and adapts the id-generator output port to a supplier
+(`idGeneratorOps::generateItemId`) and collects — pure orchestration.
 
-This is game-clean's instance of the now-promoted doctrine: the computation lives in the domain, fed values
-and JDK suppliers, never ports; the use case keeps the orchestration (§3's boundary currency one layer in —
-values/suppliers inward, valid model out). The general rule — functional core / imperative shell, the home
-test, value-by-default / supplier-only-when-the-core-owns-the-cardinality, and why the instability objection
-*dissolves* rather than relocates — lives canonically in `clean-ddd-core` → *Where inter-aggregate business
-rules live*, promoted out of this project and not restated here. `SpawnRule` needed a `DoubleSupplier` for
-exactly the cardinality the rule names — one draw per attempt, a second only on a hit, a count the domain owns
-— so a *value* would not do here, unlike the day-of-week in the module's `customer.buy` example. The
-`maxTries` leak closes; the "rolls run outside the transaction" property is untouched, since the use case
-still chooses *where* to call `spawnInto`.
+This is game-clean's instance of the now-promoted doctrine: the computation lives in the domain, fed values,
+JDK suppliers, and the model's own collaborators, never infrastructure ports; the use case keeps the
+orchestration (§3's boundary currency one layer in — values inward, valid model out). The general rule —
+functional core / imperative shell, the home test, value-by-default /
+supplier-or-source-only-when-the-core-owns-the-cardinality, and why the instability objection *dissolves*
+rather than relocates — lives canonically in `clean-ddd-core` → *Where inter-aggregate business rules live*,
+promoted out of this project and not restated here. **The draw source evolved from a `DoubleSupplier` to a
+domain `Dice`** (§4's reversal): a supplier was first reached for because `SpawnRule` owns *exactly the
+cardinality* the rule names (one roll per attempt, a pick only on a hit, a count the domain owns), so a *value*
+would not do — but the cardinality argument's conclusion is to own the **source** outright as a domain `Dice`,
+not to thread a port-closure (`randomnessOps::nextDouble`) through the loop. The `maxTries` leak closes; the
+"rolls run outside the transaction" property is untouched, since the use case still chooses *where* to call
+`spawnInto`.
 
 **Why `AuthoredItem` is *not* promoted to the model.** It looks like it embodies a Domain-Entity rule once it
 has `spawnInto`, but it does not — it *forwards* to `ItemTemplate`, which already is the domain model, and a
@@ -1495,8 +1540,11 @@ bounded — a `GameDate` is unreachable except by placing an instant.
 `placeInstant` takes a plain `long`, so the whole calendar is unit-testable with no port, clock, or database.
 Two pieces are parked with their shapes already chosen. (1) When time becomes a *live* query, `now` enters as
 an **output port** — the wall-clock is non-deterministic infrastructure, so stubbing it keeps the use case
-deterministic, exactly the role `RandomnessOperationsOutputPort` plays for spawning (§4); the persisted real
-epoch is the anchor that port's readings are measured against. (2) The authored `calendar:` block is *world
+deterministic; the persisted real epoch is the anchor that port's readings are measured against. (This time
+port and game *dice* sit on opposite sides of a deliberate line — see §4: wall-clock time is the world outside
+the game, a value read once, so it stays a port; dice are part of the game, a domain capability the model owns.
+An earlier version of this note compared the time port to a now-deleted randomness *port*; that comparison no
+longer holds, which is itself the §4 lesson.) (2) The authored `calendar:` block is *world
 content*, so it flows through the existing seed carrier and is constructed into a `GameCalendar` at the
 `InitializeGame` gate (§3/§4 — invalid-capable carrier in, valid model out), distinct from operational
 `game.*` configuration. A consequence worth stating because it confirms the wall-clock-derived design: closing

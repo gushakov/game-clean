@@ -5,13 +5,13 @@ import com.github.gameclean.core.model.calendar.GameDate;
 import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.model.daytime.DayPhase;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
+import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
-import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -35,8 +35,8 @@ import java.util.Optional;
  * <p><b>The patterns this composes are not new.</b> A missing clock is an anticipated precondition, handled by
  * <b>branch-and-present</b> ({@code presentGameNotInitialized}) and a {@code return} — never thrown into the
  * catch-all (design-notes §4). The random message pick runs <em>outside</em> the transaction (a pure choice
- * with no persistence effect, exactly like the item-spawn rolls), with the entropy injected through
- * {@link RandomnessOperationsOutputPort} so the interaction stays deterministic under test.
+ * with no persistence effect, exactly like the item-spawn rolls), made by an injected {@link Dice} — the
+ * game's own source of chance — so the interaction stays deterministic under test (a seeded or scripted dice).
  *
  * <p><b>Concurrency is arbitrated by the aggregate's version, not the transaction boundary.</b> The boundary
  * gives atomic rollback, not isolation — two observers could both read the log as pending and both write
@@ -69,7 +69,7 @@ public class AnnounceTimeOfDayUseCase implements AnnounceTimeOfDayInputPort {
     GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
     GameTimeSourceOutputPort gameTimeSourceOps;
-    RandomnessOperationsOutputPort randomnessOps;
+    Dice dice;
     TransactionOperationsOutputPort txOps;
 
     @Override
@@ -104,7 +104,7 @@ public class AnnounceTimeOfDayUseCase implements AnnounceTimeOfDayInputPort {
             // effect) — the same place the item-spawn rolls run. The advanced log carries the version we read,
             // so the write below is checked against it; no re-read inside the transaction is needed.
             DayPhase phase = beginning.get();
-            String message = phase.pickMessage(randomnessOps::nextDouble);
+            String message = phase.pickMessage(dice);
             DayPhaseLog advanced = log.announceThrough(absoluteHour);
 
             // One write, one atomic unit: save the advance (optimistically version-checked) and announce the

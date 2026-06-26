@@ -147,14 +147,14 @@ forwarded to the application.
 
 ```
 core/                       framework-free: the heart of the application
-  model/{aggregate}/        aggregate roots + value objects (scene, player, item)
-  port/{operation}/         output ports (persistence, transaction, id, randomness, seed, …)
+  model/{aggregate}/        aggregate roots + value objects (scene, player, item, dice)
+  port/{operation}/         output ports (persistence, transaction, id, seed, …)
   usecase/{goal}/           use cases + their input/presenter ports; subcases as peers
 infrastructure/             adapters + Spring wiring
   persistence/              Spring Data JDBC repos, DB entities, MapStruct mappers
   terminal/                 JLine config, console session, command parsing, presenters
   world/                    YAML seed reader + seeder (authored content → through the domain)
-  transaction/  id/  randomness/
+  transaction/  id/
 ```
 
 Built so far: game initialization, the interactive terminal shell, and the `look`,

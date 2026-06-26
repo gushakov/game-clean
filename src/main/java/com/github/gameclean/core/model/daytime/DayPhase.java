@@ -2,11 +2,11 @@ package com.github.gameclean.core.model.daytime;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.dice.Dice;
 import lombok.Value;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.function.DoubleSupplier;
 
 /**
  * A named, recurring moment of the game day — dawn, dusk — that begins at a fixed hour-of-day and carries the
@@ -25,11 +25,11 @@ import java.util.function.DoubleSupplier;
  * given calendar (below its {@code hoursPerDay}) is an inter-model consistency rule checked once at load — the
  * same split scenes use for their exit targets — so a {@code DayPhase} holds no calendar reference of its own.
  *
- * <p>It owns the whole message-selection policy: {@link #pickMessage(DoubleSupplier)} chooses uniformly among
- * its lines. The randomness is supplied as a plain {@link DoubleSupplier}, never a port, so the use case
- * adapts its randomness output port to that supplier and the phase stays framework-free and deterministic
- * under test — exactly as {@link com.github.gameclean.core.model.item.SpawnRule#pickScene(double)} does for
- * scene selection.
+ * <p>It owns the whole message-selection policy: {@link #pickMessage(Dice)} chooses uniformly among its lines.
+ * The choice is made by a {@link Dice} — the game's own source of chance (a domain collaborator, not a port) —
+ * so the phase stays framework-free and deterministic under test (a
+ * {@link com.github.gameclean.core.model.dice.SeededDice}, or a scripted dice, gives a fixed pick), exactly as
+ * {@link com.github.gameclean.core.model.item.SpawnRule} rolls its placements with a dice.
  */
 @Value
 public class DayPhase {
@@ -53,21 +53,16 @@ public class DayPhase {
     }
 
     /**
-     * Selects, uniformly, the line to announce for this phase, scaling the draw across the messages. The draw
-     * is expected in {@code [0, 1)}; the top of the range is clamped so a draw arbitrarily close to 1 still
-     * selects the last message rather than running off the end (the same clamp {@code SpawnRule.pickScene}
-     * applies).
+     * Selects, uniformly, the line to announce for this phase by asking the given {@link Dice} to pick among
+     * its messages. The uniform-pick mechanic (scale and clamp) lives on the dice, so the phase only names
+     * <em>what</em> is being chosen among.
      *
-     * @param draws a source of one uniform random draw in {@code [0, 1)}
+     * @param dice the dice to pick with
      * @return the chosen message
      */
-    public String pickMessage(DoubleSupplier draws) {
-        Objects.requireNonNull(draws, "draw source must not be null");
-        int index = (int) (draws.getAsDouble() * messages.size());
-        if (index >= messages.size()) {
-            index = messages.size() - 1;
-        }
-        return messages.get(index);
+    public String pickMessage(Dice dice) {
+        Objects.requireNonNull(dice, "dice must not be null");
+        return dice.pick(messages);
     }
 
     private static String requireNonBlank(String value, String what) {

@@ -3,7 +3,8 @@ package com.github.gameclean.core.usecase.initialize;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
-import com.github.gameclean.core.model.item.Chance;
+import com.github.gameclean.core.model.dice.Chance;
+import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.ItemTemplate;
@@ -20,7 +21,6 @@ import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutput
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
-import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ItemEntry;
@@ -37,7 +37,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -92,7 +91,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
     IdGeneratorOperationsOutputPort idGeneratorOps;
-    RandomnessOperationsOutputPort randomnessOps;
+    Dice dice;
     TransactionOperationsOutputPort txOps;
 
     @Override
@@ -273,7 +272,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     private List<Item> spawnItems(List<AuthoredItem> authoredItems) {
         List<Item> spawned = new ArrayList<>();
         for (AuthoredItem item : authoredItems) {
-            spawned.addAll(item.spawnInto(idGeneratorOps::generateItemId, randomnessOps::nextDouble));
+            spawned.addAll(item.spawnInto(idGeneratorOps::generateItemId, dice));
         }
         return spawned;
     }
@@ -283,8 +282,8 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
      * unknown spawn scene) with its always-valid {@link ItemTemplate}. The handle is not a domain identity,
      * so it stays out of the model. It forwards {@link #candidateScenesNotIn} and {@link #spawnInto} to the
      * template one level, so the use case tells the holder rather than reaching through it into the template
-     * and rule: the application keeps only the orchestration (looping authored items, adapting the randomness
-     * and id-generator ports to suppliers, collecting), while the whole spawn policy stays on the model.
+     * and rule: the application keeps only the orchestration (looping authored items, holding the dice and
+     * adapting the id-generator port to a supplier, collecting), while the whole spawn policy stays on the model.
      */
     @Value
     private static class AuthoredItem {
@@ -295,8 +294,8 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             return template.candidateScenesNotIn(knownSceneIds);
         }
 
-        List<Item> spawnInto(Supplier<ItemId> ids, DoubleSupplier draws) {
-            return template.spawnInto(ids, draws);
+        List<Item> spawnInto(Supplier<ItemId> ids, Dice dice) {
+            return template.spawnInto(ids, dice);
         }
     }
 }

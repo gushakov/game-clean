@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure;
 
+import com.github.gameclean.core.model.dice.SystemDice;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
@@ -10,7 +11,6 @@ import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutput
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
-import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import com.github.gameclean.core.usecase.clock.AnnounceTimeOfDayInputPort;
@@ -81,12 +81,11 @@ public class UseCaseConfig {
             GameClockRepositoryOperationsOutputPort gameClockRepositoryOps,
             DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps,
             IdGeneratorOperationsOutputPort idGeneratorOps,
-            RandomnessOperationsOutputPort randomnessOps,
             TransactionOperationsOutputPort txOps) {
         return new InitializeGameUseCase(
                 new LoggingInitializeGamePresenter(), seedSourceOps, playerOps, playerRepositoryOps,
                 sceneOps, itemOps, gameClockRepositoryOps, dayPhaseLogRepositoryOps, idGeneratorOps,
-                randomnessOps, txOps);
+                new SystemDice(), txOps);
     }
 
     @Bean
@@ -159,11 +158,10 @@ public class UseCaseConfig {
             GameClockRepositoryOperationsOutputPort gameClockRepositoryOps,
             DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps,
             GameTimeSourceOutputPort gameTimeSourceOps,
-            RandomnessOperationsOutputPort randomnessOps,
             TransactionOperationsOutputPort txOps) {
         TerminalAnnounceTimeOfDayPresenter presenter = new TerminalAnnounceTimeOfDayPresenter(console);
         return new AnnounceTimeOfDayUseCase(presenter, calendarSourceOps, dayPhaseScheduleSourceOps,
-                gameClockRepositoryOps, dayPhaseLogRepositoryOps, gameTimeSourceOps, randomnessOps, txOps);
+                gameClockRepositoryOps, dayPhaseLogRepositoryOps, gameTimeSourceOps, new SystemDice(), txOps);
     }
 
     @Bean
