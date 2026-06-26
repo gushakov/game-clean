@@ -2,9 +2,11 @@ package com.github.gameclean.core.model.scene;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.experimental.FieldDefaults;
 
 import java.util.HashSet;
 import java.util.List;
@@ -25,14 +27,15 @@ import java.util.Set;
  */
 @Getter
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class Scene {
 
     @EqualsAndHashCode.Include
-    private final SceneId id;
-    private final String name;
-    private final String shortDescription;
-    private final String fullDescription;
-    private final List<Exit> exits;
+    SceneId id;
+    String name;
+    String shortDescription;
+    String fullDescription;
+    List<Exit> exits;
 
     @Builder
     public Scene(SceneId id, String name, String shortDescription, String fullDescription, List<Exit> exits) {

@@ -16,8 +16,8 @@ import lombok.Value;
 @Value
 public class Month {
 
-    private final String name;
-    private final String description;
+    String name;
+    String description;
 
     public Month(String name, String description) {
         this.name = requireNonBlank(name, "month name");

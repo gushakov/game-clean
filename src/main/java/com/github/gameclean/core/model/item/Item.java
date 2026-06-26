@@ -3,9 +3,11 @@ package com.github.gameclean.core.model.item;
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.experimental.FieldDefaults;
 
 import java.util.Locale;
 import java.util.Objects;
@@ -31,13 +33,14 @@ import java.util.Objects;
  */
 @Getter
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class Item {
 
     @EqualsAndHashCode.Include
-    private final ItemId id;
-    private final SceneId location;
-    private final String shortDescription;
-    private final String fullDescription;
+    ItemId id;
+    SceneId location;
+    String shortDescription;
+    String fullDescription;
 
     @Builder
     public Item(ItemId id, SceneId location, String shortDescription, String fullDescription) {

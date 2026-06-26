@@ -19,8 +19,8 @@ import lombok.Value;
 @Value
 public class Exit {
 
-    private final String name;
-    private final SceneId target;
+    String name;
+    SceneId target;
 
     public Exit(String name, SceneId target) {
         String trimmed = DomainValidation.requireNonNull(name, "exit name must not be null").strip();

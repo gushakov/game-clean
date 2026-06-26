@@ -2,7 +2,9 @@ package com.github.gameclean.infrastructure.terminal.render;
 
 import com.github.gameclean.core.model.calendar.GameCalendar;
 import com.github.gameclean.core.model.calendar.GameDate;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.jline.utils.AttributedStringBuilder;
 import org.jline.utils.AttributedStyle;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,12 +29,13 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class CalendarRenderer {
 
     private static final AttributedStyle NAME = AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN).bold();
     private static final AttributedStyle NUMBER = AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW).bold();
 
-    private final Console console;
+    Console console;
 
     /**
      * Renders the current date: the weekday and month names, the ordinal day-of-month, the absolute year, and

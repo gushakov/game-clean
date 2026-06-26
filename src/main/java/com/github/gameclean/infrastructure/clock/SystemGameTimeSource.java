@@ -1,6 +1,8 @@
 package com.github.gameclean.infrastructure.clock;
 
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
+import lombok.AccessLevel;
+import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -19,10 +21,11 @@ import java.time.Instant;
  * a backwards clock adjustment can never make the session appear to run negative time.
  */
 @Component
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class SystemGameTimeSource implements GameTimeSourceOutputPort {
 
-    private final Clock clock;
-    private final Instant sessionStart;
+    Clock clock;
+    Instant sessionStart;
 
     public SystemGameTimeSource() {
         this(Clock.systemUTC());

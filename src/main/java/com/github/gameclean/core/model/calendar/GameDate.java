@@ -24,11 +24,11 @@ import lombok.Value;
 @Value
 public class GameDate {
 
-    private final int year;
-    private final int monthIndex;
-    private final int dayIndex;
-    private final int hourIndex;
-    private final int secondOfHour;
+    int year;
+    int monthIndex;
+    int dayIndex;
+    int hourIndex;
+    int secondOfHour;
 
     public GameDate(int year, int monthIndex, int dayIndex, int hourIndex, int secondOfHour) {
         this.year = requireNonNegative(year, "game date year");

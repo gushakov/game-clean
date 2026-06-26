@@ -3,6 +3,7 @@ package com.github.gameclean.core.usecase.initialize;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
+import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.Player;
@@ -10,7 +11,6 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
-import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
@@ -18,7 +18,6 @@ import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
-import com.github.gameclean.core.port.randomness.RandomnessOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsError;
@@ -32,6 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -60,10 +60,11 @@ import static org.mockito.Mockito.*;
  * <p>The interaction presents <em>once</em>: every happy combination (world seeded or already present,
  * player created or already present, items spawned or already spawned) ends in the single
  * {@code presentGameInitialized} success, so the tests assert that one outcome rather than per-phase
- * presentations. Spawning is non-deterministic, so the randomness port is stubbed with a fixed sequence of
- * draws and the id generator with fixed ids, making placements reproducible. The transaction port is stubbed
- * to run its action inline and fire after-commit callbacks immediately; the persistence-failure cases instead
- * let the action's error propagate, exactly as the real adapter would.
+ * presentations. Spawning is non-deterministic, so the {@link ScriptedDice} is scripted with fixed rolls and
+ * picks — the scene pick followed by the id-glyph picks the model now mints each {@code ItemId} from — making
+ * both placements and ids reproducible. The transaction port is stubbed to run its action inline and fire
+ * after-commit callbacks immediately; the persistence-failure cases instead let the action's error propagate,
+ * exactly as the real adapter would.
  */
 @ExtendWith(MockitoExtension.class)
 class InitializeGameUseCaseTest {
@@ -84,10 +85,8 @@ class InitializeGameUseCaseTest {
     private GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     @Mock
     private DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
-    @Mock
-    private IdGeneratorOperationsOutputPort idGeneratorOps;
-    @Mock
-    private RandomnessOperationsOutputPort randomnessOps;
+    @Spy
+    private ScriptedDice dice = new ScriptedDice();
     @Mock
     private TransactionOperationsOutputPort txOps;
 
@@ -184,23 +183,22 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
-        // One item over two candidate scenes, always-hit chance, one try: hit (0.0 < 1), then pick draw
-        // 0.6 selects candidate index (int)(0.6 * 2) = 1, i.e. scn2.
-        when(randomnessOps.nextDouble()).thenReturn(0.0, 0.6);
-        when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
+        // One item over two candidate scenes, always-hit chance, one try: roll hits, pick scene index 1
+        // (scn2), then mint the id by picking 8 alphabet glyphs — all index 0 ('0') -> "itm00000000".
+        dice.willRoll(true).willPick(1, 0, 0, 0, 0, 0, 0, 0, 0);
         runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();
 
         ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
         verify(itemOps).saveItem(saved.capture());
-        assertThat(saved.getValue().getId()).isEqualTo(new ItemId("itmAAA"));
+        assertThat(saved.getValue().getId()).isEqualTo(new ItemId("itm00000000"));
         assertThat(saved.getValue().getLocation()).isEqualTo(new SceneId("scn2"));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Item>> presentedItems = ArgumentCaptor.forClass(List.class);
         verify(presenter).presentGameInitialized(anyList(), eq(new PlayerId("plr1")), presentedItems.capture());
-        assertThat(presentedItems.getValue()).extracting(i -> i.getId().getValue()).containsExactly("itmAAA");
+        assertThat(presentedItems.getValue()).extracting(i -> i.getId().getValue()).containsExactly("itm00000000");
     }
 
     @Test
@@ -211,9 +209,9 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         when(itemOps.itemsAlreadySpawned()).thenReturn(true);
-        // The rolls still happen (outside the transaction), but the guard means nothing is saved.
-        when(randomnessOps.nextDouble()).thenReturn(0.0, 0.0);
-        when(idGeneratorOps.generateItemId()).thenReturn(new ItemId("itmAAA"));
+        // The rolls still happen (outside the transaction) — scene pick + 8 id glyphs — but the guard means
+        // nothing is saved.
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
         runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemInitializesGame();

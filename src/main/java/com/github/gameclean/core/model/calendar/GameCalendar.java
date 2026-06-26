@@ -38,11 +38,11 @@ public class GameCalendar {
     /** The game year the epoch instant (zero elapsed seconds) maps to — the first day of this year. */
     public static final int EPOCH_YEAR = 1000;
 
-    private final int secondsPerHour;
-    private final int hoursPerDay;
-    private final int daysPerMonth;
-    private final List<Weekday> week;
-    private final List<Month> months;
+    int secondsPerHour;
+    int hoursPerDay;
+    int daysPerMonth;
+    List<Weekday> week;
+    List<Month> months;
 
     public GameCalendar(int secondsPerHour, int hoursPerDay, int daysPerMonth,
                         List<Weekday> week, List<Month> months) {

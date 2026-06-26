@@ -4,7 +4,9 @@ import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.usecase.explore.CurrentScenePresenterOutputPort;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.jline.utils.AttributedStringBuilder;
 import org.jline.utils.AttributedStyle;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -29,9 +31,10 @@ import java.util.stream.Collectors;
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class CurrentSceneRenderer {
 
-    private final Console console;
+    Console console;
 
     /**
      * Renders a scene: its name, full description, the sorted list of exit names, and — when any lie on the

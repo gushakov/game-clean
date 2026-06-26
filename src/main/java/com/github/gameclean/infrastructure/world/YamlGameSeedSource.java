@@ -4,7 +4,9 @@ import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsError;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.infrastructure.GameConfigurationProperties;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -34,10 +36,11 @@ import java.io.InputStream;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class YamlGameSeedSource implements GameSeedSourceOperationsOutputPort {
 
-    private final GameSeedYamlReader reader;
-    private final GameConfigurationProperties properties;
+    GameSeedYamlReader reader;
+    GameConfigurationProperties properties;
 
     @Override
     public GameSeed loadGameSeed() {

@@ -1,5 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.command;
 
+import lombok.AccessLevel;
+import lombok.experimental.FieldDefaults;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +32,7 @@ import java.util.*;
  */
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class CommandParser {
 
     /** A verb's factory: build a command from the argument tokens, or return {@code null} if they do not fit. */
@@ -38,7 +41,7 @@ public class CommandParser {
         Command create(List<String> args);
     }
 
-    private final Map<String, CommandFactory> registry = new HashMap<>();
+    Map<String, CommandFactory> registry = new HashMap<>();
 
     public CommandParser() {
         // 'look' alone looks around; 'look <words>' examines the described target.

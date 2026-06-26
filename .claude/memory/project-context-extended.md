@@ -279,6 +279,12 @@ Flyway migration results — never to read or mutate business data.
   commons-lang3. Equality by id for aggregate roots (`@EqualsAndHashCode(onlyExplicitlyIncluded
   = true)` + `@Include` on the id), by value for VOs. `@Builder` on the validating constructor,
   never on the class.
+- **No explicit `private final` on fields — Lombok sets the modifiers.** Every class elides the redundant
+  modifiers: VOs via `@Value` (which implies them), and every other class (aggregates, adapters, renderers,
+  use cases, presenters, `ConsoleSession`, `CommandParser`, config) via a class-level
+  `@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)`. Fields are declared bare (`Console console;`);
+  `private static final` constants keep their explicit modifiers (`@FieldDefaults` only touches instance
+  fields). A genuinely mutable field would carry `@NonFinal` — none currently do.
 - Output ports throw an **unchecked** `*OperationsError` (`extends RuntimeException`), caught at the
   use case's single outermost checkpoint. Unchecked so persistence actions compose as plain
   `Runnable`/`Supplier` inside the transaction port and a thrown error triggers Spring's
