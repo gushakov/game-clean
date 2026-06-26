@@ -4,7 +4,6 @@ import com.github.gameclean.core.model.dice.SystemDice;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
-import com.github.gameclean.core.port.id.IdGeneratorOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
@@ -80,11 +79,10 @@ public class UseCaseConfig {
             ItemRepositoryOperationsOutputPort itemOps,
             GameClockRepositoryOperationsOutputPort gameClockRepositoryOps,
             DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps,
-            IdGeneratorOperationsOutputPort idGeneratorOps,
             TransactionOperationsOutputPort txOps) {
         return new InitializeGameUseCase(
                 new LoggingInitializeGamePresenter(), seedSourceOps, playerOps, playerRepositoryOps,
-                sceneOps, itemOps, gameClockRepositoryOps, dayPhaseLogRepositoryOps, idGeneratorOps,
+                sceneOps, itemOps, gameClockRepositoryOps, dayPhaseLogRepositoryOps,
                 new SystemDice(), txOps);
     }
 

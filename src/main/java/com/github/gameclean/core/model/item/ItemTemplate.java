@@ -8,9 +8,7 @@ import lombok.Value;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
-import java.util.function.Supplier;
 
 /**
  * An authored kind of item together with the rule by which it populates the world — the always-valid form
@@ -28,9 +26,9 @@ import java.util.function.Supplier;
 @Value
 public class ItemTemplate {
 
-    private final String shortDescription;
-    private final String fullDescription;
-    private final SpawnRule spawnRule;
+    String shortDescription;
+    String fullDescription;
+    SpawnRule spawnRule;
 
     public ItemTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule) {
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
@@ -54,26 +52,24 @@ public class ItemTemplate {
 
     /**
      * Spawns this template's instances into the world: rolls the {@link SpawnRule}'s placements with the given
-     * {@link Dice} and builds one always-valid {@link Item} per placement, each stamped with a fresh id pulled
-     * from the given supplier. Returns the instances in placement order, empty when no attempt hits.
+     * {@link Dice} and builds one always-valid {@link Item} per placement, each stamped with a fresh id minted
+     * from the <em>same</em> dice ({@link ItemId#mint(Dice)}). Returns the instances in placement order, empty
+     * when no attempt hits.
      *
-     * <p>The {@link Dice} is a domain collaborator (the game's own source of chance), and the id source is a
-     * plain {@link Supplier} the use case adapts from its id-generator <em>output port</em> — id-encoding is
-     * genuinely infrastructural, so it stays behind a port, while the dice do not. The template owns spawning
-     * end-to-end (how many instances, where, and how each is built); the use case keeps only the orchestration
-     * (looping authored items, holding the dice, adapting the id port, collecting). An id is pulled only for an
-     * actual placement, so a missed attempt mints nothing.
+     * <p>The {@link Dice} is the only collaborator — a domain capability the model owns. The template owns
+     * spawning end-to-end (how many instances, where, and how each — id and all — is built); there is no longer
+     * an id <em>output port</em> threaded in, because the model mints its own identities from its own dice. The
+     * use case keeps only the orchestration (looping authored items, holding the dice, collecting). An id is
+     * minted only for an actual placement, so a missed attempt mints nothing.
      *
-     * @param ids  source of freshly generated item ids — one is pulled per spawned instance
-     * @param dice the dice to roll the placements with
+     * @param dice the dice to roll the placements and mint the ids with
      * @return the spawned instances, one per successful attempt, in placement order
      */
-    public List<Item> spawnInto(Supplier<ItemId> ids, Dice dice) {
-        Objects.requireNonNull(ids, "item id source must not be null");
+    public List<Item> spawnInto(Dice dice) {
         List<SceneId> placements = spawnRule.rollPlacements(dice);
         List<Item> instances = new ArrayList<>(placements.size());
         for (SceneId location : placements) {
-            instances.add(instanceAt(ids.get(), location));
+            instances.add(instanceAt(ItemId.mint(dice), location));
         }
         return instances;
     }
