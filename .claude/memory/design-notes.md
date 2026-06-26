@@ -698,6 +698,76 @@ cases report readiness gaps to a **player** audience at *play* time — same inv
 audiences, two homes; merging them would be the same overload the system-seeder's logging presenter was kept
 apart to avoid (above). (Promotion candidate, flagged not promoted.)
 
+**The `select` subcase — sharing the *disambiguation* dialogue, orthogonally to `orient`.** `[thread #4]`
+`take`/`drop` will disambiguate a target exactly as `examine` does, so the dialogue is factored into the
+project's *second* subcase — and the factoring sharpened what a subcase *is*. A first cut handed the subcase
+its candidates as a `List<Item>` value and let the parent fetch them; that was **rejected**. A subcase is not
+a pure function over inputs the parent prepared — it is the **owner of a reusable scenario slice and its
+outcomes**, exactly as `orient` owns the whole "where does the player stand" slice (holding and calling its
+own ports, not handing back a half-resolved result). "Resolve which thing the player means among the available
+candidates" *includes deciding what those candidates are*, so the select subcase **holds the item port and
+provisions its own candidates**; the parent passes only the coordinate and drops its own item dependency
+(`examine` no longer touches persistence at all). Pushing the fetch up to the parent would fragment the shared
+slice and re-duplicate it across `examine`/`take` — the very thing extraction removes. (It also tightened the
+gate: provisioning *inside* the subcase lets the ordinal check run *before* any read, so a bad pick costs no
+fetch — a small improvement over the parent-fetches sketch.)
+
+**`select` ⟂ `orient` — composition, not the inheritance chain.** `[thread #2]` `[thread #4]` Disambiguating
+*which* (intent) is orthogonal to locating *where* (geospatial): a card to play, a spell to cast, a combat
+maneuver to choose involve no orientation. So `select` does **not** telescope `orient`, and
+`SelectTargetPresenterOutputPort` does **not** extend `OrientPlayerPresenterOutputPort` — the parent composes
+the two subcases *sequentially*, and one concrete presenter implements three **flat, narrow** ports (orient /
+select / parent-outcome), bound per role by the composition root, with the parent use case's presenter field
+typed to *only its own* outcome. This is the §6 composition-over-inheritance stance carried to the port layer:
+a `Select extends Orient` chain would assert a false is-a (select is-not-a orient); flat composition asserts
+none. The disambiguation outcomes (`presentNoSuchTarget`, the ambiguity menu, `presentItemNoLongerHere`, the
+two selection-gate misses) moved *off* `examine`'s port *onto* the select port; `examine` keeps only its
+terminal `presentItemDescription`. (Promotion candidate, flagged not promoted: *a shared sub-dialogue
+orthogonal to the shared prologue is composed beside it, not nested under it; presenter ports compose as flat
+narrow interfaces on one concrete presenter, never an inheritance chain that asserts a false is-a.*)
+
+**Values between procedures; suppliers only into the model — the direction the "can of worms" hides.**
+`[thread #4]` The provisioning question first reached for a `Function<…, List<Item>>` handed into the subcase —
+a category error worth recording. §10's dependency rejection passes `Supplier`s to the **model** (the
+functional core, e.g. `SpawnRule.rollPlacements`), never between use cases. A subcase is a **procedure** read
+as a Jacobson requirements spec; passing it a function inverts control and hides a chunk of the procedure
+behind a lambda, defeating the down-the-stripes readability the methodology exists to protect. The codebase
+already obeyed the rule without naming it (`examine` hands the offered tokens in as a **value**; only the model
+gets suppliers), so the discipline is: **values flow between procedures; functions terminate *into* the
+model.** With provisioning owned by the subcase the question is moot anyway — the subcase fetches, the parent
+passes a value coordinate. (Promotion candidate, flagged not promoted: *within the procedural shell, compose
+subcases with values and sequential calls; reserve function-passing for the shell→model boundary, and even
+there prefer a value unless the model owns the cardinality.*)
+
+**A plain `SceneId`, not a one-field request DTO — and why the asymmetry with `OrientPlayerResult` is
+principled.** `[thread #2]` The select subcase needs one coordinate (the scene to read), so it crosses as a
+**plain `SceneId`**, not a `SelectItemRequest` envelope. This is the methodology's own input-DTO rule applied
+honestly: *a DTO earns its place by carrying structure — a composite or a collection — not by wrapping a
+scalar that could be a plain parameter* (the same call that gave `look` a bare `playerId` and no `LookRequest`).
+The non-symmetry with `orient`'s returned `OrientPlayerResult` is the *same rule* giving opposite verdicts:
+`OrientPlayerResult` carries two things (player + scene) — a composite, earned; a one-`SceneId` request would
+not be. Matching the `…Request`/`…Result` names for symmetry's sake would violate the rule.
+
+**One concrete subcase now; the Template-Method base emerges at provisioner #2.** `[thread #1]` `[thread #4]`
+There is one provisioner today — items on the scene ground (`examine`, and later `take`, share it) — so there
+is one concrete `SelectSceneItemSubcase` with a private `provisionCandidates`, *not* an abstract base with a
+single subclass. When `drop` brings the **second** provisioner (an inventory, keyed on a `PlayerId`),
+`provisionCandidates` is extracted onto an `AbstractSelectTargetSubcase` as a `protected abstract` hook — a
+one-level **Template Method** whose concretes are genuine is-a target-selectors, the *legitimate* face of
+inheritance that the composition-over-inheritance heuristic guards the flip side of (it forbids stealing
+implementation through a base you are not a kind of; it does not forbid a true taxonomic specialization
+varying one hook bound at wiring time). Crucially, the **abstract base and its generic context type are the
+same deferred decision**: a request abstraction "to work generically" cannot be designed over one provisioner
+without guessing (fat DTO? sealed hierarchy? generic parameter?); two real context shapes (`SceneId`,
+`PlayerId`) make the right one obvious. So the plain-`SceneId` parameter and the concrete subcase are the
+*matched* choice — concrete subcase, concrete input — and both generalize together when the second instance
+lands; the localized cost (the select signature changes at that point) is the right time to introduce the
+abstraction, not before. Residual tension named for later: today's `SceneId` context presumes a *grounded*
+selection — a future non-grounded one (the card game) forces the generic context then, the same emergence
+beat. (Promotion candidate, flagged not promoted: *composition-over-inheritance is not absolute — a one-level
+Template Method varying a single hook, over genuine is-a subtypes bound at wiring time, is legitimate; defer
+both the base and its generic input until the second concrete makes the generalization visible.*)
+
 ## 5. Explicit transaction demarcation
 
 **Principle.** Transactions are demarcated *explicitly* through a

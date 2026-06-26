@@ -5,6 +5,8 @@ import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.explore.ExaminePresenterOutputPort;
+import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
+import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
@@ -49,7 +51,8 @@ import java.util.List;
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 @RequiredArgsConstructor
 @Slf4j
-public class TerminalExaminePresenter implements ExaminePresenterOutputPort {
+public class TerminalExaminePresenter
+        implements OrientPlayerPresenterOutputPort, SelectTargetPresenterOutputPort, ExaminePresenterOutputPort {
 
     OrientRenderer orientRenderer;
     ItemRenderer itemRenderer;

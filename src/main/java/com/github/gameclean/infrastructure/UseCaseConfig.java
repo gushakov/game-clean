@@ -30,6 +30,7 @@ import com.github.gameclean.core.usecase.guidance.GuidanceUseCase;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
+import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
@@ -133,7 +134,8 @@ public class UseCaseConfig {
         TerminalExaminePresenter presenter =
                 new TerminalExaminePresenter(orientRenderer, itemRenderer, console, affordanceContext);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
-        return new ExamineUseCase(presenter, orient, itemOps);
+        SelectSceneItemSubcase select = new SelectSceneItemSubcase(presenter, itemOps);
+        return new ExamineUseCase(presenter, orient, select);
     }
 
     @Bean
