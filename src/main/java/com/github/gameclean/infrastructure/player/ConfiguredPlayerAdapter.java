@@ -2,7 +2,9 @@ package com.github.gameclean.infrastructure.player;
 
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.infrastructure.GameConfigurationProperties;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Component;
 
 /**
@@ -21,9 +23,10 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class ConfiguredPlayerAdapter implements PlayerOperationsOutputPort {
 
-    private final GameConfigurationProperties properties;
+    GameConfigurationProperties properties;
 
     @Override
     public String currentPlayerId() {

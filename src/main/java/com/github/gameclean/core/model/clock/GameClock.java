@@ -1,9 +1,11 @@
 package com.github.gameclean.core.model.clock;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.experimental.FieldDefaults;
 
 /**
  * The world's accumulated game time — the single anchor from which the current {@code GameDate} is derived.
@@ -26,9 +28,10 @@ import lombok.Getter;
  */
 @Getter
 @EqualsAndHashCode
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class GameClock {
 
-    private final long accumulatedGameSeconds;
+    long accumulatedGameSeconds;
 
     @Builder
     public GameClock(long accumulatedGameSeconds) {

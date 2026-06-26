@@ -5,7 +5,9 @@ import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
@@ -36,11 +38,12 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class SpringPlayerRepositoryAdapter implements PlayerRepositoryOperationsOutputPort {
 
-    private final PlayerSpringDataRepository repository;
-    private final JdbcAggregateTemplate aggregateTemplate;
-    private final PlayerDbEntityMapper mapper;
+    PlayerSpringDataRepository repository;
+    JdbcAggregateTemplate aggregateTemplate;
+    PlayerDbEntityMapper mapper;
 
     @Override
     public Optional<Player> findPlayer(PlayerId id) {

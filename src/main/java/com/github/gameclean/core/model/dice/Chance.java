@@ -17,8 +17,8 @@ import lombok.Value;
 @Value
 public class Chance {
 
-    private final int numerator;
-    private final int denominator;
+    int numerator;
+    int denominator;
 
     public Chance(int numerator, int denominator) {
         if (denominator <= 0) {

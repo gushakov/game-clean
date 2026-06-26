@@ -7,6 +7,8 @@ import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPor
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsError;
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
 import com.github.gameclean.infrastructure.GameConfigurationProperties;
+import lombok.AccessLevel;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -40,11 +42,12 @@ import java.io.InputStream;
  */
 @Component
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class YamlCalendarSource implements CalendarSourceOperationsOutputPort,
         DayPhaseScheduleSourceOperationsOutputPort {
 
-    private final GameCalendar calendar;
-    private final DayPhaseSchedule dayPhases;
+    GameCalendar calendar;
+    DayPhaseSchedule dayPhases;
 
     public YamlCalendarSource(CalendarYamlReader reader, GameConfigurationProperties properties) {
         Resource location = properties.getTime().getCalendarLocation();

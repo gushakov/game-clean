@@ -1,7 +1,9 @@
 package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
@@ -27,9 +29,10 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class GameSeeder {
 
-    private final ApplicationContext applicationContext;
+    ApplicationContext applicationContext;
 
     public void seed() {
         InitializeGameInputPort initializeGame = applicationContext.getBean(InitializeGameInputPort.class);

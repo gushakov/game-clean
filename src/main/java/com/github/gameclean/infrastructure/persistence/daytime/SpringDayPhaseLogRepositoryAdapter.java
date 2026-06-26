@@ -5,7 +5,9 @@ import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -36,10 +38,11 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class SpringDayPhaseLogRepositoryAdapter implements DayPhaseLogRepositoryOperationsOutputPort {
 
-    private final DayPhaseLogSpringDataRepository repository;
-    private final DayPhaseLogDbEntityMapper mapper;
+    DayPhaseLogSpringDataRepository repository;
+    DayPhaseLogDbEntityMapper mapper;
 
     @Override
     public Optional<DayPhaseLog> findDayPhaseLog() {

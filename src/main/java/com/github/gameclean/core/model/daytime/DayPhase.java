@@ -34,9 +34,9 @@ import java.util.Objects;
 @Value
 public class DayPhase {
 
-    private final String name;
-    private final int hourOfDay;
-    private final List<String> messages;
+    String name;
+    int hourOfDay;
+    List<String> messages;
 
     public DayPhase(String name, int hourOfDay, List<String> messages) {
         this.name = requireNonBlank(name, "day phase name");

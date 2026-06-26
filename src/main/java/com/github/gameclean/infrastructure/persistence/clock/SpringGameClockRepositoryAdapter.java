@@ -4,7 +4,9 @@ import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
@@ -32,11 +34,12 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class SpringGameClockRepositoryAdapter implements GameClockRepositoryOperationsOutputPort {
 
-    private final GameClockSpringDataRepository repository;
-    private final JdbcAggregateTemplate aggregateTemplate;
-    private final GameClockDbEntityMapper mapper;
+    GameClockSpringDataRepository repository;
+    JdbcAggregateTemplate aggregateTemplate;
+    GameClockDbEntityMapper mapper;
 
     @Override
     public Optional<GameClock> findClock() {

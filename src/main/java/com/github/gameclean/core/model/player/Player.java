@@ -2,9 +2,11 @@ package com.github.gameclean.core.model.player;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.scene.SceneId;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.experimental.FieldDefaults;
 
 /**
  * The player — the aggregate root of the player aggregate.
@@ -23,11 +25,12 @@ import lombok.Getter;
  */
 @Getter
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class Player {
 
     @EqualsAndHashCode.Include
-    private final PlayerId id;
-    private final SceneId currentScene;
+    PlayerId id;
+    SceneId currentScene;
 
     @Builder
     public Player(PlayerId id, SceneId currentScene) {

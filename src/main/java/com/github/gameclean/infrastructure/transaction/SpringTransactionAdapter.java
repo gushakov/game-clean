@@ -3,7 +3,9 @@ package com.github.gameclean.infrastructure.transaction;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.transaction.TransactionOperationsError;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -48,10 +50,11 @@ import java.util.function.Supplier;
  */
 @RequiredArgsConstructor
 @Slf4j
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class SpringTransactionAdapter implements TransactionOperationsOutputPort {
 
-    private final TransactionTemplate transactionTemplate;
-    private final TransactionTemplate readOnlyTransactionTemplate;
+    TransactionTemplate transactionTemplate;
+    TransactionTemplate readOnlyTransactionTemplate;
 
     @Override
     public void doInTransaction(boolean readOnly, Runnable action) {

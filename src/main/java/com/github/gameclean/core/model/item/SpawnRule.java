@@ -32,9 +32,9 @@ import java.util.Set;
 @Value
 public class SpawnRule {
 
-    private final Chance chance;
-    private final int maxTries;
-    private final List<SceneId> candidateScenes;
+    Chance chance;
+    int maxTries;
+    List<SceneId> candidateScenes;
 
     public SpawnRule(Chance chance, int maxTries, List<SceneId> candidateScenes) {
         this.chance = DomainValidation.requireNonNull(chance, "spawn chance must not be null");

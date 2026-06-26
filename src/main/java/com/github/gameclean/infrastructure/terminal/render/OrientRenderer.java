@@ -3,7 +3,9 @@ package com.github.gameclean.infrastructure.terminal.render;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -21,9 +23,10 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class OrientRenderer {
 
-    private final Console console;
+    Console console;
 
     /** The acting player does not exist — a configuration or data fault, surfaced plainly. */
     public void renderPlayerNotFound(PlayerId playerId) {

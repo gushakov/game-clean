@@ -20,7 +20,7 @@ public class SceneId {
     /** Three-letter aggregate prefix for scenes. */
     public static final String PREFIX = "scn";
 
-    private final String value;
+    String value;
 
     public SceneId(String value) {
         String trimmed = DomainValidation.requireNonNull(value, "scene id must not be null").strip();

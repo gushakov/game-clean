@@ -16,8 +16,8 @@ import lombok.Value;
 @Value
 public class Weekday {
 
-    private final String name;
-    private final String description;
+    String name;
+    String description;
 
     public Weekday(String name, String description) {
         this.name = requireNonBlank(name, "weekday name");
