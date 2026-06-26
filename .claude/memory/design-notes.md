@@ -72,6 +72,21 @@ reviewer vigilance: `core ↛ infrastructure` (the headline boundary) and
 `core.model ↛ core.port` (the model depends on *no* other layer, not even ports — see
 §2).
 
+**The dependency rule is a *proxy* — relocation can satisfy it while defeating it.** `[thread #4]`
+`core ↛ infrastructure` is a *mechanical* check standing in for a *semantic* invariant: **the core must
+not be shaped by a delivery mechanism.** The two come apart the moment someone moves an infra type (a
+parser `Command`, the terminal's `AffordanceContext`) *into* `core` to make a forbidden edge compile —
+the build goes green while the invariant is *defeated*. So an edge that relocation makes legal is the tell
+that the **type is misfiled**, not that the coupling was harmless. The honest test is not "does it import
+infra" but **"would this type still make sense if a second adapter existed?"**: `ItemId`/`SceneId`/`Player`
+survive any driver (core); `Command`/`SelectCommand(ordinal)`/`AffordanceContext` are meaningful only to a
+line-oriented terminal (infra). The async ticker is the standing proof — it drives a use case with *no*
+`Command` at all, so the core's input ports are already device-neutral, and importing a command vocabulary
+would break that. (Surfaced rejecting a *core* `Conversation` interface for the conversation dispatcher,
+§9.) (Promotion candidate, flagged not promoted: *the dependency rule proxies "the core is not shaped by
+any delivery mechanism"; an edge that relocation makes legal means the type is misfiled — test by "would
+it survive a second adapter?"*)
+
 **The framework must never scan the core.** `@SpringBootApplication` roots component
 scanning at its *own* package, so the entry point's location is load-bearing: placed
 at the project root it would scan `core` too. It therefore lives in
@@ -1432,6 +1447,40 @@ the dispatch"), `bye` is handled by an early `if (command instanceof QuitCommand
 no-op `QuitCommand` arm purely for sealed-set exhaustiveness, and that dead arm is the honest signal that `bye`
 is the one command whose handling carries a loop-control effect the switch cannot express.
 
+**Resuming a multi-step conversation — substance (use case) vs. modality (infra), the container as the
+resumer map.** `[thread #4]` When a follow-up line must resume a pending dialogue (`examine`'s pick, and the
+same for `take`/`drop`), the §4 split decides the wiring: the use case is the conversation's **substance** —
+its semantic steps are the converging interaction methods (`playerExaminesChosenCandidate`) — while the
+**modality** (the affordance buffer, the continuation predicate, the resume routing) is a delivery-mechanism
+concern kept in infra. So we **"dress up" each use case as a conversation** with a thin *infra* handler
+(`Conversation { SelectionKind kind(); void resume(Command, List<String>); }`) declared in the composition
+root (the §6 ad-hoc-`new` convention, *named* — not anonymous-in-`@Bean` — so it is testable, grows a state
+machine for >2 steps, and can share a base), and we let the **DI container be the resumer map**:
+`ConsoleSession` injects `List<Conversation>` and matches the armed `kind()`, instead of a hand-maintained
+`kind→useCase` table that would duplicate wiring the container already holds. Each handler **looks its use
+case up from `ApplicationContext` per `resume`** — the established prototype-pull idiom (§6, `getBean` over
+`ObjectProvider`), because a singleton handler that *captured* its prototype use case would silently defeat
+the scope (scope is freshness *per lookup*; a `List<Conversation>` is injected once). The cast-and-call
+factors into an `AbstractSelectionConversation` (concretes vary only the use-case method), mirroring
+`AbstractSelectTargetSubcase` (§4) and emerging at the second conversation; the `continuedBy` predicate stays
+inline in the dispatcher until conversation #3 (one continuing on something other than a bare number) —
+staged emergence, so at `drop` a handler carries only `kind()`+`resume()`.
+
+**Why not a *core* `Conversation` the input ports implement.** `[thread #4]` The tempting unification —
+`*InputPort extends Conversation`, `resume` on the use case — was **rejected**: a *generic* `Conversation`
+must speak the routing vocabulary (`Command`), dragging the parser's delivery types into `core`; relocating
+`Command`/`AffordanceContext`/a `@ConversationKind` annotation inward to satisfy ArchUnit only *passes the
+proxy while defeating it* (§1). The device-neutral conversation vocabulary the core needs already exists —
+the converging interaction methods and their **primitive** parameters (`int ordinal, List<String>
+offeredTokens`); a core `Conversation`/`Command` type would be the reflexive envelope DTO + parallel
+hierarchy the methodology rejects (clean-ddd-core §8, applied on the input side), and routing would *still*
+need the active-conversation identity, which is infra session state. DCI agrees: the Context coordinates the
+interaction; it never makes domain participants speak the UI's input format. (Promotion candidate, flagged
+not promoted: *model a use case as a conversation's substance and its modality — affordance, continuation,
+resume routing — as a delivery-mechanism concern; dress the use case as an infra conversation handler at the
+composition root and let the DI container be the resumer registry; never give the core a `Conversation`
+interface, which would import the delivery vocabulary the core excludes.*)
+
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 
 This refines §4. An **inter-aggregate consistency rule** (every exit target resolves to an authored scene;
@@ -1495,6 +1544,40 @@ the id port-closure (#53):** `idGeneratorOps::generateItemId` was the one remain
 into a model method, and once the model rolls its own dice it mints its own ids too (`ItemId.mint(Dice)` via
 `Ids`), so `spawnInto` is fed *only* the domain `Dice`. The `maxTries` leak closes; the "rolls run outside the
 transaction" property is untouched, since the use case still chooses *where* to call `spawnInto`.
+
+**`Dice` sharpens the vague application-service / domain-service line — and testability is the operational
+litmus.** `[thread #2]` The use case is the **application service** (the imperative shell — orchestrate, hold
+ports, demarcate the tx, present); `Dice` is a **domain service** — a stateless domain operation
+(`roll(Chance)`, `pick(List)`) consumed by *several* aggregates' methods (`SpawnRule.rollPlacements`,
+`DayPhase.pickMessage`, `ItemId.mint`). That boundary is classically fuzzy — both are "stateless services" —
+and `Dice` makes it concrete on three axes:
+
+- **Inject-vs-`new`: testability is the litmus.** The model never does `new SystemDice()`; the composition
+  root does (`UseCaseConfig`), injects it into the use case (a `Dice dice` field), which *hands it to the
+  model* (`rollPlacements(dice)`). The forcing criterion is **testability** — substitute a
+  `SeededDice`/`ScriptedDice` and the domain logic is deterministic, both in the use-case test and in a direct
+  VO test. But testability is the *detector*, not the law: the law is **functional-core purity** (entropy is
+  an *input*, never something a domain method conjures) plus **no ambient global state in core**
+  (`ThreadLocalRandom` is sealed inside one labelled `SystemDice`, never reached for statically by a rule). A
+  domain rule you can't unit-test deterministically without infrastructure has an un-injected environment
+  dependency — the failing test is the signal, injection the fix.
+- **"Domain service" classifies the *logic*, not the *wiring*.** `Dice`'s type lives in `core/model/dice/`,
+  yet it is *wired by the composition root* and *flows through the application service*. Wiring location ≠
+  conceptual layer — conflating them is half the original vagueness.
+- **Consumption locus splits domain-service from port** — testability alone does not, since *both* are
+  injected and substitutable. A **domain service** is consumed *inside the model* (handed in as a collaborator
+  the model calls — `SpawnRule` rolls the dice); an **output port** is consumed *by the shell* (the use case
+  calls it and hands the *value* inward — `GameTimeSource.elapsedSessionSeconds()`). This operationalizes the
+  §4 *part-of-the-game vs world-outside* split: dice are part of the game → a domain service handed to the
+  model; wall-clock time is the world outside → a port called by the shell. The app service's whole
+  relationship to `Dice` is **provision, not computation** — hold and forward; a use case that *itself* rolled
+  the dice to decide a domain outcome would be domain logic leaking into the shell.
+
+(Promotion candidate, flagged not promoted: *resolve the application-service/domain-service boundary on two
+axes — testability is the litmus for inject-vs-`new` (a domain rule must be deterministically unit-testable,
+so its environment-coupled collaborators are injected, never `new`ed in the model), and consumption locus
+splits the injected collaborators (a domain service is consumed inside the model and handed in; an output port
+is consumed by the shell, its result handed in as a value). "Domain service" names the logic, not the wiring.*)
 
 **Why `AuthoredItem` is *not* promoted to the model.** It looks like it embodies a Domain-Entity rule once it
 has `spawnInto`, but it does not — it *forwards* to `ItemTemplate`, which already is the domain model, and a
