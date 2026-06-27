@@ -71,9 +71,21 @@ public class ItemRenderer {
         console.printError("That is no longer here.");
     }
 
-    /** The player typed a number with no disambiguation menu pending. */
-    public void renderNoPendingSelection() {
-        console.printError("There is nothing to choose right now. Try 'look <target>' to inspect something.");
+    /** Confirmation that the player has taken an item into their keeping. */
+    public void renderItemTaken(Item item) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.GREEN))
+                .append("You take %s".formatted(item.getShortDescription()));
+        console.write(sb);
+    }
+
+    /**
+     * The take lost a concurrent race — the item was there when chosen but another actor took it first, so this
+     * take was rejected. The write-side twin of {@link #renderItemNoLongerHere(ItemId)}; reads the same to the
+     * player.
+     */
+    public void renderItemGotAway(ItemId itemId) {
+        console.printError("Someone got there first — it is no longer here.");
     }
 
     /** The player picked a number outside the offered menu; the menu still stands. */

@@ -37,9 +37,10 @@ public interface SelectTargetSubcaseInputPort {
 
     /**
      * The player designates a target <em>by choosing from the candidates last offered</em> — the completion
-     * of a disambiguation. Resolves the pick against the offered tokens (empty → {@code presentNoPendingSelection};
-     * out of range → {@code presentNoSuchOption}), then re-provisions live and confirms the chosen one is
-     * still available (gone → {@code presentItemNoLongerHere}).
+     * of a disambiguation. Resolves the pick against the offered tokens (out of range → {@code presentNoSuchOption}),
+     * then re-provisions live and confirms the chosen one is still available (gone → {@code presentItemNoLongerHere}).
+     * An <em>empty</em> offer is a wiring precondition, not a player outcome — the dispatcher resumes only an armed
+     * conversation — so it throws to the parent's catch-all rather than presenting.
      *
      * @param ordinal       the 1-based menu number the player picked
      * @param offeredTokens the candidate id tokens last offered, in display order — supplied as a value by the

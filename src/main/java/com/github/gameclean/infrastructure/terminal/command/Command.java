@@ -9,11 +9,11 @@ package com.github.gameclean.infrastructure.terminal.command;
  * core ever knowing command syntax existed.
  *
  * <p>Implementations are the small closed set of intents the parser can produce: {@link LookCommand},
- * {@link ExamineCommand}, {@link SelectCommand}, {@link MoveCommand}, {@link TimeCommand}, {@link QuitCommand},
- * {@link UnknownCommand}. The {@code sealed} clause makes that closure explicit, so the console controller's
- * pattern-matching {@code switch} over a command is <em>exhaustive</em> — adding a new intent is a compile
- * error until every dispatch handles it, rather than silently falling through.
+ * {@link ExamineCommand}, {@link TakeCommand}, {@link SelectCommand}, {@link MoveCommand}, {@link TimeCommand},
+ * {@link QuitCommand}, {@link UnknownCommand}. The {@code sealed} clause makes that closure explicit, so the
+ * console controller's pattern-matching {@code switch} over a command is <em>exhaustive</em> — adding a new
+ * intent is a compile error until every dispatch handles it, rather than silently falling through.
  */
 public sealed interface Command
-        permits LookCommand, ExamineCommand, SelectCommand, MoveCommand, TimeCommand, QuitCommand, UnknownCommand {
+        permits LookCommand, ExamineCommand, TakeCommand, SelectCommand, MoveCommand, TimeCommand, QuitCommand, UnknownCommand {
 }

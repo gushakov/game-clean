@@ -28,9 +28,14 @@ import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
 import com.github.gameclean.core.usecase.guidance.GuidanceUseCase;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
+import com.github.gameclean.core.usecase.inventory.TakeInputPort;
+import com.github.gameclean.core.usecase.inventory.TakeUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
+import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
+import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
+import com.github.gameclean.infrastructure.terminal.conversation.TakeConversation;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
@@ -38,6 +43,7 @@ import com.github.gameclean.infrastructure.terminal.presenter.TerminalGuidancePr
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalTakePresenter;
 import com.github.gameclean.infrastructure.terminal.render.CalendarRenderer;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
@@ -45,6 +51,7 @@ import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
 import com.github.gameclean.infrastructure.world.LoggingInitializeGamePresenter;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
@@ -133,6 +140,44 @@ public class UseCaseConfig {
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneItemSubcase select = new SelectSceneItemSubcase(presenter, itemOps);
         return new ExamineUseCase(presenter, orient, select);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public TakeInputPort takeUseCase(
+            OrientRenderer orientRenderer,
+            ItemRenderer itemRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            ItemRepositoryOperationsOutputPort itemOps,
+            TransactionOperationsOutputPort txOps) {
+        // One presenter instance, shared with the orient and select subcases (as examine does), so every
+        // outcome — taken, got-away, the orient not-founds, the disambiguation outcomes — reaches the same one.
+        TerminalTakePresenter presenter =
+                new TerminalTakePresenter(orientRenderer, itemRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        SelectSceneItemSubcase select = new SelectSceneItemSubcase(presenter, itemOps);
+        return new TakeUseCase(presenter, orient, select, itemOps, txOps);
+    }
+
+    /**
+     * The selection conversations — singletons collected into {@code ConsoleSession}'s {@code List<Conversation>}
+     * (the container is the resumer map). Each "dresses up" its use case as a resumable dialogue and pulls a
+     * fresh prototype use case from the context per resume, so prototype scope is honoured (a captured prototype
+     * would silently defeat it). Named classes, not anonymous, so the Template-Method base and the cast/ordinal
+     * step stay unit-testable.
+     */
+    @Bean
+    public Conversation examineConversation(ApplicationContext applicationContext) {
+        return new ExamineConversation(applicationContext);
+    }
+
+    @Bean
+    public Conversation takeConversation(ApplicationContext applicationContext) {
+        return new TakeConversation(applicationContext);
     }
 
     @Bean

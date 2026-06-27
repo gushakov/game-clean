@@ -70,12 +70,15 @@ public class SelectSceneItemSubcase implements SelectTargetSubcaseInputPort {
 
     @Override
     public Item playerDesignatesChosenCandidate(int ordinal, List<String> offeredTokens, SceneId sceneId) {
-        // Resolve the pick against the offer handed in by the driving adapter — both miss cases are presented
-        // outcomes of this conversation. Gating here, before provisioning, so a bad pick costs no read.
+        // Precondition, not a player outcome: the conversation dispatcher resumes a selection only when one is
+        // armed, so an empty offer reaching here is a wiring fault. Throw to the parent's catch-all rather than
+        // presenting — presenting "no such option" would mislabel a programming error as a player mistake.
         if (offeredTokens.isEmpty()) {
-            presenter.presentNoPendingSelection();
-            throw new SubcaseAlreadyPresented();
+            throw new IllegalStateException(
+                    "select chosen-candidate invoked with no pending offer — the dispatcher must resume only an armed conversation");
         }
+        // Resolve the pick against the offer handed in by the driving adapter. An out-of-range pick is a real
+        // player outcome. Gating here, before provisioning, so a bad pick costs no read.
         if (ordinal < 1 || ordinal > offeredTokens.size()) {
             presenter.presentNoSuchOption(ordinal);
             throw new SubcaseAlreadyPresented();
