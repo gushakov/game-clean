@@ -37,26 +37,45 @@ import java.util.Objects;
  * state, so a candidate removed between offer and pick surfaces as an honest "no longer here" outcome instead of
  * a number silently pointing at a different item.
  *
+ * <p><b>It also remembers <em>which</em> conversation armed the offer</b> — a {@link SelectionKind} written
+ * alongside the tokens. With more than one number-continued dialogue ({@code examine}, {@code take}, …) the
+ * tokens alone are ambiguous: a bare number must resume the dialogue that armed it, not whichever armed last.
+ * Each presenter writes its own kind; the console matches it against the {@code Conversation} handlers to route
+ * the pick. The kind is still infrastructure-local — it names delivery-mechanism dialogues, never domain
+ * concepts.
+ *
  * <p><b>A non-empty buffer <em>is</em> "selection pending"</b> — there is no separate mode flag. The console
  * arms it on the ambiguous branch and abandons it (clears) on any non-selection command. Thread-confined to the
- * single input thread: the synchronous {@code examine} call writes it and the loop reads it on the same thread;
- * the asynchronous time ticker never touches it. Revisit only if a background actor ever offers selections.
+ * single input thread: the synchronous {@code examine}/{@code take} call writes it and the loop reads it on the
+ * same thread; the asynchronous time ticker never touches it. Revisit only if a background actor ever offers
+ * selections.
  */
 public class AffordanceContext {
 
+    private SelectionKind pendingKind;
     private List<String> pendingCandidates = List.of();
 
     /**
-     * Arms the buffer with the offered candidates, as raw id tokens, in the order the presenter displayed (and
-     * numbered) them.
+     * Arms the buffer with a conversation's offered candidates, as raw id tokens, in the order the presenter
+     * displayed (and numbered) them — tagged with the {@link SelectionKind} of the conversation that offered
+     * them so the player's next pick resumes that dialogue.
      */
-    public void offer(List<String> orderedCandidateTokens) {
+    public void offer(SelectionKind kind, List<String> orderedCandidateTokens) {
+        this.pendingKind = Objects.requireNonNull(kind, "kind must not be null");
         this.pendingCandidates = List.copyOf(Objects.requireNonNull(orderedCandidateTokens, "orderedCandidateTokens must not be null"));
     }
 
     /**
+     * @return the kind of conversation that armed the current offer, or {@code null} if no offer is pending. The
+     *         console matches this against the {@code Conversation} handlers to route a pick.
+     */
+    public SelectionKind kind() {
+        return pendingKind;
+    }
+
+    /**
      * @return the candidate id tokens currently offered, in display order — empty if no offer is pending. The
-     *         console hands this in to the {@code examine} use case as a value; the use case resolves the pick.
+     *         console hands this in to the resuming use case as a value; the use case resolves the pick.
      */
     public List<String> currentOffer() {
         return pendingCandidates;
@@ -64,6 +83,7 @@ public class AffordanceContext {
 
     /** Abandons any pending offer — called when the player does something other than pick a number. */
     public void clear() {
+        this.pendingKind = null;
         this.pendingCandidates = List.of();
     }
 }

@@ -6,7 +6,10 @@ import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
+import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
+import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
+import jakarta.annotation.PostConstruct;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -18,7 +21,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Primary (driving) adapter: the interactive player session — a blocking read loop on the main thread
@@ -42,13 +48,15 @@ import java.util.Optional;
  * parser never produces it (design-notes §9). {@code bye} is intercepted before the dispatch switch because it
  * must {@code break} the loop, which a switch arm cannot do without a flag.
  *
- * <p>It also holds the one piece of conversational state the design admits: a pending {@code examine}
- * disambiguation offer, in the shared {@link AffordanceContext} resource. When {@code examine} finds an
- * ambiguous target its presenter arms that buffer with the numbered candidates; on a subsequent bare number
+ * <p>It also holds the one piece of conversational state the design admits: a pending disambiguation offer,
+ * in the shared {@link AffordanceContext} resource, tagged with the {@link SelectionKind} of the conversation
+ * that armed it. With more than one number-continued dialogue ({@code examine}, {@code take}, ...) the offer
+ * must remember which dialogue it belongs to, so a bare number resumes that one; on a subsequent bare number
  * ({@link SelectCommand}) the console <em>only detects the selection intent</em> and delegates — it hands the
- * remembered offer to {@code playerExaminesChosenCandidate} as a value and lets the use case resolve the pick
- * and present every outcome. Any other command abandons the offer (clearing the buffer). The console makes no
- * selection decision and renders no selection outcome itself; remembering "what was just offered" is a
+ * remembered offer to the matching {@code Conversation} (the injected handlers are the resumer map) as a value
+ * and lets the resuming use case resolve the pick and present every outcome. Any other command abandons the
+ * offer (clearing the buffer); a stray number with nothing armed folds into the guidance nudge. The console
+ * makes no selection decision and renders no selection outcome itself; remembering "what was just offered" is a
  * delivery-mechanism concern that stays in this driving adapter, but acting on it is the use case's.
  *
  * <p>{@link #start()} blocks until {@code bye}. It is invoked by
@@ -73,6 +81,26 @@ public class ConsoleSession {
     CommandParser commandParser;
     AffordanceContext affordanceContext;
     ApplicationContext applicationContext;
+    List<Conversation> conversations;
+
+    /**
+     * Wiring-time completeness check: every {@link SelectionKind} must have a {@link Conversation} handler, so
+     * an armed offer can always be resumed. Spring collects the {@code Conversation} beans into
+     * {@link #conversations}; if a kind has no handler the application fails fast at startup rather than silently
+     * dropping the player's pick at runtime.
+     */
+    @PostConstruct
+    void assertEveryKindHasAConversation() {
+        Set<SelectionKind> handled = EnumSet.noneOf(SelectionKind.class);
+        for (Conversation conversation : conversations) {
+            handled.add(conversation.kind());
+        }
+        Set<SelectionKind> missing = EnumSet.allOf(SelectionKind.class);
+        missing.removeAll(handled);
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("No Conversation handler wired for selection kinds: " + missing);
+        }
+    }
 
     public void start() {
         boolean greeted = false;
@@ -121,7 +149,8 @@ public class ConsoleSession {
             switch (command) {
                 case LookCommand ignored -> lookAround();
                 case ExamineCommand examine -> examineTarget(examine.getTarget());
-                case SelectCommand select -> selectCandidate(select.getOrdinal());
+                case TakeCommand take -> takeTarget(take.getTarget());
+                case SelectCommand select -> selectCandidate(select);
                 case MoveCommand move -> move(move.getExitName());
                 case TimeCommand ignored -> checkTime();
                 case UnknownCommand unknown -> guide(unknown.getInput());
@@ -146,18 +175,31 @@ public class ConsoleSession {
 
     private void examineTarget(String target) {
         // Designate the thing by description; if it is ambiguous the use case presents a menu and its presenter
-        // arms the AffordanceContext, so the next bare number resolves (handled by selectCandidate).
+        // arms the AffordanceContext (kind EXAMINE), so the next bare number resolves (handled by selectCandidate).
         ExamineInputPort examineUseCase = applicationContext.getBean(ExamineInputPort.class);
         examineUseCase.playerExaminesTarget(target);
     }
 
-    private void selectCandidate(int ordinal) {
-        // The controller only detects the selection intent and delegates. It hands the use case the offer it
-        // last remembered (a value — dependency rejection) plus the pick; the use case resolves it and presents
-        // every outcome (nothing offered, no such option, no longer here, described). No decision or rendering
-        // happens here — that would be a Clean Architecture violation.
-        ExamineInputPort examineUseCase = applicationContext.getBean(ExamineInputPort.class);
-        examineUseCase.playerExaminesChosenCandidate(ordinal, affordanceContext.currentOffer());
+    private void takeTarget(String target) {
+        // Same idiom as examine: a fresh prototype use case per interaction. An ambiguous target makes the use
+        // case present a menu and arm the AffordanceContext (kind TAKE), so the next bare number resumes taking.
+        TakeInputPort takeUseCase = applicationContext.getBean(TakeInputPort.class);
+        takeUseCase.playerTakesTarget(target);
+    }
+
+    private void selectCandidate(SelectCommand command) {
+        // The controller only detects the selection intent and routes it — it decides and renders nothing. The
+        // container of Conversation beans IS the resumer map: pick the conversation whose kind matches the armed
+        // offer and let it resume on a fresh prototype use case, handing the remembered offer in as a value
+        // (dependency rejection). A bare number with nothing armed (or no handler for the armed kind) is stray
+        // input — fold it into the guidance nudge, like any unrecognized command.
+        SelectionKind armed = affordanceContext.kind();
+        conversations.stream()
+                .filter(conversation -> conversation.kind() == armed)
+                .findFirst()
+                .ifPresentOrElse(
+                        conversation -> conversation.resume(command, affordanceContext.currentOffer()),
+                        () -> guide(Integer.toString(command.getOrdinal())));
     }
 
     private void checkTime() {

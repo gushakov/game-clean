@@ -228,6 +228,22 @@ items inside `Scene` would both invent a false invariant and force every pickup 
 aggregate — the contention seed of `[thread #3]`. Minted minimal, like `Player`: id, location, two
 descriptions, nothing speculative.
 
+**`take` cashes the "mobile location" prediction — a sealed `Location` VO, not a nullable holder.** `[thread #1]`
+`[thread #3]` The boundary above *predicted* this ("on the ground now, in a player's possession once `take`
+arrives"), and `take` collected: `Item.location` generalized from a bare `SceneId` to a sealed `Location` —
+`OnGround(SceneId)` | `HeldBy(PlayerId)`. The *shape* is the always-valid discipline answering a modelling fork.
+A nullable `holder` beside the `SceneId` would split **one** concept — where the item is — across two fields
+bound by an exactly-one-set rule the constructor must police; the sealed VO makes that XOR **structurally
+impossible** (one case or the other, never both, never neither), and a pattern-matching `switch` over the two is
+exhaustively compiler-checked, so the future third case (inside a container, a corpse) cannot be silently
+forgotten at a mutate or persist site. The holder stays a `PlayerId` until NPCs force the generalization — the
+same emergence beat that kept `Player` to one field. The rejected third option — an inventory *list* on
+`Player` — is the **containment** error this very section argued against for `Scene`↔`Item`, seen from the
+other side: it would invent a false `Player`↔`Item` invariant and rewrite the whole player aggregate per
+pickup. (Promotion candidate, flagged not promoted: *model a value with a closed set of mutually-exclusive
+shapes as a sealed type, not co-existing nullable fields plus an XOR guard — the type makes the invariant
+structural and the exhaustive `switch` makes the next case unforgettable.*)
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -859,6 +875,21 @@ beat. (Promotion candidate, flagged not promoted: *composition-over-inheritance 
 Template Method varying a single hook, over genuine is-a subtypes bound at wiring time, is legitimate; defer
 both the base and its generic input until the second concrete makes the generalization visible.*)
 
+**`take` is the select subcase's first *writing* consumer — orchestration + a write tail, and no construction
+checkpoint.** `[thread #4]` `take` is `examine`'s twin with a write: the *same* two interactions
+(designate-by-description / designate-by-choice) over the *same* `orient`+`select` opening, converging on one
+success (`presentItemTaken`), then the `move`-style write tail — mutate (`item.takenBy(player)`), one
+`doInTransaction`, present after commit. Two things the implementation pinned. First, it **confirms the
+select-subcase prediction above**: `take` shares the *scene-ground* provisioner `examine` already uses and adds
+none, so it reuses `SelectSceneItemSubcase` unchanged and the `AbstractSelectTargetSubcase` base stays deferred
+to `drop` (the second *provisioner*). Second — and quietly instructive — `take` has **no value-object-construction
+checkpoint at all**: `orient` hands it a valid `Player`, `select` a valid `Item`, and `takenBy` takes the
+already-valid `PlayerId`; the lone literal in the interaction (the target fragment) is consumed *inside*
+`select`. So the §2 construction gate, ubiquitous in `InitializeGame`, is simply **absent** here — a use case
+whose every input is already a domain object needs no gate, and inventing one (re-wrapping an id "to be safe")
+would be ceremony. The checkpoint count tracks where *literals* cross the boundary, not a fixed per-use-case
+ritual.
+
 ## 5. Explicit transaction demarcation
 
 **Principle.** Transactions are demarcated *explicitly* through a
@@ -1050,6 +1081,30 @@ the `concurrency` package is its eventual address. The one behaviour still *not*
 policy (re-read, recompute, re-save) — intricate and footgun-prone (unbounded retry, re-presentation) — which
 `AnnounceTimeOfDay` deliberately forgoes (the loser's goal is already met), so it too waits for a contended
 aggregate that wants it.
+
+**`Item` is the first aggregate contended *by design* — so `@Version` finally meets the contention it was
+parked for, and the lost race is a *new* outcome with a read-side twin.** `[thread #3]` The `@Version` deferred
+for `Player` and adopted slightly-ahead-of-contention for `DayPhaseLog` lands, on `take`, at an aggregate that
+is genuinely contended: a ground item is grabbable by *any* actor in the scene — unlike a player's own position
+(single-writer) or, later, its own inventory (single-writer for `drop`). So `take` is the project's first
+select-then-mutate where two actors can really race, and the detector lens says the read-then-confirm in
+`select` is only **advisory** (it narrows the window); the `@Version` is what **closes** it. The instructive
+part is that the same player-facing fact — "someone got there first" — now surfaces at **two layers**, kept as
+**distinct outcomes** rather than collapsed: the **read-side** advisory (`select` re-provisions for a menu pick
+and finds the item gone → `presentItemNoLongerHere`) and the **write-side** authoritative (the versioned
+`saveItem` loses the commit race → `onLockDetected` → a *new* `presentItemGotAway`). They are reachable on
+*different paths* — the single-match `take rusty` does no read-side re-check, so the write-side guard is its
+only net — which is exactly why they are two methods a renderer happens to collapse to one line, not one method
+(the "distinct outcomes get distinct present-methods" rule applied to a concurrency pair). And `take` *adds* an
+outcome rather than reusing one (`DayPhaseLog` mapped its lock-loss onto the existing `presentNothingToAnnounce`;
+`take`'s is genuinely new), confirming the lock-loss reaction is shaped by **what the interaction's goal makes
+of losing**, not by the mechanism. One persistence detail the round-trip pinned: Spring Data JDBC **increments
+the version on insert** (a fresh `Item` at version 0 is stored at 1 — proven by `DayPhaseLogRoundTripIT`'s
+insert-then-update succeeding), so the `V6` backfill of pre-existing rows uses version **1**, the
+"already-persisted" state, so a `take` of a legacy item is an *update*, not a duplicate-key insert. (Promotion
+candidate, flagged not promoted: *when one player-facing outcome has both an advisory read-side detection and an
+authoritative write-side one, keep them distinct present-methods reachable on distinct paths — collapsing them
+hides that the unique-match path has only the write-side net.*)
 
 ## 6. The composition root — the framework held at arm's length
 
@@ -1462,9 +1517,10 @@ case up from `ApplicationContext` per `resume`** — the established prototype-p
 `ObjectProvider`), because a singleton handler that *captured* its prototype use case would silently defeat
 the scope (scope is freshness *per lookup*; a `List<Conversation>` is injected once). The cast-and-call
 factors into an `AbstractSelectionConversation` (concretes vary only the use-case method), mirroring
-`AbstractSelectTargetSubcase` (§4) and emerging at the second conversation; the `continuedBy` predicate stays
-inline in the dispatcher until conversation #3 (one continuing on something other than a bare number) —
-staged emergence, so at `drop` a handler carries only `kind()`+`resume()`.
+`AbstractSelectTargetSubcase` (§4) and emerging at the second conversation — which, implementation revealed, is
+**`take`, not `drop`** (the two-second-instances note below). The `continuedBy` predicate stays inline in the
+dispatcher until conversation #3 (one continuing on something other than a bare number) — staged emergence, so
+a handler carries only `kind()`+`resume()` until then.
 
 **Why not a *core* `Conversation` the input ports implement.** `[thread #4]` The tempting unification —
 `*InputPort extends Conversation`, `resume` on the use case — was **rejected**: a *generic* `Conversation`
@@ -1480,6 +1536,27 @@ not promoted: *model a use case as a conversation's substance and its modality �
 resume routing — as a delivery-mechanism concern; dress the use case as an infra conversation handler at the
 composition root and let the DI container be the resumer registry; never give the core a `Conversation`
 interface, which would import the delivery vocabulary the core excludes.*)
+
+**Two different "second instances", in two different PRs — the finding `take` forced.** `[thread #1]` `[thread #4]`
+The plan above (and issue #55's first draft) put *both* shared abstractions at `drop`. Implementing `take`
+corrected it: there are **two distinct "second instances"**, and they fall in different PRs because they
+generalize different axes. The **conversation dispatcher** generalizes *"which dialogue does a bare number
+resume?"* — `examine` is the first number-continued dialogue, **`take` is the second**, so kind-routing and
+`AbstractSelectionConversation` are forced *at `take`* (without them, a number after `take rusty` would wrongly
+resume `examine` and *describe* the item instead of taking it). The **`select` Template-Method base** (§4)
+generalizes *"where do candidates come from?"* — `examine` is the first provisioner (scene ground), `take`
+*reuses* it, so the base waits for **`drop`** (the second *provisioner*, an inventory). Same "mint the
+abstraction at the second instance" rule, two different counts, two PRs — the lesson being that **"second
+instance" is meaningful only relative to the specific axis being generalized**; lumping two axes under one
+feature ("drop forces the shared abstractions") miscounts both. Two ripples the dispatcher's arrival forced,
+both at `take`: `SelectTargetPresenterOutputPort` lost `presentNoPendingSelection` — with the
+container-as-resumer-map the console resumes a selection *only when one is armed*, so an empty offer can no
+longer reach the subcase as a player action; it becomes a **precondition throw** (a wiring fault routed to the
+catch-all), *not* a deleted case (deleting it would let an empty offer mislabel as `presentNoSuchOption`). And
+the wiring grew a **startup completeness assertion** — every `SelectionKind` must have a `Conversation` bean —
+so a kind with no handler fails fast at boot rather than silently dropping a pick at runtime. (Promotion
+candidate, flagged not promoted: *"emerge at the second instance" is per-axis — one feature can be the second
+instance of one abstraction and merely the first reuse of another; count per abstraction, not per feature.*)
 
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 

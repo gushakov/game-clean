@@ -8,7 +8,12 @@ import java.util.List;
 /**
  * Presenter (driven) output port of the {@link SelectSceneItemSubcase select} subcase: the outcomes the
  * subcase presents while resolving <em>which</em> thing the player means among the candidates available to
- * it. These five methods are the subcase's <em>entire</em> presentation surface.
+ * it. These four methods are the subcase's <em>entire</em> presentation surface.
+ *
+ * <p>There is deliberately no "nothing offered to choose" outcome here: with the conversation dispatcher, the
+ * driving adapter resumes a selection only when one is <em>armed</em>, so an empty offer can never reach the
+ * subcase as a player action. The subcase guards that case as a wiring precondition (it throws, reaching the
+ * parent's catch-all) rather than presenting it.
  *
  * <p><b>Orthogonal to orientation — composition, not inheritance.</b> Resolving which thing the player means
  * is a different concern from resolving where the player stands, so this port does <em>not</em> extend
@@ -40,12 +45,6 @@ public interface SelectTargetPresenterOutputPort {
      * this is an honest domain outcome rather than a stale render.
      */
     void presentItemNoLongerHere(ItemId itemId);
-
-    /**
-     * The player tried to choose, but no disambiguation menu is pending (a bare number with nothing offered).
-     * A selection-conversation outcome owned by the subcase — not a stray message the controller prints.
-     */
-    void presentNoPendingSelection();
 
     /** The player picked a number outside the offered candidates. The menu stands, so they can pick again. */
     void presentNoSuchOption(int ordinal);

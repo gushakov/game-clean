@@ -3,6 +3,7 @@ package com.github.gameclean.core.usecase.select;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
+import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
@@ -107,12 +108,14 @@ class SelectSceneItemSubcaseTest {
     }
 
     @Test
-    void presentsNoPendingSelectionAndSignalsWhenNothingWasOffered() {
+    void throwsAPreconditionFaultWhenNothingWasOffered() {
+        // With the conversation dispatcher the console resumes only an armed conversation, so an empty offer
+        // reaching the subcase is a wiring fault, not a player outcome: it throws to the parent's catch-all and
+        // presents nothing (presenting "no such option" would mislabel a programming error as a player mistake).
         assertThatThrownBy(() -> subcase.playerDesignatesChosenCandidate(1, List.of(), HERE))
-                .isInstanceOf(SubcaseAlreadyPresented.class);
+                .isInstanceOf(IllegalStateException.class);
 
-        verify(presenter).presentNoPendingSelection();
-        verifyNoInteractions(itemOps);   // gated before any read
+        verifyNoInteractions(presenter, itemOps);   // gated before any read, and never presented
     }
 
     @Test
@@ -139,7 +142,7 @@ class SelectSceneItemSubcaseTest {
     private static Item item(String id, String shortDescription) {
         return Item.builder()
                 .id(new ItemId(id))
-                .location(new SceneId("scn1"))
+                .location(new Location.OnGround(new SceneId("scn1")))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .build();

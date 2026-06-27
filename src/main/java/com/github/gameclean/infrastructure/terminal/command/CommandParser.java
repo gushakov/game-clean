@@ -49,6 +49,9 @@ public class CommandParser {
         // 'examine'/'x' always take a target; bare 'examine' does not fit (falls through to unknown).
         register("examine", args -> args.isEmpty() ? null : new ExamineCommand(joinRemainder(args)));
         register("x", args -> args.isEmpty() ? null : new ExamineCommand(joinRemainder(args)));
+        // 'take'/'get' take the described target as the line remainder (multi-word), like 'examine'.
+        register("take", args -> args.isEmpty() ? null : new TakeCommand(joinRemainder(args)));
+        register("get", args -> args.isEmpty() ? null : new TakeCommand(joinRemainder(args)));
         // 'move'/'go' take exactly one exit-name token.
         register("move", args -> args.size() == 1 ? new MoveCommand(args.get(0)) : null);
         register("go", args -> args.size() == 1 ? new MoveCommand(args.get(0)) : null);
