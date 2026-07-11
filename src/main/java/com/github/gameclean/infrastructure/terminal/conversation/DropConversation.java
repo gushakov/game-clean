@@ -1,0 +1,31 @@
+package com.github.gameclean.infrastructure.terminal.conversation;
+
+import com.github.gameclean.core.usecase.inventory.DropInputPort;
+import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import org.springframework.context.ApplicationContext;
+
+import java.util.List;
+
+/**
+ * The {@code drop} disambiguation as a {@link Conversation}: a bare number while a drop offer is armed resumes
+ * by dropping the chosen candidate. The third selection conversation — it <em>confirms</em> the kind-routed
+ * dispatcher rather than forcing anything new: the container collects it into the resumer map and
+ * {@code ConsoleSession} is untouched. Wired in the composition root.
+ */
+public class DropConversation extends AbstractSelectionConversation {
+
+    public DropConversation(ApplicationContext applicationContext) {
+        super(applicationContext);
+    }
+
+    @Override
+    public SelectionKind kind() {
+        return SelectionKind.DROP;
+    }
+
+    @Override
+    protected void resumeWith(int ordinal, List<String> offer) {
+        // Fresh prototype per resume (like ConsoleSession's other pulls); the use case presents every outcome.
+        applicationContext.getBean(DropInputPort.class).playerDropsChosenCandidate(ordinal, offer);
+    }
+}

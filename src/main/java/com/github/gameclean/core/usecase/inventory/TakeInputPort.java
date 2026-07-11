@@ -26,7 +26,7 @@ import java.util.List;
  * is the project's first select-then-mutate where two actors can race. {@code select}'s re-provision-and-confirm
  * only narrows the window; the authoritative close is the item's optimistic-locking version, and a lost race is
  * presented as {@code presentItemGotAway} (the write-side twin of {@code select}'s read-side
- * {@code presentItemNoLongerHere}).
+ * {@code presentItemNoLongerAvailable}).
  *
  * <p>Both methods are {@code void}: every outcome is reported through
  * {@link TakePresenterOutputPort}, never returned. The driving adapter hands the offered tokens in as a value

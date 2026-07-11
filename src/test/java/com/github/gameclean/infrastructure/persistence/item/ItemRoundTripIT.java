@@ -22,8 +22,9 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
  * V6, which gives item its {@code (location_kind, location_ref)} pair and {@code @Version} column); the
  * {@code @DataJdbcTest} slice rolls each test back.
  *
- * <p>It exercises what {@code take} needs end to end: a ground item inserts and is found by its scene; taking
- * it moves it off the ground (a {@code GROUND}→{@code HELD} location change) and updates in place; and the
+ * <p>It exercises what {@code take} and {@code drop} need end to end: a ground item inserts and is found by
+ * its scene; taking it moves it off the ground (a {@code GROUND}→{@code HELD} location change) and updates in
+ * place; a held item is found in its holder's keeping and dropping it returns it to the ground; and the
  * optimistic lock has <b>teeth</b> — a second write carrying a version the store has moved past is rejected
  * with {@link OptimisticLockingError} rather than silently overwriting, which is exactly what stops two actors
  * both taking the same item. The MapStruct mapper is pulled in via {@code @Import}.
@@ -70,6 +71,33 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         ItemDbEntity stored = repository.findById("itm1").orElseThrow();
         assertThat(stored.getLocationKind()).isEqualTo(ItemLocationKind.HELD);
         assertThat(stored.getLocationRef()).isEqualTo("plr1");
+    }
+
+    @Test
+    void dropping_a_held_item_returns_it_to_the_ground() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        adapter.saveItem(groundItem("itm1", "A rusty dagger."));
+        Item onGround = adapter.findItemsInScene(HERE).getFirst();   // carries the post-insert version
+        adapter.saveItem(onGround.takenBy(new PlayerId("plr1")));
+
+        // Held: found in the holder's keeping, and only theirs ...
+        assertThat(adapter.findItemsHeldBy(new PlayerId("plr1")))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.getId()).isEqualTo(new ItemId("itm1"));
+                    assertThat(item.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
+                });
+        assertThat(adapter.findItemsHeldBy(new PlayerId("plr2"))).isEmpty();
+
+        // ... and dropping it in another scene moves it back to the ground there, the same row updated in place.
+        Item held = adapter.findItemsHeldBy(new PlayerId("plr1")).getFirst();   // carries the current version
+        adapter.saveItem(held.droppedAt(new SceneId("scn2")));
+
+        assertThat(adapter.findItemsHeldBy(new PlayerId("plr1"))).isEmpty();
+        assertThat(adapter.findItemsInScene(new SceneId("scn2")))
+                .singleElement()
+                .satisfies(item -> assertThat(item.getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn2"))));
+        assertThat(repository.count()).isEqualTo(1);
     }
 
     @Test

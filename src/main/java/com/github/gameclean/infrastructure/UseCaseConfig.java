@@ -28,16 +28,21 @@ import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
 import com.github.gameclean.core.usecase.guidance.GuidanceUseCase;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
+import com.github.gameclean.core.usecase.inventory.DropInputPort;
+import com.github.gameclean.core.usecase.inventory.DropUseCase;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
+import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
+import com.github.gameclean.infrastructure.terminal.conversation.DropConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.TakeConversation;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalDropPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalGuidancePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
@@ -163,6 +168,27 @@ public class UseCaseConfig {
         return new TakeUseCase(presenter, orient, select, itemOps, txOps);
     }
 
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public DropInputPort dropUseCase(
+            OrientRenderer orientRenderer,
+            ItemRenderer itemRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            ItemRepositoryOperationsOutputPort itemOps,
+            TransactionOperationsOutputPort txOps) {
+        // One presenter instance, shared with the orient and the inventory-sourced select subcases (as take
+        // does with the scene-sourced one), so every outcome reaches the same presenter.
+        TerminalDropPresenter presenter =
+                new TerminalDropPresenter(orientRenderer, itemRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        SelectInventoryItemSubcase select = new SelectInventoryItemSubcase(presenter, itemOps);
+        return new DropUseCase(presenter, orient, select, itemOps, txOps);
+    }
+
     /**
      * The selection conversations — singletons collected into {@code ConsoleSession}'s {@code List<Conversation>}
      * (the container is the resumer map). Each "dresses up" its use case as a resumable dialogue and pulls a
@@ -178,6 +204,11 @@ public class UseCaseConfig {
     @Bean
     public Conversation takeConversation(ApplicationContext applicationContext) {
         return new TakeConversation(applicationContext);
+    }
+
+    @Bean
+    public Conversation dropConversation(ApplicationContext applicationContext) {
+        return new DropConversation(applicationContext);
     }
 
     @Bean

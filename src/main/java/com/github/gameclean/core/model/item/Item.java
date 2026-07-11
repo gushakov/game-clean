@@ -3,6 +3,7 @@ package com.github.gameclean.core.model.item;
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.player.PlayerId;
+import com.github.gameclean.core.model.scene.SceneId;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -26,8 +27,9 @@ import java.util.Objects;
  * (carried by a player), exactly as a {@link com.github.gameclean.core.model.player.Player} references its
  * current scene by id. Aggregates reference one another by id, so "the items in a scene" and "the items a
  * player holds" are both queries against this reference, not collections owned by the scene or the player.
- * The location is mobile: {@link #takenBy(PlayerId)} moves an item from the ground into a player's keeping,
- * the first behaviour to change an item's state (immutable copy-on-write, like {@code Player.moveTo}).
+ * The location is mobile in both directions: {@link #takenBy(PlayerId)} moves an item from the ground into a
+ * player's keeping and {@link #droppedAt(SceneId)} puts it back down (immutable copy-on-write, like
+ * {@code Player.moveTo}).
  *
  * <p>It also carries an opaque optimistic-locking {@link #version} — set by persistence on read, checked by
  * persistence on write — so two actors racing to take the same ground item cannot both succeed (the loser's
@@ -100,6 +102,25 @@ public class Item {
     public Item takenBy(PlayerId holder) {
         Objects.requireNonNull(holder, "holder must not be null");
         return withLocation(new Location.HeldBy(holder));
+    }
+
+    /**
+     * Puts this item down onto the ground of the given scene: returns a new item whose {@link #location} is
+     * {@link Location.OnGround} that scene, carrying the current {@link #version} forward so the persisting
+     * write is checked against the version the use case read. The mirror of {@link #takenBy(PlayerId)}, with
+     * the same copy-on-write mechanics (the original is untouched; {@code @With} routes through the
+     * validating constructor).
+     *
+     * <p>A null scene is a <em>caller programming error</em>, not invalid domain input — the {@code drop} use
+     * case always resolves the player's real current scene before calling this — so it stays a plain
+     * {@link NullPointerException} (the behaviour-method guard convention), distinct from the construction gate.
+     *
+     * @param scene the scene the item is put down in (must not be null)
+     * @return a new item lying on the ground in {@code scene}, carrying this item's version
+     */
+    public Item droppedAt(SceneId scene) {
+        Objects.requireNonNull(scene, "scene must not be null");
+        return withLocation(new Location.OnGround(scene));
     }
 
     private static String requireNonBlank(String value, String what) {

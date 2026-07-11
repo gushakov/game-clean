@@ -855,25 +855,37 @@ The non-symmetry with `orient`'s returned `OrientPlayerResult` is the *same rule
 `OrientPlayerResult` carries two things (player + scene) — a composite, earned; a one-`SceneId` request would
 not be. Matching the `…Request`/`…Result` names for symmetry's sake would violate the rule.
 
-**One concrete subcase now; the Template-Method base emerges at provisioner #2.** `[thread #1]` `[thread #4]`
-There is one provisioner today — items on the scene ground (`examine`, and later `take`, share it) — so there
-is one concrete `SelectSceneItemSubcase` with a private `provisionCandidates`, *not* an abstract base with a
-single subclass. When `drop` brings the **second** provisioner (an inventory, keyed on a `PlayerId`),
-`provisionCandidates` is extracted onto an `AbstractSelectTargetSubcase` as a `protected abstract` hook — a
-one-level **Template Method** whose concretes are genuine is-a target-selectors, the *legitimate* face of
-inheritance that the composition-over-inheritance heuristic guards the flip side of (it forbids stealing
-implementation through a base you are not a kind of; it does not forbid a true taxonomic specialization
-varying one hook bound at wiring time). Crucially, the **abstract base and its generic context type are the
-same deferred decision**: a request abstraction "to work generically" cannot be designed over one provisioner
-without guessing (fat DTO? sealed hierarchy? generic parameter?); two real context shapes (`SceneId`,
-`PlayerId`) make the right one obvious. So the plain-`SceneId` parameter and the concrete subcase are the
-*matched* choice — concrete subcase, concrete input — and both generalize together when the second instance
-lands; the localized cost (the select signature changes at that point) is the right time to introduce the
-abstraction, not before. Residual tension named for later: today's `SceneId` context presumes a *grounded*
-selection — a future non-grounded one (the card game) forces the generic context then, the same emergence
-beat. (Promotion candidate, flagged not promoted: *composition-over-inheritance is not absolute — a one-level
-Template Method varying a single hook, over genuine is-a subtypes bound at wiring time, is legitimate; defer
-both the base and its generic input until the second concrete makes the generalization visible.*)
+**The Template-Method base, realized at provisioner #2 — and the coordinate fork it settled.** `[thread #1]`
+`[thread #4]` This section first kept one concrete `SelectSceneItemSubcase` with a private
+`provisionCandidates` — *not* an abstract base with a single subclass — because the **abstract base and its
+generic context type are the same deferred decision**: a request abstraction "to work generically" cannot be
+designed over one provisioner without guessing (fat DTO? sealed hierarchy? generic parameter?); two real
+context shapes make the right one obvious. `drop` brought the second provisioner (the player's keeping, keyed
+on a `PlayerId`) and cashed the prediction exactly: the whole dialogue skeleton — the match and 0/1/N branch,
+the offer gates, the token reconstitution, the live re-confirm — moved onto `AbstractSelectTargetSubcase`
+(`final` template methods) with `provisionCandidates` as the single `protected abstract` hook, a one-level
+**Template Method** whose concretes are genuine is-a target-selectors — the *legitimate* face of inheritance
+that the composition-over-inheritance heuristic guards the flip side of (it forbids stealing implementation
+through a base you are not a kind of; it does not forbid a true taxonomic specialization varying one hook
+bound at wiring time). And the two real shapes (`SceneId`, `PlayerId` — both single id VOs) did make the
+right context abstraction obvious: a **generic coordinate**, `SelectTargetSubcaseInputPort<C>` (issue #55,
+decision #6). The reasoning: "designate which thing the player means among the candidates" is *one* Cockburn
+goal regardless of candidate provenance — provenance is a parameter of the goal, not a different goal — so
+the port stays **one interface**, generic where provenance parameterizes it. Each parent supplies exactly its
+coordinate, so there is no dead parameter (the ISP objection that killed the uniform-`OrientPlayerResult`
+alternative), and `select` stays ⟂ `orient` (the bearings alternative would have coupled select's port to
+orient's result type and pre-committed every selection to being *grounded* — which also resolves the residual
+tension this section had named: a future non-grounded selection simply binds its own `C`). Deliberately *not*
+generalized: the candidate type stays `Item` (no `<C, T>`) until a non-item selection actually exists — the
+same one-instance discipline, one level up. The extraction also produced a small port-vocabulary rule: the
+shared outcome `presentItemNoLongerHere` was renamed **provenance-neutral**
+(`presentItemNoLongerAvailable`), because the *outcome* belongs to the subcase while the *English* belongs to
+each presenter — the ground consumers render "no longer here", drop renders "no longer carrying" — so the
+port method never lies for half its consumers. (Promotion candidate, flagged not promoted:
+*composition-over-inheritance is not absolute — a one-level Template Method varying a single hook, over
+genuine is-a subtypes bound at wiring time, is legitimate; defer both the base and its generic input until
+the second concrete makes the generalization visible; when a shared skeleton's outcome reads differently per
+concrete, name it provenance-neutrally on the port and leave the phrasing to the presenters.*)
 
 **`take` is the select subcase's first *writing* consumer — orchestration + a write tail, and no construction
 checkpoint.** `[thread #4]` `take` is `examine`'s twin with a write: the *same* two interactions
@@ -881,8 +893,8 @@ checkpoint.** `[thread #4]` `take` is `examine`'s twin with a write: the *same* 
 success (`presentItemTaken`), then the `move`-style write tail — mutate (`item.takenBy(player)`), one
 `doInTransaction`, present after commit. Two things the implementation pinned. First, it **confirms the
 select-subcase prediction above**: `take` shares the *scene-ground* provisioner `examine` already uses and adds
-none, so it reuses `SelectSceneItemSubcase` unchanged and the `AbstractSelectTargetSubcase` base stays deferred
-to `drop` (the second *provisioner*). Second — and quietly instructive — `take` has **no value-object-construction
+none, so it reuses `SelectSceneItemSubcase` unchanged and the `AbstractSelectTargetSubcase` base waited for
+`drop` (the second *provisioner* — since realized, above). Second — and quietly instructive — `take` has **no value-object-construction
 checkpoint at all**: `orient` hands it a valid `Player`, `select` a valid `Item`, and `takenBy` takes the
 already-valid `PlayerId`; the lone literal in the interaction (the target fragment) is consumed *inside*
 `select`. So the §2 construction gate, ubiquitous in `InitializeGame`, is simply **absent** here — a use case
@@ -1105,6 +1117,21 @@ insert-then-update succeeding), so the `V6` backfill of pre-existing rows uses v
 candidate, flagged not promoted: *when one player-facing outcome has both an advisory read-side detection and an
 authoritative write-side one, keep them distinct present-methods reachable on distinct paths — collapsing them
 hides that the unique-match path has only the write-side net.*)
+
+**`drop` is the deliberate counter-example — the plain overload, chosen and pinned.** `[thread #3]` The
+`(action, onLockDetected)` idiom is opt-in (above: propagation is preserved as the default), and `drop` is the
+first interaction to *exercise* that default deliberately: a held item is **single-writer** (only its holder's
+own `drop` writes it), so there is no race to lose and a handler would be machinery for an unreachable
+outcome. The versioned save still guards integrity; were a lock loss ever to fire it would be a wiring
+surprise, and it *propagates* to the outermost `catch → presentError` like any fault. The codebase now carries
+the contrast as a matched pair — contested aggregate → per-block handler and a presented outcome (`take`);
+single-writer aggregate → plain overload and propagation (`drop`) — mirroring the version-less `GameClock` /
+versioned `DayPhaseLog` contrast one level up. And the decision is executable doctrine, not a comment: a
+`DropUseCaseTest` pins that an `OptimisticLockingError` reaches `presentError` and never a player outcome, so
+a future well-meaning "symmetry with take" refactor fails a test instead of silently minting a speculative
+outcome. (Promotion candidate, flagged not promoted: *adopt the lock-detected handler only where contention is
+real; a single-writer aggregate keeps the propagating default, and a unit test pinning the propagation turns
+the choice into doctrine.*)
 
 ## 6. The composition root — the framework held at arm's length
 
@@ -1557,6 +1584,9 @@ the wiring grew a **startup completeness assertion** — every `SelectionKind` m
 so a kind with no handler fails fast at boot rather than silently dropping a pick at runtime. (Promotion
 candidate, flagged not promoted: *"emerge at the second instance" is per-axis — one feature can be the second
 instance of one abstraction and merely the first reuse of another; count per abstraction, not per feature.*)
+`drop` then closed both counts: conversation #3 (`DropConversation`) *confirmed* the dispatcher — one new kind
+and one handler bean, with the dispatcher and its startup completeness assertion untouched — while provisioner
+#2 extracted the select base (§4); each abstraction earned its keep on its own axis, exactly as counted.
 
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 

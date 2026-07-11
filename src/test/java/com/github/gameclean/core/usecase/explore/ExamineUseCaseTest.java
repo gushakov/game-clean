@@ -41,7 +41,7 @@ class ExamineUseCaseTest {
     @Mock
     private OrientPlayerSubcaseInputPort orientPlayerSubcase;
     @Mock
-    private SelectTargetSubcaseInputPort selectTargetSubcase;
+    private SelectTargetSubcaseInputPort<SceneId> selectTargetSubcase;
 
     @InjectMocks
     private ExamineUseCase useCase;

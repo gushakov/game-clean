@@ -11,9 +11,10 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
  * Tests for the {@link Item} aggregate: {@link Item#matches(String)} (the side-effect-free designation query),
- * the {@link Item#takenBy(PlayerId)} copy-on-write that moves an item from the ground into a player's keeping,
- * and the always-valid construction gate. Pinning these directly here (rather than only through the use-case
- * tests) is the testability dividend of keeping the behaviour on the model.
+ * the {@link Item#takenBy(PlayerId)} / {@link Item#droppedAt(SceneId)} copy-on-write pair that moves an item
+ * between the ground and a player's keeping, and the always-valid construction gate. Pinning these directly
+ * here (rather than only through the use-case tests) is the testability dividend of keeping the behaviour on
+ * the model.
  */
 class ItemTest {
 
@@ -76,6 +77,31 @@ class ItemTest {
     void takenBy_a_null_holder_is_a_caller_bug() {
         // A null collaborator to a behaviour method is a plain NPE, not the construction gate's error.
         assertThatNullPointerException().isThrownBy(() -> item("A rusty dagger.").takenBy(null));
+    }
+
+    @Test
+    void droppedAt_puts_the_item_back_on_the_ground_preserving_id_and_version() {
+        Item held = Item.builder()
+                .id(new ItemId("itm1"))
+                .location(new Location.HeldBy(new PlayerId("plr1")))
+                .shortDescription("A rusty dagger.")
+                .fullDescription("A longer description.")
+                .version(3)
+                .build();
+
+        Item dropped = held.droppedAt(new SceneId("scn2"));
+
+        // Copy-on-write mirror of takenBy: on the ground where the player stands, same identity, version carried.
+        assertThat(dropped.getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn2")));
+        assertThat(dropped.getId()).isEqualTo(new ItemId("itm1"));
+        assertThat(dropped.getVersion()).isEqualTo(3);
+        assertThat(held.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));   // original untouched
+    }
+
+    @Test
+    void droppedAt_a_null_scene_is_a_caller_bug() {
+        // A null collaborator to a behaviour method is a plain NPE, not the construction gate's error.
+        assertThatNullPointerException().isThrownBy(() -> item("A rusty dagger.").droppedAt(null));
     }
 
     @Test

@@ -13,10 +13,12 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Renders the {@code examine}-specific outcomes — an item's full description, "nothing like that here", the
- * disambiguation menu, and "no longer here" — to the shared console. The {@code examine} counterpart of
+ * Renders the item-interaction outcomes — {@code examine}'s reveal, the shared disambiguation dialogue, and
+ * {@code take}/{@code drop}'s confirmations and misses — to the shared console. The item counterpart of
  * {@link CurrentSceneRenderer}: a shared, domain-aware collaborator (it knows {@link Item}) over the
- * domain-agnostic {@link Console}.
+ * domain-agnostic {@link Console}. Where a provenance-neutral select outcome reads differently by context
+ * (nothing designated; the chosen one gone), it offers a ground-flavored and a carry-flavored rendering and
+ * each presenter picks its own English.
  *
  * <p>It only <em>renders</em> the numbered menu it is given; it does not decide the order or remember the
  * offer. The presenter imposes a stable order, passes it here to display (numbered 1..N), and separately
@@ -47,6 +49,11 @@ public class ItemRenderer {
         console.printError("You see nothing like '%s' here.".formatted(target));
     }
 
+    /** Nothing the player carries is designated by the fragment — the carry-flavored twin of {@link #renderNoSuchTarget}. */
+    public void renderNoSuchCarriedTarget(String target) {
+        console.printError("You are not carrying anything like '%s'.".formatted(target));
+    }
+
     /**
      * The disambiguation menu: a prompt naming the ambiguous fragment, then the candidates numbered 1..N in
      * the order given (the presenter's stable order), then how to choose.
@@ -71,6 +78,11 @@ public class ItemRenderer {
         console.printError("That is no longer here.");
     }
 
+    /** A chosen item that is no longer in the player's keeping — the carry-flavored twin of {@link #renderItemNoLongerHere}. */
+    public void renderItemNoLongerCarried(ItemId itemId) {
+        console.printError("You are no longer carrying that.");
+    }
+
     /** Confirmation that the player has taken an item into their keeping. */
     public void renderItemTaken(Item item) {
         AttributedStringBuilder sb = new AttributedStringBuilder();
@@ -86,6 +98,14 @@ public class ItemRenderer {
      */
     public void renderItemGotAway(ItemId itemId) {
         console.printError("Someone got there first — it is no longer here.");
+    }
+
+    /** Confirmation that the player has put an item down in the current scene. */
+    public void renderItemDropped(Item item) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.GREEN))
+                .append("You drop %s".formatted(item.getShortDescription()));
+        console.write(sb);
     }
 
     /** The player picked a number outside the offered menu; the menu still stands. */
