@@ -1588,6 +1588,149 @@ instance of one abstraction and merely the first reuse of another; count per abs
 and one handler bean, with the dispatcher and its startup completeness assertion untouched — while provisioner
 #2 extracted the select base (§4); each abstraction earned its keep on its own axis, exactly as counted.
 
+**Rich dialogues ahead: routing never needs domain state — arm-time completeness.** `[thread #4]` The worry,
+examined ahead of any NPC dialogue existing: a quest offer or a shopkeeper haggle seems to need *domain* facts
+(player stats for chance rolls, time of day, quest stage) "when deciding how to forward the next line to the
+next interaction" — and the primary adapter has no access to the domain layer, while input ports expose only
+`void` interactions. The worry conflates two decisions the §4 semantic/modal split already separates. *Intent
+attribution* — which dialogue is this line answering? — is the router's job, and its only legitimate inputs are
+the parsed intent and the armed affordance. *The dialogue's next move* — given charisma, the hour, a dice roll,
+what happens? — is the use case's, made **behind** the input port as branch-and-present checkpoints (the
+persuasion roll happens inside the interaction, `Dice` being a domain service per §10; success and failure are
+two presented outcomes, each arming the mode differently). The reason the router never needs a domain fact is
+**arm-time completeness**: every domain-dependence of *future routing* is compiled into the affordance **at
+presentation time** by the previous interaction — which has full domain access — and pushed outward through the
+arming channel (`presentAmbiguousTarget` → the presenter flattens and arms). Routing is then a pure function of
+(last-afforded, player input); domain evolution between arm and resume is absorbed by the resumed interaction's
+re-validation (the select subcase re-provisions live), so the router attributes *intent* and never adjudicates
+*legality*. As a rule: **route on player-supplied facts and armed affordances; branch on domain facts — when
+routing seems to need a domain fact, a prior interaction must convert it into an armed affordance; the router
+never asks.** The rejected escape hatches are all return channels: a status/query method beside the void
+interactions is the `Result<T>` anti-pattern reborn; a core dialogue-state type read by the adapter through a
+driven port *before routing* is controller-as-orchestrator ("chaining use cases from controllers"), and "which
+interaction next" is exactly the routing vocabulary the core excludes (the argument that killed the core
+`Conversation`, above). The load-bearing precedent is HATEOAS: presenter-armed mode = server-embedded links,
+`SelectionKind` = link relation, opaque tokens = opaque URIs, re-validation = answering a stale link with 410
+Gone — and *conditional links* (an option offered only when domain state permits) are computed server-side and
+shipped outward; a client computing link availability itself is the anti-pattern the style exists to forbid.
+(Ink/Yarn dialogue engines are the game-native twin: conditional choices are evaluated by the engine against
+story variables when the choice set is *built*; the host loop renders choices and returns an ordinal —
+literally `playerTakesChosenCandidate(ordinal, offer)`.) (Promotion candidate, flagged not promoted: *a
+multi-interaction conversation's router routes on parsed intent and armed affordances only; the core steers
+routing by exporting affordances at presentation time — arm-time completeness — never by being queried;
+staleness is absorbed by re-validation in the resumed interaction, so the router attributes intent and never
+adjudicates legality.*)
+
+**The affordance payload may grow — but only in channel vocabulary, and only as data the core computed.**
+`[thread #2]` `[thread #4]` Rich dialogues will stretch the payload beyond `(kind, tokens)`: **per-choice
+routing tags** (one menu whose choices designate *different* user goals — ask lore / trade / threaten — each
+flattened to its own kind+token at offer time; a rich conversation is a *mode session spanning several Cockburn
+goals*, not a use case — the kind↔use-case 1:1 of examine/take/drop is an accident of three conversations that
+are all variations of one designation step), **accepted-answer grammars** (a yes/no prompt, a state-an-amount
+haggle — HAL-FORMS shipping the field schema along with the link), **exclusivity** (a dialogue that may *veto*
+departure captures input, vim-insert-style: while armed, `look` routes *into* the dialogue as "player tries to
+leave" and the use case adjudicates veto-or-release in one dispatch), and eventually a **mode stack** with a
+focus policy. None of this puts business in the adapter *provided the discriminator holds*: the payload's
+content is **computed inward and transcribed outward**, and the adapter's machinery is **generic over
+conversations** — the browser proof (forms, field types, modal windows: enormous machinery, zero business logic
+of any site it visits, because everything it enforces arrives as server-computed data). Four tests.
+*Transcription, not computation:* one present method ↔ one fixed, deterministic arming effect — or, once a
+converged outcome has divergent continuations (counter-offer vs. final offer), an explicit affordance VO handed
+through the present call (the clean-ddd-core "interaction-shape decisions belong in the use case" rule applied
+to affordances); the VO names WHAT is afforded in Cockburn vocabulary (accept / raise / walk-away), never WHICH
+method to call, and a presenter that inspects domain objects to *choose* what to arm has crossed the
+humble-presenter red line. *Matching, never evaluation:* infra asks only "does this line's shape fit an armed
+grammar, and which entry does it select?" — the router accepts any well-shaped `45`; only the use case may
+refuse it for reputation reasons; a router that rejects a *value* rather than a *shape* has become a
+semantics-aware policy engine. *Channel vocabulary only:* §1's second-adapter test, element by element —
+per-choice tags = a page's links, grammar = form field types, exclusivity = a modal dialog, stack = window
+focus, all with GUI analogues; "patience" / "price" / "stat threshold" have none, and a payload field that
+wants one is the signal to mint or extend the aggregate and degrade the token back to a correlation id (the
+token-discipline above: relay-only, operation-free). *Policy travels as data, mechanics stay generic:* whether
+a guard's challenge *preempts* a shopkeeper's offer is a domain fact — precedence and exclusivity are declared
+per affordance by the arming interaction, never an infra rule table ranking NPCs; and the modality vocabulary
+stays small and **closed** (pick-from-menu, yes/no, name-a-thing, state-an-amount, say-a-line, walk-away),
+composed by authored content, a new shape being a deliberate code change. Lifecycle labour is unchanged:
+presenters **arm and re-arm only**; abandonment-clear stays with the dispatcher (the §4 rejection of
+presenter-side clearing stands — clearing keys on input intent, which presenters cannot see). Enforcement is a
+test discipline more than an ArchUnit rule: the affordance VO is asserted field-by-field in *use-case* tests
+(the decision is pinned where it is made), and dispatcher tests stay parameterized over kinds — a
+per-conversation test appearing in the dispatcher suite is the smell detector. (Promotion candidate, flagged
+not promoted: *an affordance payload may grow arbitrarily rich without business leaking into the adapter iff
+its content is computed by the core and transcribed by presenters, the adapter only shape-matches and routes,
+every element passes the second-adapter test, and policy rides the payload while the machinery stays generic
+over conversations.*)
+
+**Conversation identity: the subject aggregate's id — minted by the domain, relayed by the mode, never spoken
+by the player.** `[thread #1]` `[thread #3]` `[thread #4]` Two same-kind conversations pending at once
+(fighting two NPCs, each mid hit/retaliate exchange) force the question: under which identifier do the armed
+affordances live, and how does it travel between turns — the terminal has no hidden input, and a player cannot
+be asked to retype a UUID per command. Three separations dissolve it. *What the id is:* **a conversation earns
+an identifier at exactly the moment it earns an aggregate — and it is the same identifier** (the fight's mode
+entry is keyed by the fight aggregate's id, or `(kind, subject)`); infra never mints identity (§2/#53) — the
+interaction that *opens* the fight creates the aggregate, the model minting its id; the terminal outcome that
+ends it closes it; the mode entry only caches the id between the two, its lifecycle shadowing the domain's.
+Whether two same-kind conversations with one counterpart may coexist is a **domain invariant** on the aggregate
+("at most one open negotiation per player–counterpart pair"), never an infra key-collision problem. Corollary:
+**an affordance may outlive foreground focus only if it is aggregate-backed** — a suspended mode entry must be
+re-armable from persisted domain state, which a pure-ephemeral offer (examine's menu) can never be; so
+ephemeral disambiguations stay single-slot and die on focus loss, exactly as today, and plurality is reserved
+for conversations whose substance the domain remembers. *How it travels:* by the existing relay, never through
+the player's fingers — the presenter flattens the aggregate id to a token as it arms; the mode stores it; the
+**router attaches it** when dispatching inward (ordinal + offer + subject token, all values, dependency
+rejection intact); the resumed interaction reconstitutes the id at the gate and re-validates against the live
+aggregate (the goblin fled between arm and answer → an honest "no longer" outcome). The web's hidden input
+solves *transport across a stateless protocol*; this session is stateful — **the mode is the hidden input**,
+held on the system's side of the conversation. (A future networked front-end would make wire-level correlation
+ids that adapter's private transport concern — still never the core's.) *How the player designates:* in
+ubiquitous language or by focus, never by identity. Explicit: `hit orc` — the fragment resolves *in the core*
+against live candidates (the select-subcase pattern; combat targets are the second candidate *type*, arriving
+on schedule to force the deferred `<C, T>` generalization of §4). Implicit: a bare `retaliate` or `2` goes to
+the focused entry — top of stack = most recently presented = what the player is looking at; the terminal is a
+linear medium, so **recency is the shared coordinate system** between the player's mind and the mode stack (the
+web multiplexes concurrent conversations *spatially*, in tabs; a terminal multiplexes them *temporally*, by
+focus — MUDs' forty-year-old answer: current-target focus plus explicit naming, ids never surfaced). An
+under-determining bare command (`hit` with two fights open) is answered by machinery already built: present the
+ambiguity menu, arm it, resume by ordinal. (Promotion candidate, flagged not promoted: *conversation identity
+is the conversation-state aggregate's own id — minted by the domain when the conversation opens, cached by the
+mode, attached by the router, re-validated by the resumed interaction; the player designates by ubiquitous
+language or recency-focus, never by identifier.*)
+
+**Semantic dialogue state: capture-at-offer, checkpoint grain, decay by derivation, mode-as-projection.**
+`[thread #3]` Four disciplines keep a dialogue aggregate honest, each pinned by the failure it prevents.
+**Capture-at-offer:** an offer whose generation consumed dice, stats, or the hour (a stochastically-rolled
+bonus haggle option) is written into the aggregate *in the transaction that decides it* — otherwise save/reload
+re-rolls the odds, and the resumed interaction's re-validation has no live state to validate the pick against;
+the numbered menu's *form* (ordering, numbering, styling) stays presentation, but its *content*, once
+stochastically or temporally decided, is a domain fact. **Checkpoint grain:** the aggregate persists
+domain-meaningful checkpoints (quest offered, counter-offer standing), never keystrokes — per-line writes buy
+`@Version` churn that manufactures *false* optimistic conflicts; abandonment and quit collapse to the last
+checkpoint, by authored design. **Decay by derivation:** offer expiry and NPC patience are persisted *anchors*
+(`expiresAt`) compared against the clock inside the *resuming* interaction — never background mutation of the
+dialogue aggregate, or the player loses optimistic races to a metronome; ticker writes stay reserved for
+genuine NPC decisions, where a lost race *is* the truth (the `presentItemGotAway` shape, §5).
+**Mode-as-projection:** the mode is a *cache of the last presentation*, rebuilt only by presenting again —
+which obligates a session-start (or scene-entry) system-actor interaction (a sibling of `systemGreetsPlayer`)
+to load pending dialogue checkpoints and *re-present* them, its presenter re-arming the mode; without that
+named component a persisted negotiation is durable yet unreachable — a soft-lock. Operational litmus: **kill
+the terminal mid-dialogue — anything lost that the domain should remember was mis-homed in mode state.**
+(Promotion candidate, flagged not promoted: *dialogue state splits by lifetime under a crash test — domain
+checkpoints in an aggregate, captured at decision time and expiring by derivation; the mode a re-armable
+projection of the last presentation.*)
+
+**The one doctrinal amendment rich dialogues will exact — and this section already reserved it.** `[thread #4]`
+Consequential abandonment (the player types `look` mid-haggle and the shopkeeper *takes offense*) cannot fire
+an inline abandonment interaction on the way to dispatching `look` — that is a second dispatch in one turn,
+against the internalized-dispatcher invariant above. The default is therefore consequence-at-offer-time plus
+lazy materialization: the offense/expiry is a domain fact, written when the offer was made, read on the
+dialogue's next touch. The *immediate* reaction beat (the shopkeeper snaps as you turn away), nested-dialogue
+pops needing a re-prompt, and NPC-initiated interruptions arming the mode from a background thread are all
+members of exactly the "family of system-issued signals" whose arrival the `WelcomeCommand` deferral above
+names as the trigger for redefining `Command` as a unit of work with two producers — each dispatched on its
+*own* turn, so one-dispatch-per-turn survives restated per unit of work rather than per read line. Until that
+family arrives, no background actor's presenter may write the mode buffer (the `AffordanceContext`
+thread-confinement note is the recorded revisit trigger), and the single-slot buffer stands.
+
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 
 This refines §4. An **inter-aggregate consistency rule** (every exit target resolves to an authored scene;
