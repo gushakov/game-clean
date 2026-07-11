@@ -14,8 +14,8 @@
 
 ## Persistence (Spring Data JDBC + MapStruct + Flyway, no ORM)
 
-Established by the scenes persistence spike, repeated verbatim for the player aggregate. Lives under
-`infrastructure/persistence/{aggregate}/` (`scene/`, `player/`).
+Established by the scenes persistence spike, repeated for each aggregate. Lives under
+`infrastructure/persistence/{aggregate}/` (`scene/`, `player/`, `item/`, `clock/`, `daytime/`).
 
 - **DB entities** — `*DbEntity` (e.g. `SceneDbEntity`, `ExitDbEntity`): plain Lombok
   `@Data` holders, single no-arg constructor (so Spring Data JDBC + MapStruct both bind
@@ -31,18 +31,25 @@ Established by the scenes persistence spike, repeated verbatim for the player ag
   the VO's own validation. Builds the domain aggregate through its Lombok builder — requires
   `lombok-mapstruct-binding` in the annotation-processor path (order: lombok → binding →
   mapstruct).
-- **Writes vs reads** — writes are inserts via `JdbcAggregateTemplate.insert` (assigned String
-  ids would otherwise be treated as updates); reads via the repository.
+- **Writes vs reads** — two write paths by whether the aggregate carries a Spring Data `@Version`.
+  *Version-less* aggregates (`Scene`, `Player`, `GameClock`) write via `JdbcAggregateTemplate.insert`
+  (assigned String ids would otherwise be treated as updates). *Versioned* aggregates (`DayPhaseLog`, `Item`)
+  write via plain `repository.save`, which decides insert-vs-update from the version (0 → insert; >0 →
+  update-with-optimistic-check) and so needs neither `existsById` nor `JdbcAggregateTemplate`. Reads via the
+  repository. (Spring Data JDBC increments the version on insert, so a freshly saved versioned row is at 1 —
+  design-notes §5.)
 - **Exception translation** — each adapter method wraps Spring's `DataAccessException` into
   `PersistenceOperationsError`. The catch is **narrow** (`DataAccessException`, not `Exception`), so a stray
   programming bug rides raw to the use case's catch-all instead of being mislabelled a persistence fault. The
-  **read** methods (`findScene`/`findPlayer`/`findItemsInScene`) catch `DataAccessException |
+  **read** methods (`findScene`/`findPlayer`/`findItemsInScene`/`findItemsHeldBy`) catch `DataAccessException |
   InvalidDomainObjectError`: a corrupt stored row fails the validating constructors during reconstitution, and
   that is an *integrity fault* of the port (the store is valid by provenance), so it too becomes a
   `PersistenceOperationsError` — never a domain-input invalidity (design-notes §2/§3).
-- **Schema (Flyway)** — migrations in `src/main/resources/db/migration/` (`V1` = `scene` + `exit`,
-  `V2` = `player`). A composite PK on an owned child `(scene_id, name)` enforces a domain uniqueness
-  invariant at the DB level. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
+- **Schema (Flyway)** — migrations in `src/main/resources/db/migration/`: `V1` scene + exit, `V2` player,
+  `V3` item, `V4` game_clock, `V5` day_phase_log (with a `version` column), `V6` item mobile location
+  (`scene_id` → `(location_kind, location_ref)`) + `version`. A composite PK on an owned child
+  `(scene_id, name)` enforces a domain uniqueness invariant at the DB level. A merged migration is immutable
+  (fix forward with a new `Vxx`); `V6` is the first to *alter* an existing table. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
   carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.
 - **Player family** (`infrastructure/persistence/player/`) — mirrors the scene family exactly:
   `PlayerDbEntity` (`@Table("player")`, `@Column("current_scene_id")`, no owned children),
@@ -53,7 +60,7 @@ Established by the scenes persistence spike, repeated verbatim for the player ag
 ### Test layering — Surefire (unit) vs Failsafe (integration)
 
 - **Unit tests** = `*Test`, run by Surefire in the `test` phase, **DB-free** (domain + use cases
-  with mocked ports). The 27 model/arch tests are here.
+  with mocked ports). The model and ArchUnit tests are here. (Live counts: `project-context.md`.)
 - **Integration tests** = `*IT`, run by Failsafe in the `verify` phase (Failsafe execution is
   wired explicitly in `pom.xml`), against an **ephemeral Testcontainers Postgres owned by the test
   run** — `@DataJdbcTest` + `@AutoConfigureTestDatabase(replace = NONE)` for the slices,
@@ -124,7 +131,15 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   it presents the outcome and throws the marker `SubcaseAlreadyPresented` (`core/port/`); on success it
   *returns* `OrientPlayerResult` (player + scene). Parents delegate their opening and swallow the marker in
   a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all. Tested directly
-  (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4).
+  (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4). The second subcase
+  family, `core/usecase/select/`, owns the target-disambiguation dialogue: `AbstractSelectTargetSubcase<C>`
+  (one-level Template Method, generic in its coordinate; `final` template methods, one
+  `provisionCandidates(C)` hook) with concretes `SelectSceneItemSubcase` (`SceneId` → scene ground;
+  `examine`/`take`) and `SelectInventoryItemSubcase` (`PlayerId` → player's keeping; `drop`), each holding the
+  item port and provisioning its own candidates — parents pass only the coordinate. Its
+  `SelectTargetPresenterOutputPort` stays ⟂ the orient port (flat composition on one concrete presenter), and
+  its outcomes are named provenance-neutrally (`presentItemNoLongerAvailable`) with per-presenter English
+  (design-notes §4).
 - **Composition root** — `infrastructure/UseCaseConfig` declares each use case `@Bean
   @Scope(PROTOTYPE)`, return-typed to the **input port interface** (impl hidden from the container),
   assembled with explicit `new` (no Spring stereotype on core classes). **Presenters and subcases are
@@ -177,6 +192,17 @@ Established by the JLine entry-point work (issue #6).
   `UnknownCommand` echoes a hint). The `Look` use case drives `TerminalScenePresenter` (now implementing
   `LookPresenterOutputPort`), so the console no longer touches the presenter. ANTLR deferred — rationale
   in design-notes §9. Adding a command/synonym = one `register(...)` line in `CommandParser`.
+- **Conversation dispatcher** (`infrastructure/terminal/conversation/`, issue #55) — resuming a multi-step
+  dialogue (a numbered disambiguation pick) is routed by *kind*, not hardwired. `AffordanceContext` tags its
+  pending offer with a `SelectionKind` (infra enum); each driven presenter arms its own kind when it renders a
+  menu. A `Conversation { SelectionKind kind(); void resume(Command, List<String>); }` handler per dialogue
+  (`Examine`/`Take`/`DropConversation`, sharing the Template-Method base `AbstractSelectionConversation`) is
+  `new`ed in `UseCaseConfig`; `ConsoleSession` injects `List<Conversation>` — the **container is the resumer
+  map**, matched on the armed kind (no hand-maintained `kind→useCase` table) — and asserts at startup that every
+  `SelectionKind` has a handler. Each handler pulls a fresh prototype use case per resume (`getBean`). The
+  abstraction emerged at the *second* number-continued dialogue (`take`) and was confirmed by the third
+  (`drop` — new kind + handler bean, dispatcher untouched), distinct from the `select` base which emerged at
+  the second *provisioner* (`drop`). Rationale: design-notes §9.
 - **`GameConfigurationProperties`** (`infrastructure/`) — the single catalog of every `game.*` property,
   nested static classes per group (`World.seedLocation`, `Terminal.enabled`). Constructor-bound, Lombok,
   `@DefaultValue` (bare on nested groups). Enabled via `@EnableConfigurationProperties` on
@@ -274,11 +300,14 @@ Flyway migration results — never to read or mutate business data.
 
 ## Code conventions (as established)
 
-- Domain entities/VOs: immutable, always-valid (validating constructors), **JDK-only**
-  validation (`Objects.requireNonNull` + explicit `IllegalArgumentException`) — no
-  commons-lang3. Equality by id for aggregate roots (`@EqualsAndHashCode(onlyExplicitlyIncluded
-  = true)` + `@Include` on the id), by value for VOs. `@Builder` on the validating constructor,
-  never on the class.
+- Domain entities/VOs: immutable, always-valid. **Construction** is the validity gate: validating
+  constructors/factories throw the single named `InvalidDomainObjectError` (`core/model/`) via the
+  `DomainValidation` helper (`requireNonNull`, …) — no commons-lang3. **Behaviour-method** argument guards stay
+  plain `Objects.requireNonNull`/NPE (a null collaborator to a side-effect-free method is a caller bug, not
+  invalid domain input — design-notes §2). Equality by id for aggregate roots
+  (`@EqualsAndHashCode(onlyExplicitlyIncluded = true)` + `@Include` on the id), by value for VOs. `@Builder` on
+  the validating constructor, never on the class; copy-on-write via `@With` (routes through the same
+  constructor), as on `Item`.
 - **No explicit `private final` on fields — Lombok sets the modifiers.** Every class elides the redundant
   modifiers: VOs via `@Value` (which implies them), and every other class (aggregates, adapters, renderers,
   use cases, presenters, `ConsoleSession`, `CommandParser`, config) via a class-level

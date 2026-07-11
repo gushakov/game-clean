@@ -44,7 +44,7 @@ public class ItemTemplate {
     public Item instanceAt(ItemId id, SceneId location) {
         return Item.builder()
                 .id(id)
-                .location(location)
+                .location(new Location.OnGround(location))
                 .shortDescription(shortDescription)
                 .fullDescription(fullDescription)
                 .build();

@@ -1,6 +1,7 @@
 package com.github.gameclean.core.usecase.explore;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.usecase.orient.OrientPlayerResult;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcaseInputPort;
@@ -37,7 +38,7 @@ public class ExamineUseCase implements ExamineInputPort {
 
     ExaminePresenterOutputPort presenter;
     OrientPlayerSubcaseInputPort orientPlayerSubcase;
-    SelectTargetSubcaseInputPort selectTargetSubcase;
+    SelectTargetSubcaseInputPort<SceneId> selectTargetSubcase;
 
     @Override
     public void playerExaminesTarget(String target) {

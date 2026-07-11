@@ -6,6 +6,7 @@ import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
+import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
@@ -193,7 +194,7 @@ class InitializeGameUseCaseTest {
         ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
         verify(itemOps).saveItem(saved.capture());
         assertThat(saved.getValue().getId()).isEqualTo(new ItemId("itm00000000"));
-        assertThat(saved.getValue().getLocation()).isEqualTo(new SceneId("scn2"));
+        assertThat(saved.getValue().getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn2")));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Item>> presentedItems = ArgumentCaptor.forClass(List.class);

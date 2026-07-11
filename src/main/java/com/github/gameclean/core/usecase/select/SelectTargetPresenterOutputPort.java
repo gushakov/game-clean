@@ -6,14 +6,21 @@ import com.github.gameclean.core.model.item.ItemId;
 import java.util.List;
 
 /**
- * Presenter (driven) output port of the {@link SelectSceneItemSubcase select} subcase: the outcomes the
+ * Presenter (driven) output port of the {@link AbstractSelectTargetSubcase select} subcase: the outcomes the
  * subcase presents while resolving <em>which</em> thing the player means among the candidates available to
- * it. These five methods are the subcase's <em>entire</em> presentation surface.
+ * it. These four methods are the subcase's <em>entire</em> presentation surface, shared by every provisioner
+ * (scene ground, inventory) — the outcomes are provenance-neutral; only their English is not, and each
+ * concrete presenter renders its own context's phrasing.
+ *
+ * <p>There is deliberately no "nothing offered to choose" outcome here: with the conversation dispatcher, the
+ * driving adapter resumes a selection only when one is <em>armed</em>, so an empty offer can never reach the
+ * subcase as a player action. The subcase guards that case as a wiring precondition (it throws, reaching the
+ * parent's catch-all) rather than presenting it.
  *
  * <p><b>Orthogonal to orientation — composition, not inheritance.</b> Resolving which thing the player means
  * is a different concern from resolving where the player stands, so this port does <em>not</em> extend
  * {@code OrientPlayerPresenterOutputPort}: a card or a spell is selected without orienting anything. A parent
- * that does both — {@code examine}, later {@code take}/{@code drop} — has one concrete presenter implement
+ * that does both — {@code examine}, {@code take}, {@code drop} — has one concrete presenter implement
  * this port <em>and</em> the orient port <em>and</em> its own outcome port, as three flat interfaces wired
  * per role by the composition root.
  *
@@ -36,16 +43,12 @@ public interface SelectTargetPresenterOutputPort {
 
     /**
      * A by-choice selection that no longer resolves: the chosen candidate is no longer among those available
-     * (taken, moved, or despawned since it was offered). The follow-up re-provisions against live state, so
-     * this is an honest domain outcome rather than a stale render.
+     * (taken, dropped, moved, or despawned since it was offered). The follow-up re-provisions against live
+     * state, so this is an honest domain outcome rather than a stale render. Named provenance-neutrally on
+     * purpose — "no longer on the ground here" for a scene selection, "no longer carried" for an inventory
+     * one — because the outcome is the subcase's, while the English is each presenter's.
      */
-    void presentItemNoLongerHere(ItemId itemId);
-
-    /**
-     * The player tried to choose, but no disambiguation menu is pending (a bare number with nothing offered).
-     * A selection-conversation outcome owned by the subcase — not a stray message the controller prints.
-     */
-    void presentNoPendingSelection();
+    void presentItemNoLongerAvailable(ItemId itemId);
 
     /** The player picked a number outside the offered candidates. The menu stands, so they can pick again. */
     void presentNoSuchOption(int ordinal);

@@ -48,6 +48,24 @@ class CommandParserTest {
     }
 
     @Test
+    void parses_take_and_its_get_synonym_carrying_the_target() {
+        assertThat(parser.parse("take dagger")).contains(new TakeCommand("dagger"));
+        assertThat(parser.parse("get rusty sword")).contains(new TakeCommand("rusty sword"));
+    }
+
+    @Test
+    void parses_drop_and_its_put_synonym_carrying_the_target() {
+        assertThat(parser.parse("drop dagger")).contains(new DropCommand("dagger"));
+        assertThat(parser.parse("put rusty sword")).contains(new DropCommand("rusty sword"));
+    }
+
+    @Test
+    void bare_take_or_drop_without_a_target_is_unknown() {
+        assertThat(parser.parse("take")).contains(new UnknownCommand("take"));
+        assertThat(parser.parse("drop")).contains(new UnknownCommand("drop"));
+    }
+
+    @Test
     void parses_a_bare_positive_integer_into_a_select_command() {
         assertThat(parser.parse("2")).contains(new SelectCommand(2));
         assertThat(parser.parse("  10 ")).contains(new SelectCommand(10));

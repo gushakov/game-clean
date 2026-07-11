@@ -58,7 +58,8 @@ class ItemTemplateTest {
         List<Item> spawned = template.spawnInto(dice);
 
         assertThat(spawned).extracting(item -> item.getId().getValue()).containsExactly("itm00000000", "itm11111111");
-        assertThat(spawned).extracting(item -> item.getLocation().getValue()).containsExactly("scn1", "scn2");
+        assertThat(spawned).extracting(item -> ((Location.OnGround) item.getLocation()).getScene().getValue())
+                .containsExactly("scn1", "scn2");
         assertThat(spawned).allSatisfy(item -> {
             assertThat(item.getShortDescription()).isEqualTo(SHORT);
             assertThat(item.getFullDescription()).isEqualTo(FULL);

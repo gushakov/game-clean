@@ -1,6 +1,7 @@
 package com.github.gameclean.core.port.persistence;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 
 import java.util.List;
@@ -10,10 +11,11 @@ import java.util.List;
  * implements it. The {@code OutputPort} suffix marks the hexagonal direction: the core is the caller,
  * the infrastructure ring the implementor.
  *
- * <p>Scoped to what its use cases need: a query of the items located in a scene (the {@code orient}
- * subcase reads "what is on the ground here" for {@code look}/{@code move} to present, and {@code pick}
- * will reuse it to find a named target), a per-item save (the boot initializer persists each spawned
- * instance), and an emptiness check for the spawn idempotency guard. Following the established
+ * <p>Scoped to what its use cases need: the two location queries over the item's by-identity
+ * {@code Location} reference — the items on the ground in a scene ({@code look}/{@code move} present them;
+ * the scene-ground {@code select} provisions from them) and the items a player holds (the inventory
+ * {@code select} provisions from them, for {@code drop}) — a per-item save (spawning inserts, {@code take}/
+ * {@code drop} update), and an emptiness check for the spawn idempotency guard. Following the established
  * driven-port convention, it trades in the domain {@link Item} model — the adapter hides its own
  * persistence shape.
  *
@@ -27,6 +29,12 @@ public interface ItemRepositoryOperationsOutputPort {
      * @throws PersistenceOperationsError if the lookup fails
      */
     List<Item> findItemsInScene(SceneId sceneId);
+
+    /**
+     * @return the items currently held by the given player (their keeping), empty if none.
+     * @throws PersistenceOperationsError if the lookup fails
+     */
+    List<Item> findItemsHeldBy(PlayerId holder);
 
     /**
      * Persists a single item (insert). Called once per spawned instance during world initialization.

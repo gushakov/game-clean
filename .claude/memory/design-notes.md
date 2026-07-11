@@ -228,6 +228,22 @@ items inside `Scene` would both invent a false invariant and force every pickup 
 aggregate — the contention seed of `[thread #3]`. Minted minimal, like `Player`: id, location, two
 descriptions, nothing speculative.
 
+**`take` cashes the "mobile location" prediction — a sealed `Location` VO, not a nullable holder.** `[thread #1]`
+`[thread #3]` The boundary above *predicted* this ("on the ground now, in a player's possession once `take`
+arrives"), and `take` collected: `Item.location` generalized from a bare `SceneId` to a sealed `Location` —
+`OnGround(SceneId)` | `HeldBy(PlayerId)`. The *shape* is the always-valid discipline answering a modelling fork.
+A nullable `holder` beside the `SceneId` would split **one** concept — where the item is — across two fields
+bound by an exactly-one-set rule the constructor must police; the sealed VO makes that XOR **structurally
+impossible** (one case or the other, never both, never neither), and a pattern-matching `switch` over the two is
+exhaustively compiler-checked, so the future third case (inside a container, a corpse) cannot be silently
+forgotten at a mutate or persist site. The holder stays a `PlayerId` until NPCs force the generalization — the
+same emergence beat that kept `Player` to one field. The rejected third option — an inventory *list* on
+`Player` — is the **containment** error this very section argued against for `Scene`↔`Item`, seen from the
+other side: it would invent a false `Player`↔`Item` invariant and rewrite the whole player aggregate per
+pickup. (Promotion candidate, flagged not promoted: *model a value with a closed set of mutually-exclusive
+shapes as a sealed type, not co-existing nullable fields plus an XOR guard — the type makes the invariant
+structural and the exhaustive `switch` makes the next case unforgettable.*)
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -839,25 +855,52 @@ The non-symmetry with `orient`'s returned `OrientPlayerResult` is the *same rule
 `OrientPlayerResult` carries two things (player + scene) — a composite, earned; a one-`SceneId` request would
 not be. Matching the `…Request`/`…Result` names for symmetry's sake would violate the rule.
 
-**One concrete subcase now; the Template-Method base emerges at provisioner #2.** `[thread #1]` `[thread #4]`
-There is one provisioner today — items on the scene ground (`examine`, and later `take`, share it) — so there
-is one concrete `SelectSceneItemSubcase` with a private `provisionCandidates`, *not* an abstract base with a
-single subclass. When `drop` brings the **second** provisioner (an inventory, keyed on a `PlayerId`),
-`provisionCandidates` is extracted onto an `AbstractSelectTargetSubcase` as a `protected abstract` hook — a
-one-level **Template Method** whose concretes are genuine is-a target-selectors, the *legitimate* face of
-inheritance that the composition-over-inheritance heuristic guards the flip side of (it forbids stealing
-implementation through a base you are not a kind of; it does not forbid a true taxonomic specialization
-varying one hook bound at wiring time). Crucially, the **abstract base and its generic context type are the
-same deferred decision**: a request abstraction "to work generically" cannot be designed over one provisioner
-without guessing (fat DTO? sealed hierarchy? generic parameter?); two real context shapes (`SceneId`,
-`PlayerId`) make the right one obvious. So the plain-`SceneId` parameter and the concrete subcase are the
-*matched* choice — concrete subcase, concrete input — and both generalize together when the second instance
-lands; the localized cost (the select signature changes at that point) is the right time to introduce the
-abstraction, not before. Residual tension named for later: today's `SceneId` context presumes a *grounded*
-selection — a future non-grounded one (the card game) forces the generic context then, the same emergence
-beat. (Promotion candidate, flagged not promoted: *composition-over-inheritance is not absolute — a one-level
-Template Method varying a single hook, over genuine is-a subtypes bound at wiring time, is legitimate; defer
-both the base and its generic input until the second concrete makes the generalization visible.*)
+**The Template-Method base, realized at provisioner #2 — and the coordinate fork it settled.** `[thread #1]`
+`[thread #4]` This section first kept one concrete `SelectSceneItemSubcase` with a private
+`provisionCandidates` — *not* an abstract base with a single subclass — because the **abstract base and its
+generic context type are the same deferred decision**: a request abstraction "to work generically" cannot be
+designed over one provisioner without guessing (fat DTO? sealed hierarchy? generic parameter?); two real
+context shapes make the right one obvious. `drop` brought the second provisioner (the player's keeping, keyed
+on a `PlayerId`) and cashed the prediction exactly: the whole dialogue skeleton — the match and 0/1/N branch,
+the offer gates, the token reconstitution, the live re-confirm — moved onto `AbstractSelectTargetSubcase`
+(`final` template methods) with `provisionCandidates` as the single `protected abstract` hook, a one-level
+**Template Method** whose concretes are genuine is-a target-selectors — the *legitimate* face of inheritance
+that the composition-over-inheritance heuristic guards the flip side of (it forbids stealing implementation
+through a base you are not a kind of; it does not forbid a true taxonomic specialization varying one hook
+bound at wiring time). And the two real shapes (`SceneId`, `PlayerId` — both single id VOs) did make the
+right context abstraction obvious: a **generic coordinate**, `SelectTargetSubcaseInputPort<C>` (issue #55,
+decision #6). The reasoning: "designate which thing the player means among the candidates" is *one* Cockburn
+goal regardless of candidate provenance — provenance is a parameter of the goal, not a different goal — so
+the port stays **one interface**, generic where provenance parameterizes it. Each parent supplies exactly its
+coordinate, so there is no dead parameter (the ISP objection that killed the uniform-`OrientPlayerResult`
+alternative), and `select` stays ⟂ `orient` (the bearings alternative would have coupled select's port to
+orient's result type and pre-committed every selection to being *grounded* — which also resolves the residual
+tension this section had named: a future non-grounded selection simply binds its own `C`). Deliberately *not*
+generalized: the candidate type stays `Item` (no `<C, T>`) until a non-item selection actually exists — the
+same one-instance discipline, one level up. The extraction also produced a small port-vocabulary rule: the
+shared outcome `presentItemNoLongerHere` was renamed **provenance-neutral**
+(`presentItemNoLongerAvailable`), because the *outcome* belongs to the subcase while the *English* belongs to
+each presenter — the ground consumers render "no longer here", drop renders "no longer carrying" — so the
+port method never lies for half its consumers. (Promotion candidate, flagged not promoted:
+*composition-over-inheritance is not absolute — a one-level Template Method varying a single hook, over
+genuine is-a subtypes bound at wiring time, is legitimate; defer both the base and its generic input until
+the second concrete makes the generalization visible; when a shared skeleton's outcome reads differently per
+concrete, name it provenance-neutrally on the port and leave the phrasing to the presenters.*)
+
+**`take` is the select subcase's first *writing* consumer — orchestration + a write tail, and no construction
+checkpoint.** `[thread #4]` `take` is `examine`'s twin with a write: the *same* two interactions
+(designate-by-description / designate-by-choice) over the *same* `orient`+`select` opening, converging on one
+success (`presentItemTaken`), then the `move`-style write tail — mutate (`item.takenBy(player)`), one
+`doInTransaction`, present after commit. Two things the implementation pinned. First, it **confirms the
+select-subcase prediction above**: `take` shares the *scene-ground* provisioner `examine` already uses and adds
+none, so it reuses `SelectSceneItemSubcase` unchanged and the `AbstractSelectTargetSubcase` base waited for
+`drop` (the second *provisioner* — since realized, above). Second — and quietly instructive — `take` has **no value-object-construction
+checkpoint at all**: `orient` hands it a valid `Player`, `select` a valid `Item`, and `takenBy` takes the
+already-valid `PlayerId`; the lone literal in the interaction (the target fragment) is consumed *inside*
+`select`. So the §2 construction gate, ubiquitous in `InitializeGame`, is simply **absent** here — a use case
+whose every input is already a domain object needs no gate, and inventing one (re-wrapping an id "to be safe")
+would be ceremony. The checkpoint count tracks where *literals* cross the boundary, not a fixed per-use-case
+ritual.
 
 ## 5. Explicit transaction demarcation
 
@@ -1050,6 +1093,45 @@ the `concurrency` package is its eventual address. The one behaviour still *not*
 policy (re-read, recompute, re-save) — intricate and footgun-prone (unbounded retry, re-presentation) — which
 `AnnounceTimeOfDay` deliberately forgoes (the loser's goal is already met), so it too waits for a contended
 aggregate that wants it.
+
+**`Item` is the first aggregate contended *by design* — so `@Version` finally meets the contention it was
+parked for, and the lost race is a *new* outcome with a read-side twin.** `[thread #3]` The `@Version` deferred
+for `Player` and adopted slightly-ahead-of-contention for `DayPhaseLog` lands, on `take`, at an aggregate that
+is genuinely contended: a ground item is grabbable by *any* actor in the scene — unlike a player's own position
+(single-writer) or, later, its own inventory (single-writer for `drop`). So `take` is the project's first
+select-then-mutate where two actors can really race, and the detector lens says the read-then-confirm in
+`select` is only **advisory** (it narrows the window); the `@Version` is what **closes** it. The instructive
+part is that the same player-facing fact — "someone got there first" — now surfaces at **two layers**, kept as
+**distinct outcomes** rather than collapsed: the **read-side** advisory (`select` re-provisions for a menu pick
+and finds the item gone → `presentItemNoLongerHere`) and the **write-side** authoritative (the versioned
+`saveItem` loses the commit race → `onLockDetected` → a *new* `presentItemGotAway`). They are reachable on
+*different paths* — the single-match `take rusty` does no read-side re-check, so the write-side guard is its
+only net — which is exactly why they are two methods a renderer happens to collapse to one line, not one method
+(the "distinct outcomes get distinct present-methods" rule applied to a concurrency pair). And `take` *adds* an
+outcome rather than reusing one (`DayPhaseLog` mapped its lock-loss onto the existing `presentNothingToAnnounce`;
+`take`'s is genuinely new), confirming the lock-loss reaction is shaped by **what the interaction's goal makes
+of losing**, not by the mechanism. One persistence detail the round-trip pinned: Spring Data JDBC **increments
+the version on insert** (a fresh `Item` at version 0 is stored at 1 — proven by `DayPhaseLogRoundTripIT`'s
+insert-then-update succeeding), so the `V6` backfill of pre-existing rows uses version **1**, the
+"already-persisted" state, so a `take` of a legacy item is an *update*, not a duplicate-key insert. (Promotion
+candidate, flagged not promoted: *when one player-facing outcome has both an advisory read-side detection and an
+authoritative write-side one, keep them distinct present-methods reachable on distinct paths — collapsing them
+hides that the unique-match path has only the write-side net.*)
+
+**`drop` is the deliberate counter-example — the plain overload, chosen and pinned.** `[thread #3]` The
+`(action, onLockDetected)` idiom is opt-in (above: propagation is preserved as the default), and `drop` is the
+first interaction to *exercise* that default deliberately: a held item is **single-writer** (only its holder's
+own `drop` writes it), so there is no race to lose and a handler would be machinery for an unreachable
+outcome. The versioned save still guards integrity; were a lock loss ever to fire it would be a wiring
+surprise, and it *propagates* to the outermost `catch → presentError` like any fault. The codebase now carries
+the contrast as a matched pair — contested aggregate → per-block handler and a presented outcome (`take`);
+single-writer aggregate → plain overload and propagation (`drop`) — mirroring the version-less `GameClock` /
+versioned `DayPhaseLog` contrast one level up. And the decision is executable doctrine, not a comment: a
+`DropUseCaseTest` pins that an `OptimisticLockingError` reaches `presentError` and never a player outcome, so
+a future well-meaning "symmetry with take" refactor fails a test instead of silently minting a speculative
+outcome. (Promotion candidate, flagged not promoted: *adopt the lock-detected handler only where contention is
+real; a single-writer aggregate keeps the propagating default, and a unit test pinning the propagation turns
+the choice into doctrine.*)
 
 ## 6. The composition root — the framework held at arm's length
 
@@ -1462,9 +1544,10 @@ case up from `ApplicationContext` per `resume`** — the established prototype-p
 `ObjectProvider`), because a singleton handler that *captured* its prototype use case would silently defeat
 the scope (scope is freshness *per lookup*; a `List<Conversation>` is injected once). The cast-and-call
 factors into an `AbstractSelectionConversation` (concretes vary only the use-case method), mirroring
-`AbstractSelectTargetSubcase` (§4) and emerging at the second conversation; the `continuedBy` predicate stays
-inline in the dispatcher until conversation #3 (one continuing on something other than a bare number) —
-staged emergence, so at `drop` a handler carries only `kind()`+`resume()`.
+`AbstractSelectTargetSubcase` (§4) and emerging at the second conversation — which, implementation revealed, is
+**`take`, not `drop`** (the two-second-instances note below). The `continuedBy` predicate stays inline in the
+dispatcher until conversation #3 (one continuing on something other than a bare number) — staged emergence, so
+a handler carries only `kind()`+`resume()` until then.
 
 **Why not a *core* `Conversation` the input ports implement.** `[thread #4]` The tempting unification —
 `*InputPort extends Conversation`, `resume` on the use case — was **rejected**: a *generic* `Conversation`
@@ -1480,6 +1563,173 @@ not promoted: *model a use case as a conversation's substance and its modality �
 resume routing — as a delivery-mechanism concern; dress the use case as an infra conversation handler at the
 composition root and let the DI container be the resumer registry; never give the core a `Conversation`
 interface, which would import the delivery vocabulary the core excludes.*)
+
+**Two different "second instances", in two different PRs — the finding `take` forced.** `[thread #1]` `[thread #4]`
+The plan above (and issue #55's first draft) put *both* shared abstractions at `drop`. Implementing `take`
+corrected it: there are **two distinct "second instances"**, and they fall in different PRs because they
+generalize different axes. The **conversation dispatcher** generalizes *"which dialogue does a bare number
+resume?"* — `examine` is the first number-continued dialogue, **`take` is the second**, so kind-routing and
+`AbstractSelectionConversation` are forced *at `take`* (without them, a number after `take rusty` would wrongly
+resume `examine` and *describe* the item instead of taking it). The **`select` Template-Method base** (§4)
+generalizes *"where do candidates come from?"* — `examine` is the first provisioner (scene ground), `take`
+*reuses* it, so the base waits for **`drop`** (the second *provisioner*, an inventory). Same "mint the
+abstraction at the second instance" rule, two different counts, two PRs — the lesson being that **"second
+instance" is meaningful only relative to the specific axis being generalized**; lumping two axes under one
+feature ("drop forces the shared abstractions") miscounts both. Two ripples the dispatcher's arrival forced,
+both at `take`: `SelectTargetPresenterOutputPort` lost `presentNoPendingSelection` — with the
+container-as-resumer-map the console resumes a selection *only when one is armed*, so an empty offer can no
+longer reach the subcase as a player action; it becomes a **precondition throw** (a wiring fault routed to the
+catch-all), *not* a deleted case (deleting it would let an empty offer mislabel as `presentNoSuchOption`). And
+the wiring grew a **startup completeness assertion** — every `SelectionKind` must have a `Conversation` bean —
+so a kind with no handler fails fast at boot rather than silently dropping a pick at runtime. (Promotion
+candidate, flagged not promoted: *"emerge at the second instance" is per-axis — one feature can be the second
+instance of one abstraction and merely the first reuse of another; count per abstraction, not per feature.*)
+`drop` then closed both counts: conversation #3 (`DropConversation`) *confirmed* the dispatcher — one new kind
+and one handler bean, with the dispatcher and its startup completeness assertion untouched — while provisioner
+#2 extracted the select base (§4); each abstraction earned its keep on its own axis, exactly as counted.
+
+**Rich dialogues ahead: routing never needs domain state — arm-time completeness.** `[thread #4]` The worry,
+examined ahead of any NPC dialogue existing: a quest offer or a shopkeeper haggle seems to need *domain* facts
+(player stats for chance rolls, time of day, quest stage) "when deciding how to forward the next line to the
+next interaction" — and the primary adapter has no access to the domain layer, while input ports expose only
+`void` interactions. The worry conflates two decisions the §4 semantic/modal split already separates. *Intent
+attribution* — which dialogue is this line answering? — is the router's job, and its only legitimate inputs are
+the parsed intent and the armed affordance. *The dialogue's next move* — given charisma, the hour, a dice roll,
+what happens? — is the use case's, made **behind** the input port as branch-and-present checkpoints (the
+persuasion roll happens inside the interaction, `Dice` being a domain service per §10; success and failure are
+two presented outcomes, each arming the mode differently). The reason the router never needs a domain fact is
+**arm-time completeness**: every domain-dependence of *future routing* is compiled into the affordance **at
+presentation time** by the previous interaction — which has full domain access — and pushed outward through the
+arming channel (`presentAmbiguousTarget` → the presenter flattens and arms). Routing is then a pure function of
+(last-afforded, player input); domain evolution between arm and resume is absorbed by the resumed interaction's
+re-validation (the select subcase re-provisions live), so the router attributes *intent* and never adjudicates
+*legality*. As a rule: **route on player-supplied facts and armed affordances; branch on domain facts — when
+routing seems to need a domain fact, a prior interaction must convert it into an armed affordance; the router
+never asks.** The rejected escape hatches are all return channels: a status/query method beside the void
+interactions is the `Result<T>` anti-pattern reborn; a core dialogue-state type read by the adapter through a
+driven port *before routing* is controller-as-orchestrator ("chaining use cases from controllers"), and "which
+interaction next" is exactly the routing vocabulary the core excludes (the argument that killed the core
+`Conversation`, above). The load-bearing precedent is HATEOAS: presenter-armed mode = server-embedded links,
+`SelectionKind` = link relation, opaque tokens = opaque URIs, re-validation = answering a stale link with 410
+Gone — and *conditional links* (an option offered only when domain state permits) are computed server-side and
+shipped outward; a client computing link availability itself is the anti-pattern the style exists to forbid.
+(Ink/Yarn dialogue engines are the game-native twin: conditional choices are evaluated by the engine against
+story variables when the choice set is *built*; the host loop renders choices and returns an ordinal —
+literally `playerTakesChosenCandidate(ordinal, offer)`.) (Promotion candidate, flagged not promoted: *a
+multi-interaction conversation's router routes on parsed intent and armed affordances only; the core steers
+routing by exporting affordances at presentation time — arm-time completeness — never by being queried;
+staleness is absorbed by re-validation in the resumed interaction, so the router attributes intent and never
+adjudicates legality.*)
+
+**The affordance payload may grow — but only in channel vocabulary, and only as data the core computed.**
+`[thread #2]` `[thread #4]` Rich dialogues will stretch the payload beyond `(kind, tokens)`: **per-choice
+routing tags** (one menu whose choices designate *different* user goals — ask lore / trade / threaten — each
+flattened to its own kind+token at offer time; a rich conversation is a *mode session spanning several Cockburn
+goals*, not a use case — the kind↔use-case 1:1 of examine/take/drop is an accident of three conversations that
+are all variations of one designation step), **accepted-answer grammars** (a yes/no prompt, a state-an-amount
+haggle — HAL-FORMS shipping the field schema along with the link), **exclusivity** (a dialogue that may *veto*
+departure captures input, vim-insert-style: while armed, `look` routes *into* the dialogue as "player tries to
+leave" and the use case adjudicates veto-or-release in one dispatch), and eventually a **mode stack** with a
+focus policy. None of this puts business in the adapter *provided the discriminator holds*: the payload's
+content is **computed inward and transcribed outward**, and the adapter's machinery is **generic over
+conversations** — the browser proof (forms, field types, modal windows: enormous machinery, zero business logic
+of any site it visits, because everything it enforces arrives as server-computed data). Four tests.
+*Transcription, not computation:* one present method ↔ one fixed, deterministic arming effect — or, once a
+converged outcome has divergent continuations (counter-offer vs. final offer), an explicit affordance VO handed
+through the present call (the clean-ddd-core "interaction-shape decisions belong in the use case" rule applied
+to affordances); the VO names WHAT is afforded in Cockburn vocabulary (accept / raise / walk-away), never WHICH
+method to call, and a presenter that inspects domain objects to *choose* what to arm has crossed the
+humble-presenter red line. *Matching, never evaluation:* infra asks only "does this line's shape fit an armed
+grammar, and which entry does it select?" — the router accepts any well-shaped `45`; only the use case may
+refuse it for reputation reasons; a router that rejects a *value* rather than a *shape* has become a
+semantics-aware policy engine. *Channel vocabulary only:* §1's second-adapter test, element by element —
+per-choice tags = a page's links, grammar = form field types, exclusivity = a modal dialog, stack = window
+focus, all with GUI analogues; "patience" / "price" / "stat threshold" have none, and a payload field that
+wants one is the signal to mint or extend the aggregate and degrade the token back to a correlation id (the
+token-discipline above: relay-only, operation-free). *Policy travels as data, mechanics stay generic:* whether
+a guard's challenge *preempts* a shopkeeper's offer is a domain fact — precedence and exclusivity are declared
+per affordance by the arming interaction, never an infra rule table ranking NPCs; and the modality vocabulary
+stays small and **closed** (pick-from-menu, yes/no, name-a-thing, state-an-amount, say-a-line, walk-away),
+composed by authored content, a new shape being a deliberate code change. Lifecycle labour is unchanged:
+presenters **arm and re-arm only**; abandonment-clear stays with the dispatcher (the §4 rejection of
+presenter-side clearing stands — clearing keys on input intent, which presenters cannot see). Enforcement is a
+test discipline more than an ArchUnit rule: the affordance VO is asserted field-by-field in *use-case* tests
+(the decision is pinned where it is made), and dispatcher tests stay parameterized over kinds — a
+per-conversation test appearing in the dispatcher suite is the smell detector. (Promotion candidate, flagged
+not promoted: *an affordance payload may grow arbitrarily rich without business leaking into the adapter iff
+its content is computed by the core and transcribed by presenters, the adapter only shape-matches and routes,
+every element passes the second-adapter test, and policy rides the payload while the machinery stays generic
+over conversations.*)
+
+**Conversation identity: the subject aggregate's id — minted by the domain, relayed by the mode, never spoken
+by the player.** `[thread #1]` `[thread #3]` `[thread #4]` Two same-kind conversations pending at once
+(fighting two NPCs, each mid hit/retaliate exchange) force the question: under which identifier do the armed
+affordances live, and how does it travel between turns — the terminal has no hidden input, and a player cannot
+be asked to retype a UUID per command. Three separations dissolve it. *What the id is:* **a conversation earns
+an identifier at exactly the moment it earns an aggregate — and it is the same identifier** (the fight's mode
+entry is keyed by the fight aggregate's id, or `(kind, subject)`); infra never mints identity (§2/#53) — the
+interaction that *opens* the fight creates the aggregate, the model minting its id; the terminal outcome that
+ends it closes it; the mode entry only caches the id between the two, its lifecycle shadowing the domain's.
+Whether two same-kind conversations with one counterpart may coexist is a **domain invariant** on the aggregate
+("at most one open negotiation per player–counterpart pair"), never an infra key-collision problem. Corollary:
+**an affordance may outlive foreground focus only if it is aggregate-backed** — a suspended mode entry must be
+re-armable from persisted domain state, which a pure-ephemeral offer (examine's menu) can never be; so
+ephemeral disambiguations stay single-slot and die on focus loss, exactly as today, and plurality is reserved
+for conversations whose substance the domain remembers. *How it travels:* by the existing relay, never through
+the player's fingers — the presenter flattens the aggregate id to a token as it arms; the mode stores it; the
+**router attaches it** when dispatching inward (ordinal + offer + subject token, all values, dependency
+rejection intact); the resumed interaction reconstitutes the id at the gate and re-validates against the live
+aggregate (the goblin fled between arm and answer → an honest "no longer" outcome). The web's hidden input
+solves *transport across a stateless protocol*; this session is stateful — **the mode is the hidden input**,
+held on the system's side of the conversation. (A future networked front-end would make wire-level correlation
+ids that adapter's private transport concern — still never the core's.) *How the player designates:* in
+ubiquitous language or by focus, never by identity. Explicit: `hit orc` — the fragment resolves *in the core*
+against live candidates (the select-subcase pattern; combat targets are the second candidate *type*, arriving
+on schedule to force the deferred `<C, T>` generalization of §4). Implicit: a bare `retaliate` or `2` goes to
+the focused entry — top of stack = most recently presented = what the player is looking at; the terminal is a
+linear medium, so **recency is the shared coordinate system** between the player's mind and the mode stack (the
+web multiplexes concurrent conversations *spatially*, in tabs; a terminal multiplexes them *temporally*, by
+focus — MUDs' forty-year-old answer: current-target focus plus explicit naming, ids never surfaced). An
+under-determining bare command (`hit` with two fights open) is answered by machinery already built: present the
+ambiguity menu, arm it, resume by ordinal. (Promotion candidate, flagged not promoted: *conversation identity
+is the conversation-state aggregate's own id — minted by the domain when the conversation opens, cached by the
+mode, attached by the router, re-validated by the resumed interaction; the player designates by ubiquitous
+language or recency-focus, never by identifier.*)
+
+**Semantic dialogue state: capture-at-offer, checkpoint grain, decay by derivation, mode-as-projection.**
+`[thread #3]` Four disciplines keep a dialogue aggregate honest, each pinned by the failure it prevents.
+**Capture-at-offer:** an offer whose generation consumed dice, stats, or the hour (a stochastically-rolled
+bonus haggle option) is written into the aggregate *in the transaction that decides it* — otherwise save/reload
+re-rolls the odds, and the resumed interaction's re-validation has no live state to validate the pick against;
+the numbered menu's *form* (ordering, numbering, styling) stays presentation, but its *content*, once
+stochastically or temporally decided, is a domain fact. **Checkpoint grain:** the aggregate persists
+domain-meaningful checkpoints (quest offered, counter-offer standing), never keystrokes — per-line writes buy
+`@Version` churn that manufactures *false* optimistic conflicts; abandonment and quit collapse to the last
+checkpoint, by authored design. **Decay by derivation:** offer expiry and NPC patience are persisted *anchors*
+(`expiresAt`) compared against the clock inside the *resuming* interaction — never background mutation of the
+dialogue aggregate, or the player loses optimistic races to a metronome; ticker writes stay reserved for
+genuine NPC decisions, where a lost race *is* the truth (the `presentItemGotAway` shape, §5).
+**Mode-as-projection:** the mode is a *cache of the last presentation*, rebuilt only by presenting again —
+which obligates a session-start (or scene-entry) system-actor interaction (a sibling of `systemGreetsPlayer`)
+to load pending dialogue checkpoints and *re-present* them, its presenter re-arming the mode; without that
+named component a persisted negotiation is durable yet unreachable — a soft-lock. Operational litmus: **kill
+the terminal mid-dialogue — anything lost that the domain should remember was mis-homed in mode state.**
+(Promotion candidate, flagged not promoted: *dialogue state splits by lifetime under a crash test — domain
+checkpoints in an aggregate, captured at decision time and expiring by derivation; the mode a re-armable
+projection of the last presentation.*)
+
+**The one doctrinal amendment rich dialogues will exact — and this section already reserved it.** `[thread #4]`
+Consequential abandonment (the player types `look` mid-haggle and the shopkeeper *takes offense*) cannot fire
+an inline abandonment interaction on the way to dispatching `look` — that is a second dispatch in one turn,
+against the internalized-dispatcher invariant above. The default is therefore consequence-at-offer-time plus
+lazy materialization: the offense/expiry is a domain fact, written when the offer was made, read on the
+dialogue's next touch. The *immediate* reaction beat (the shopkeeper snaps as you turn away), nested-dialogue
+pops needing a re-prompt, and NPC-initiated interruptions arming the mode from a background thread are all
+members of exactly the "family of system-issued signals" whose arrival the `WelcomeCommand` deferral above
+names as the trigger for redefining `Command` as a unit of work with two producers — each dispatched on its
+*own* turn, so one-dispatch-per-turn survives restated per unit of work rather than per read line. Until that
+family arrives, no background actor's presenter may write the mode buffer (the `AffordanceContext`
+thread-confinement note is the recorded revisit trigger), and the single-slot buffer stands.
 
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 

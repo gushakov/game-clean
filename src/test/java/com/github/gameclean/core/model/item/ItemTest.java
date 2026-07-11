@@ -1,22 +1,27 @@
 package com.github.gameclean.core.model.item;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
- * Tests for {@link Item#matches(String)} — the side-effect-free query the {@code examine} use case uses to
- * resolve a typed target against the things on the ground. Pinning it directly here (rather than only through
- * the use-case test) is the testability dividend of keeping the matching rule on the model.
+ * Tests for the {@link Item} aggregate: {@link Item#matches(String)} (the side-effect-free designation query),
+ * the {@link Item#takenBy(PlayerId)} / {@link Item#droppedAt(SceneId)} copy-on-write pair that moves an item
+ * between the ground and a player's keeping, and the always-valid construction gate. Pinning these directly
+ * here (rather than only through the use-case tests) is the testability dividend of keeping the behaviour on
+ * the model.
  */
 class ItemTest {
 
     private static Item item(String shortDescription) {
         return Item.builder()
                 .id(new ItemId("itm1"))
-                .location(new SceneId("scn1"))
+                .location(new Location.OnGround(new SceneId("scn1")))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description.")
                 .build();
@@ -47,5 +52,73 @@ class ItemTest {
     void a_null_fragment_is_a_caller_bug_not_invalid_input() {
         // A behaviour-method guard stays a plain NPE, unlike the construction gate's InvalidDomainObjectError.
         assertThatNullPointerException().isThrownBy(() -> item("A rusty dagger.").matches(null));
+    }
+
+    @Test
+    void takenBy_moves_the_item_into_the_holders_keeping_preserving_id_and_version() {
+        Item onGround = Item.builder()
+                .id(new ItemId("itm1"))
+                .location(new Location.OnGround(new SceneId("scn1")))
+                .shortDescription("A rusty dagger.")
+                .fullDescription("A longer description.")
+                .version(3)
+                .build();
+
+        Item taken = onGround.takenBy(new PlayerId("plr1"));
+
+        // Copy-on-write: a new instance, held by the player, same identity, version carried for the guarded write.
+        assertThat(taken.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
+        assertThat(taken.getId()).isEqualTo(new ItemId("itm1"));
+        assertThat(taken.getVersion()).isEqualTo(3);
+        assertThat(onGround.getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn1")));   // original untouched
+    }
+
+    @Test
+    void takenBy_a_null_holder_is_a_caller_bug() {
+        // A null collaborator to a behaviour method is a plain NPE, not the construction gate's error.
+        assertThatNullPointerException().isThrownBy(() -> item("A rusty dagger.").takenBy(null));
+    }
+
+    @Test
+    void droppedAt_puts_the_item_back_on_the_ground_preserving_id_and_version() {
+        Item held = Item.builder()
+                .id(new ItemId("itm1"))
+                .location(new Location.HeldBy(new PlayerId("plr1")))
+                .shortDescription("A rusty dagger.")
+                .fullDescription("A longer description.")
+                .version(3)
+                .build();
+
+        Item dropped = held.droppedAt(new SceneId("scn2"));
+
+        // Copy-on-write mirror of takenBy: on the ground where the player stands, same identity, version carried.
+        assertThat(dropped.getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn2")));
+        assertThat(dropped.getId()).isEqualTo(new ItemId("itm1"));
+        assertThat(dropped.getVersion()).isEqualTo(3);
+        assertThat(held.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));   // original untouched
+    }
+
+    @Test
+    void droppedAt_a_null_scene_is_a_caller_bug() {
+        // A null collaborator to a behaviour method is a plain NPE, not the construction gate's error.
+        assertThatNullPointerException().isThrownBy(() -> item("A rusty dagger.").droppedAt(null));
+    }
+
+    @Test
+    void rejects_a_negative_version() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Item.builder()
+                .id(new ItemId("itm1"))
+                .location(new Location.OnGround(new SceneId("scn1")))
+                .shortDescription("A rusty dagger.")
+                .fullDescription("A longer description.")
+                .version(-1)
+                .build());
+    }
+
+    @Test
+    void equality_is_by_id_ignoring_location_and_version() {
+        Item onGround = item("A rusty dagger.");
+        Item held = onGround.takenBy(new PlayerId("plr1"));   // same id, different location
+        assertThat(held).isEqualTo(onGround);
     }
 }

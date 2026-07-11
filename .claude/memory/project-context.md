@@ -54,7 +54,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/`; `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case (player-orientation output)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C>` Template-Method base + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -64,8 +64,10 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
-  (session-lifetime disambiguation buffer resource); `command/` the sealed `Command` + `CommandParser`;
-  `presenter/` the driven `Terminal*Presenter`s; `render/`
+  (session-lifetime disambiguation buffer resource, now carrying a `SelectionKind` tag) + the `SelectionKind` enum;
+  `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation` +
+  `AbstractSelectionConversation` Template-Method base + `Examine`/`TakeConversation`); `presenter/` the driven
+  `Terminal*Presenter`s; `render/`
   `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
@@ -174,7 +176,8 @@ named exit into the target scene, then sees it):
   branch) and `playerExaminesChosenCandidate(int ordinal, List<String> offeredTokens)` (designate by choosing
   from the offer, the disambiguation completion). The selection interaction is **handed the offered tokens as a
   value** by the controller (dependency rejection) and **presents every selection outcome itself**
-  (`presentNoPendingSelection` / `presentNoSuchOption` / `presentItemNoLongerHere` / `presentItemDescription`),
+  (`presentNoSuchOption` / `presentItemNoLongerAvailable` / `presentItemDescription`; the empty-offer case
+  became a wiring-precondition throw when the conversation dispatcher arrived — see the Take vertical),
   re-validating the chosen token against live scene state. By-identity resolution is **inlined** into that
   interaction (not a helper — keeps each checkpoint's present-and-return visible in one method); no driver
   designates by raw id yet (a future GUI row-click would get its own interaction). Read-only, no tx, like
@@ -345,7 +348,74 @@ write removed, so `ConsoleSession` now presents nothing itself:
   loop is the internalized request-dispatcher; per turn, fire-and-forget holds with no exception
   (design-notes §9).
 
-Tests: 269 unit (Surefire, DB-free) + 15 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Take` vertical **complete** (issue #55, PR1) — pick an item off the ground into the player's keeping; the
+project's first contested-resource write and first multi-conversation terminal dispatch:
+
+- **Domain** — sealed `Location` VO (`core/model/item/`): `OnGround(SceneId)` / `HeldBy(PlayerId)` cases
+  (`@Value`), generalizing `Item.location` from a bare `SceneId` so location is mobile (ground ↔ held). `Item`
+  gains `@With`, an opaque optimistic-locking `version` (excluded from id-equality, carried through copy-on-write),
+  and `takenBy(PlayerId)` → `withLocation(new HeldBy(holder))` (plain-NPE guard). `ItemTemplate.instanceAt` builds
+  `OnGround`. Holder is `PlayerId` until NPCs force a generalization (emergence). (design-notes §2.)
+- **Use case** — `Take` (`core/usecase/inventory/` — a new summary goal, acquisition vs. `explore`'s perceive):
+  two interactions converging on `presentItemTaken` — `playerTakesTarget(String)` and
+  `playerTakesChosenCandidate(int, List<String>)`. Pure orchestration: `orient` → `select` (the scene-ground
+  `SelectSceneItemSubcase`, reused) → `item.takenBy(player)` → one
+  `doInTransaction(action, onLockDetected)` holding only `saveItem`, present after commit. No
+  value-object-construction checkpoint (orient/select hand it valid objects). `TakePresenterOutputPort` extends
+  `ErrorHandlingPresenterOutputPort` + `presentItemTaken(Item)` + `presentItemGotAway(ItemId)` (the distinct
+  write-side lock-loss outcome; concrete presenter also implements the orient + select ports). (design-notes §4/§5.)
+- **Concurrency** — `@Version` on `Item` (first contested-resource write): the lock-loss in `onLockDetected` is the
+  write-side twin of `select`'s read-side `presentItemNoLongerAvailable`. Mirrors `DayPhaseLog`: version on model +
+  `@Version` on `ItemDbEntity`, version-driven `saveItem` (null/0 → insert so spawn still inserts; >0 →
+  update-with-check), wrapping `OptimisticLockingFailureException → OptimisticLockingError`. (design-notes §5.)
+- **Select ripple** — `presentNoPendingSelection` removed from `SelectTargetPresenterOutputPort`; the empty-offer
+  branch becomes a throwing precondition guard (the dispatcher resumes only an armed conversation, so an empty
+  offer reaching the subcase is a wiring fault, not a player outcome).
+- **Persistence** — Flyway `V6__item_mobile_location_and_version.sql`: `scene_id → (location_kind, location_ref)`,
+  backfill existing rows `GROUND`/version 1, add `version`. `ItemLocationKind` enum (infra), MapStruct
+  `Location ↔ (kind, ref)` converter (exhaustive `switch`), repo `findByLocationKindAndLocationRef`, adapter
+  version-driven save.
+- **Terminal — conversation dispatcher** (`take` is conversation #2, so it forces kind-routing — corrects the
+  issue's "drop forces it"): `SelectionKind{EXAMINE,TAKE}` enum; `AffordanceContext` now carries `(kind, tokens)`;
+  `infrastructure/terminal/conversation/` holds `Conversation{kind(); resume(Command, offer)}` +
+  `AbstractSelectionConversation` (Template Method, factors the `SelectCommand→ordinal` cast) +
+  `ExamineConversation`/`TakeConversation`. `ConsoleSession` injects `List<Conversation>` (the container *is* the
+  resumer map — no hand-maintained `kind→useCase` table), routes a `SelectCommand` to the conversation matching
+  the armed kind (else folds into `guide`), and asserts at startup (`@PostConstruct`) that every `SelectionKind`
+  has a handler. New `TakeCommand` + `take`/`get` verbs; `TerminalTakePresenter` (arms kind `TAKE`); `ItemRenderer`
+  gains `renderItemTaken`/`renderItemGotAway`. (design-notes §4/§9.)
+- **Composition root** — `takeUseCase` prototype (shared presenter, as examine); singleton
+  `examineConversation`/`takeConversation` beans.
+
+`Drop` vertical **complete** (issue #55, PR2) — put a carried item down onto the current scene's ground; the
+second inventory goal, and the second `select` provisioner that extracted the Template-Method base:
+
+- **Domain** — `Item.droppedAt(SceneId)` → `withLocation(new OnGround(scene))`: the copy-on-write twin of
+  `takenBy` (plain-NPE guard, version carried).
+- **Select generalization** — `SelectTargetSubcaseInputPort<C>` is now **generic in its coordinate** (issue #55
+  decision #6: one Cockburn goal = one port; provenance is a parameter, not a different goal);
+  `AbstractSelectTargetSubcase<C>` holds the whole dialogue skeleton (`final` template methods) with one
+  `provisionCandidates(C)` hook; concretes `SelectSceneItemSubcase` (`SceneId` → scene ground, `examine`/`take`)
+  and `SelectInventoryItemSubcase` (`PlayerId` → player's keeping, `drop`). Candidate type stays `Item` (no
+  `<C, T>` until a non-item selection exists). Shared outcome renamed provenance-neutral:
+  `presentItemNoLongerHere` → `presentItemNoLongerAvailable` (presenters render ground- vs carry-flavored
+  English). (design-notes §4.)
+- **Use case** — `Drop` (`core/usecase/inventory/`): `playerDropsTarget(String)` +
+  `playerDropsChosenCandidate(int, List<String>)` converging on `presentItemDropped(Item)`. The criss-cross
+  mirror of take — selects by player, mutates by scene — over the same `orient`+`select` opening; no
+  construction checkpoint. **Plain** `doInTransaction` (no `onLockDetected`): a held item is single-writer, so
+  a lock loss is unreachable and propagates to the catch-all — the contested→handler (`take`) vs
+  single-writer→propagate (`drop`) contrast, pinned by a unit test (design-notes §5).
+- **Ports / persistence** — `findItemsHeldBy(PlayerId)` on the item port; the adapter reuses the existing
+  `findByLocationKindAndLocationRef` derived query with kind `HELD`. **No Flyway migration** (V6 already carries
+  location + version).
+- **Terminal** — `DropCommand` + `drop`/`put` verbs (remainder-as-target); `SelectionKind.DROP`;
+  `TerminalDropPresenter` (arms DROP; carry-flavored English via new `ItemRenderer` variants);
+  `DropConversation` — conversation #3, which *confirms* the kind-routed dispatcher (dispatcher and startup
+  completeness assertion untouched). Composition root: `dropUseCase` prototype + `dropConversation` singleton.
+
+Tests: 304 unit (Surefire, DB-free) + 19 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
-and from prior runs; issue #17). Not yet: NPCs, the `take` use case, `look <exit>` (awaits an `Exit`
-description), async/event processing (the ticker polls; the outbox event spine is still ahead).
+and from prior runs; issue #17). Not yet: NPCs, `look <exit>` (awaits an `Exit` description), an
+inventory-listing command (`inventory`/`i`), `examine` over carried items (needs a composite ground∪keeping
+provisioner), async/event processing (the ticker polls; the outbox event spine is still ahead).

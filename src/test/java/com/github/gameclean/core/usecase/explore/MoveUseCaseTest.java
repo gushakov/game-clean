@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.explore;
 
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
+import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
@@ -200,7 +201,7 @@ class MoveUseCaseTest {
     private static Item item(String id, String scene, String shortDescription) {
         return Item.builder()
                 .id(new ItemId(id))
-                .location(new SceneId(scene))
+                .location(new Location.OnGround(new SceneId(scene)))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .build();

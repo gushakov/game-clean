@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.explore;
 
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
+import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
@@ -40,7 +41,7 @@ class ExamineUseCaseTest {
     @Mock
     private OrientPlayerSubcaseInputPort orientPlayerSubcase;
     @Mock
-    private SelectTargetSubcaseInputPort selectTargetSubcase;
+    private SelectTargetSubcaseInputPort<SceneId> selectTargetSubcase;
 
     @InjectMocks
     private ExamineUseCase useCase;
@@ -123,7 +124,7 @@ class ExamineUseCaseTest {
     private static Item item(String id, String shortDescription) {
         return Item.builder()
                 .id(new ItemId(id))
-                .location(new SceneId("scn1"))
+                .location(new Location.OnGround(new SceneId("scn1")))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .build();
