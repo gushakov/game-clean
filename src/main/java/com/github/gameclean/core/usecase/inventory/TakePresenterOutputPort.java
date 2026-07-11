@@ -12,8 +12,8 @@ import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
  * exactly as {@code examine} composes them.
  *
  * <p><b>Two outcomes, and why {@code presentItemGotAway} is distinct from {@code select}'s
- * {@code presentItemNoLongerHere}.</b> They are genuinely different domain outcomes that happen to read the
- * same to the player: {@code presentItemNoLongerHere} is the <em>read-side</em> miss (re-provisioning for a
+ * {@code presentItemNoLongerAvailable}.</b> They are genuinely different domain outcomes that happen to read the
+ * same to the player: {@code presentItemNoLongerAvailable} is the <em>read-side</em> miss (re-provisioning for a
  * menu pick found the item already gone), while {@code presentItemGotAway} is the <em>write-side</em> loss (we
  * read the item as present but lost the optimistic-locking race at commit). The single-match
  * {@code take rusty} path does no read-side re-check, so the write-side guard is its only concurrency net —
@@ -30,7 +30,7 @@ public interface TakePresenterOutputPort extends ErrorHandlingPresenterOutputPor
     /**
      * The take lost a concurrent race: the item was present when selected but another actor's write committed
      * first, so this take's versioned write was rejected and rolled back. The honest "someone got there first"
-     * outcome — the write-side twin of {@code select}'s read-side {@code presentItemNoLongerHere}.
+     * outcome — the write-side twin of {@code select}'s read-side {@code presentItemNoLongerAvailable}.
      */
     void presentItemGotAway(ItemId itemId);
 }

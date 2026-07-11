@@ -24,8 +24,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -35,90 +35,91 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Interaction tests for {@link TakeUseCase} in isolation — every collaborator is mocked. The use case is pure
- * orchestration: the {@code orient} subcase resolves the player and scene, the {@code select} subcase resolves
- * the item (both mocked here; their own outcomes are covered by their tests), and the use case mutates and
- * persists. The transaction port is stubbed via the lock-aware helpers, so the success path's after-commit
- * presentation and the lock-loss path's handler are both observable synchronously.
+ * Interaction tests for {@link DropUseCase} in isolation — every collaborator is mocked; the mirror of
+ * {@link TakeUseCaseTest} with the coordinates criss-crossed (select by player, mutate by scene). The
+ * transaction port is stubbed via the <em>plain</em> {@code (boolean, Runnable)} helpers, because drop
+ * deliberately uses the plain overload rather than the lock-aware one — and the lock-propagation test pins
+ * exactly that contrast: an {@link OptimisticLockingError} from the save is <b>not</b> translated into a
+ * player outcome but rides to the catch-all (a held item is single-writer, so a lost race is a fault, not an
+ * expected outcome; design-notes §5).
  *
- * <p>The interaction presents <em>once</em> on every path: a subcase signals {@link SubcaseAlreadyPresented}
- * (then nothing more happens here); the happy path presents the taken item after commit; a lost optimistic-lock
- * race presents "got away"; anything unhandled routes to {@code presentError}. Note {@code Item} equality is by
- * id, so the saved item is captured and its <em>location</em> asserted — the proof the take actually moved it.
+ * <p>Note {@code Item} equality is by id, so the saved item is captured and its <em>location</em> asserted —
+ * the proof the drop actually moved it onto the ground.
  */
 @ExtendWith(MockitoExtension.class)
-class TakeUseCaseTest {
+class DropUseCaseTest {
 
     private static final SceneId HERE = new SceneId("scn1");
+    private static final PlayerId SELF = new PlayerId("plr1");
 
     @Mock
-    private TakePresenterOutputPort presenter;
+    private DropPresenterOutputPort presenter;
     @Mock
     private OrientPlayerSubcaseInputPort orientPlayerSubcase;
     @Mock
-    private SelectTargetSubcaseInputPort<SceneId> selectTargetSubcase;
+    private SelectTargetSubcaseInputPort<PlayerId> selectTargetSubcase;
     @Mock
     private ItemRepositoryOperationsOutputPort itemOps;
     @Mock
     private TransactionOperationsOutputPort txOps;
 
     @InjectMocks
-    private TakeUseCase useCase;
+    private DropUseCase useCase;
 
     @Test
-    void takesTheItemDesignatedByDescriptionAndPresentsItAfterCommit() {
+    void dropsTheItemDesignatedByDescriptionAndPresentsItAfterCommit() {
         orientedAtScn1();
-        Item dagger = groundItem("itm1", "A rusty dagger.");
-        when(selectTargetSubcase.playerDesignatesTarget("dagger", HERE)).thenReturn(dagger);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        Item dagger = heldItem("itm1", "A rusty dagger.");
+        when(selectTargetSubcase.playerDesignatesTarget("dagger", SELF)).thenReturn(dagger);
+        runTransactionAndFireAfterCommit(txOps);
 
-        useCase.playerTakesTarget("dagger");
+        useCase.playerDropsTarget("dagger");
 
-        // The item is saved into the player's keeping (location moved, identity and version preserved)...
+        // The item is saved onto the ground of the current scene (location moved, identity and version preserved)...
         Item saved = capturedSavedItem();
         assertThat(saved.getId()).isEqualTo(new ItemId("itm1"));
-        assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
-        // ...and the taken item is presented only after the write commits.
-        verify(presenter).presentItemTaken(saved);
-        verify(presenter, never()).presentItemGotAway(any());
+        assertThat(saved.getLocation()).isEqualTo(new Location.OnGround(HERE));
+        // ...and the dropped item is presented only after the write commits.
+        verify(presenter).presentItemDropped(saved);
     }
 
     @Test
-    void takesTheChosenCandidateAndPresentsItAfterCommit() {
+    void dropsTheChosenCandidateAndPresentsItAfterCommit() {
         orientedAtScn1();
-        Item dagger = groundItem("itm1", "A rusty dagger.");
-        when(selectTargetSubcase.playerDesignatesChosenCandidate(2, List.of("itm0", "itm1"), HERE))
+        Item dagger = heldItem("itm1", "A rusty dagger.");
+        when(selectTargetSubcase.playerDesignatesChosenCandidate(2, List.of("itm0", "itm1"), SELF))
                 .thenReturn(dagger);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runTransactionAndFireAfterCommit(txOps);
 
-        useCase.playerTakesChosenCandidate(2, List.of("itm0", "itm1"));
+        useCase.playerDropsChosenCandidate(2, List.of("itm0", "itm1"));
 
         Item saved = capturedSavedItem();
-        assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
-        verify(presenter).presentItemTaken(saved);
+        assertThat(saved.getLocation()).isEqualTo(new Location.OnGround(HERE));
+        verify(presenter).presentItemDropped(saved);
     }
 
     @Test
-    void presentsItemGotAwayWhenTheVersionedWriteLosesTheRace() {
+    void propagatesALockLossToTheCatchAllInsteadOfHandlingIt() {
         orientedAtScn1();
-        Item dagger = groundItem("itm1", "A rusty dagger.");
-        when(selectTargetSubcase.playerDesignatesTarget("dagger", HERE)).thenReturn(dagger);
-        // The item was present when selected, but another actor's take committed first.
-        doThrow(new OptimisticLockingError("stale version")).when(itemOps).saveItem(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        Item dagger = heldItem("itm1", "A rusty dagger.");
+        when(selectTargetSubcase.playerDesignatesTarget("dagger", SELF)).thenReturn(dagger);
+        // Unreachable today (a held item is single-writer) — precisely why drop mints no lock-loss outcome:
+        // were it ever to fire, it is a wiring surprise and rides to the catch-all as a fault.
+        OptimisticLockingError loss = new OptimisticLockingError("stale version");
+        doThrow(loss).when(itemOps).saveItem(any());
+        runTransaction(txOps);
 
-        useCase.playerTakesTarget("dagger");
+        useCase.playerDropsTarget("dagger");
 
-        verify(presenter).presentItemGotAway(new ItemId("itm1"));
-        verify(presenter, never()).presentItemTaken(any());
-        verify(presenter, never()).presentError(any());
+        verify(presenter).presentError(loss);
+        verify(presenter, never()).presentItemDropped(any());
     }
 
     @Test
     void presentsNothingWhenTheOrientSubcaseHasAlreadyPresented() {
         when(orientPlayerSubcase.playerGetsBearings()).thenThrow(new SubcaseAlreadyPresented());
 
-        useCase.playerTakesTarget("dagger");
+        useCase.playerDropsTarget("dagger");
 
         verifyNoInteractions(presenter, selectTargetSubcase, itemOps, txOps);
     }
@@ -128,7 +129,7 @@ class TakeUseCaseTest {
         orientedAtScn1();
         when(selectTargetSubcase.playerDesignatesTarget(any(), any())).thenThrow(new SubcaseAlreadyPresented());
 
-        useCase.playerTakesTarget("rusty");
+        useCase.playerDropsTarget("rusty");
 
         verifyNoInteractions(presenter, itemOps, txOps);
     }
@@ -137,19 +138,19 @@ class TakeUseCaseTest {
     void routesAnUnexpectedFailureToTheCatchAll() {
         orientedAtScn1();
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
-        when(selectTargetSubcase.playerDesignatesTarget("dagger", HERE)).thenThrow(boom);
+        when(selectTargetSubcase.playerDesignatesTarget("dagger", SELF)).thenThrow(boom);
 
-        useCase.playerTakesTarget("dagger");
+        useCase.playerDropsTarget("dagger");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentItemTaken(any());
+        verify(presenter, never()).presentItemDropped(any());
         verify(itemOps, never()).saveItem(any());
     }
 
     // --- fixtures -----------------------------------------------------------------------------------
 
     private void orientedAtScn1() {
-        Player player = Player.builder().id(new PlayerId("plr1")).currentScene(HERE).build();
+        Player player = Player.builder().id(SELF).currentScene(HERE).build();
         when(orientPlayerSubcase.playerGetsBearings()).thenReturn(new OrientPlayerResult(player, scn1()));
     }
 
@@ -159,10 +160,10 @@ class TakeUseCaseTest {
         return saved.getValue();
     }
 
-    private static Item groundItem(String id, String shortDescription) {
+    private static Item heldItem(String id, String shortDescription) {
         return Item.builder()
                 .id(new ItemId(id))
-                .location(new Location.OnGround(HERE))
+                .location(new Location.HeldBy(SELF))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .version(1)

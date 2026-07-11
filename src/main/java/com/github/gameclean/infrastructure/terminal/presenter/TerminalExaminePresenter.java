@@ -86,7 +86,7 @@ public class TerminalExaminePresenter
     }
 
     @Override
-    public void presentItemNoLongerHere(ItemId itemId) {
+    public void presentItemNoLongerAvailable(ItemId itemId) {
         itemRenderer.renderItemNoLongerHere(itemId);
     }
 

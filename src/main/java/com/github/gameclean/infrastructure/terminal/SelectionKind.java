@@ -19,5 +19,8 @@ public enum SelectionKind {
     EXAMINE,
 
     /** A pending {@code take} disambiguation: the next pick takes the chosen item. */
-    TAKE
+    TAKE,
+
+    /** A pending {@code drop} disambiguation: the next pick drops the chosen item. */
+    DROP
 }

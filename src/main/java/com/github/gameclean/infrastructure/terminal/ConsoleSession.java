@@ -6,6 +6,7 @@ import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
+import com.github.gameclean.core.usecase.inventory.DropInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
@@ -150,6 +151,7 @@ public class ConsoleSession {
                 case LookCommand ignored -> lookAround();
                 case ExamineCommand examine -> examineTarget(examine.getTarget());
                 case TakeCommand take -> takeTarget(take.getTarget());
+                case DropCommand drop -> dropTarget(drop.getTarget());
                 case SelectCommand select -> selectCandidate(select);
                 case MoveCommand move -> move(move.getExitName());
                 case TimeCommand ignored -> checkTime();
@@ -185,6 +187,13 @@ public class ConsoleSession {
         // case present a menu and arm the AffordanceContext (kind TAKE), so the next bare number resumes taking.
         TakeInputPort takeUseCase = applicationContext.getBean(TakeInputPort.class);
         takeUseCase.playerTakesTarget(target);
+    }
+
+    private void dropTarget(String target) {
+        // Same idiom as take: a fresh prototype use case per interaction. An ambiguous target makes the use
+        // case present a menu and arm the AffordanceContext (kind DROP), so the next bare number resumes dropping.
+        DropInputPort dropUseCase = applicationContext.getBean(DropInputPort.class);
+        dropUseCase.playerDropsTarget(target);
     }
 
     private void selectCandidate(SelectCommand command) {

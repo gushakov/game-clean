@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure.persistence.item;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
@@ -24,7 +25,7 @@ import java.util.List;
  *
  * <p>The catch is narrow ({@code DataAccessException}, not {@code Exception}) so a stray programming bug
  * rides raw to the use case's catch-all instead of masquerading as a persistence fault.
- * {@code findItemsInScene} additionally catches {@link InvalidDomainObjectError}: a corrupt stored row
+ * The location queries additionally catch {@link InvalidDomainObjectError}: a corrupt stored row
  * fails the validating constructors during reconstitution, and that is an integrity fault of this port —
  * so it too becomes a {@code PersistenceOperationsError}. (See {@code SpringSceneRepositoryAdapter} for the
  * full rationale.)
@@ -54,6 +55,17 @@ public class SpringItemRepositoryAdapter implements ItemRepositoryOperationsOutp
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
                     "Cannot load items in scene %s (unreadable or corrupt)".formatted(sceneId.getValue()), e);
+        }
+    }
+
+    @Override
+    public List<Item> findItemsHeldBy(PlayerId holder) {
+        try {
+            return repository.findByLocationKindAndLocationRef(ItemLocationKind.HELD, holder.getValue())
+                    .stream().map(mapper::toDomain).toList();
+        } catch (DataAccessException | InvalidDomainObjectError e) {
+            throw new PersistenceOperationsError(
+                    "Cannot load items held by %s (unreadable or corrupt)".formatted(holder.getValue()), e);
         }
     }
 

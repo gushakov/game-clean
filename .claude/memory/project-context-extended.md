@@ -41,7 +41,7 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
 - **Exception translation** — each adapter method wraps Spring's `DataAccessException` into
   `PersistenceOperationsError`. The catch is **narrow** (`DataAccessException`, not `Exception`), so a stray
   programming bug rides raw to the use case's catch-all instead of being mislabelled a persistence fault. The
-  **read** methods (`findScene`/`findPlayer`/`findItemsInScene`) catch `DataAccessException |
+  **read** methods (`findScene`/`findPlayer`/`findItemsInScene`/`findItemsHeldBy`) catch `DataAccessException |
   InvalidDomainObjectError`: a corrupt stored row fails the validating constructors during reconstitution, and
   that is an *integrity fault* of the port (the store is valid by provenance), so it too becomes a
   `PersistenceOperationsError` — never a domain-input invalidity (design-notes §2/§3).
@@ -131,7 +131,15 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   it presents the outcome and throws the marker `SubcaseAlreadyPresented` (`core/port/`); on success it
   *returns* `OrientPlayerResult` (player + scene). Parents delegate their opening and swallow the marker in
   a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all. Tested directly
-  (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4).
+  (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4). The second subcase
+  family, `core/usecase/select/`, owns the target-disambiguation dialogue: `AbstractSelectTargetSubcase<C>`
+  (one-level Template Method, generic in its coordinate; `final` template methods, one
+  `provisionCandidates(C)` hook) with concretes `SelectSceneItemSubcase` (`SceneId` → scene ground;
+  `examine`/`take`) and `SelectInventoryItemSubcase` (`PlayerId` → player's keeping; `drop`), each holding the
+  item port and provisioning its own candidates — parents pass only the coordinate. Its
+  `SelectTargetPresenterOutputPort` stays ⟂ the orient port (flat composition on one concrete presenter), and
+  its outcomes are named provenance-neutrally (`presentItemNoLongerAvailable`) with per-presenter English
+  (design-notes §4).
 - **Composition root** — `infrastructure/UseCaseConfig` declares each use case `@Bean
   @Scope(PROTOTYPE)`, return-typed to the **input port interface** (impl hidden from the container),
   assembled with explicit `new` (no Spring stereotype on core classes). **Presenters and subcases are
@@ -188,12 +196,13 @@ Established by the JLine entry-point work (issue #6).
   dialogue (a numbered disambiguation pick) is routed by *kind*, not hardwired. `AffordanceContext` tags its
   pending offer with a `SelectionKind` (infra enum); each driven presenter arms its own kind when it renders a
   menu. A `Conversation { SelectionKind kind(); void resume(Command, List<String>); }` handler per dialogue
-  (`Examine`/`TakeConversation`, sharing the Template-Method base `AbstractSelectionConversation`) is `new`ed in
-  `UseCaseConfig`; `ConsoleSession` injects `List<Conversation>` — the **container is the resumer map**, matched
-  on the armed kind (no hand-maintained `kind→useCase` table) — and asserts at startup that every
+  (`Examine`/`Take`/`DropConversation`, sharing the Template-Method base `AbstractSelectionConversation`) is
+  `new`ed in `UseCaseConfig`; `ConsoleSession` injects `List<Conversation>` — the **container is the resumer
+  map**, matched on the armed kind (no hand-maintained `kind→useCase` table) — and asserts at startup that every
   `SelectionKind` has a handler. Each handler pulls a fresh prototype use case per resume (`getBean`). The
-  abstraction emerges at the *second* number-continued dialogue (`take`), distinct from the `select` base which
-  emerges at the second *provisioner* (`drop`). Rationale: design-notes §9.
+  abstraction emerged at the *second* number-continued dialogue (`take`) and was confirmed by the third
+  (`drop` — new kind + handler bean, dispatcher untouched), distinct from the `select` base which emerged at
+  the second *provisioner* (`drop`). Rationale: design-notes §9.
 - **`GameConfigurationProperties`** (`infrastructure/`) — the single catalog of every `game.*` property,
   nested static classes per group (`World.seedLocation`, `Terminal.enabled`). Constructor-bound, Lombok,
   `@DefaultValue` (bare on nested groups). Enabled via `@EnableConfigurationProperties` on

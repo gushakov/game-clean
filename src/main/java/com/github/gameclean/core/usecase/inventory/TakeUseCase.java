@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.inventory;
 
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.player.PlayerId;
+import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
@@ -33,7 +34,7 @@ import java.util.List;
  * <p><b>Concurrency is closed authoritatively here.</b> A ground item is contested, so the transaction uses
  * the {@code (action, onLockDetected)} overload: the item's optimistic-locking version makes the
  * last-writer-wins race fail at commit, and that lost race is presented as {@code presentItemGotAway} — the
- * write-side twin of {@code select}'s advisory read-side {@code presentItemNoLongerHere}. The handler presents,
+ * write-side twin of {@code select}'s advisory read-side {@code presentItemNoLongerAvailable}. The handler presents,
  * so the {@code doInTransaction} is the interaction's terminal act (no statement follows it).
  *
  * <p>On every path exactly one {@code present*} is reached: a subcase presents its own outcome and throws
@@ -47,7 +48,7 @@ public class TakeUseCase implements TakeInputPort {
 
     TakePresenterOutputPort presenter;
     OrientPlayerSubcaseInputPort orientPlayerSubcase;
-    SelectTargetSubcaseInputPort selectTargetSubcase;
+    SelectTargetSubcaseInputPort<SceneId> selectTargetSubcase;
     ItemRepositoryOperationsOutputPort itemOps;
     TransactionOperationsOutputPort txOps;
 
