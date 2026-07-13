@@ -108,6 +108,27 @@ public class ItemRenderer {
         console.write(sb);
     }
 
+    /**
+     * The player's keeping: a heading, then each carried item on its own line by short description, sorted
+     * for a stable display order (the persisted collection is unordered). An empty keeping is the same
+     * outcome phrased differently — choosing that wording is exactly the formatting this renderer owns.
+     */
+    public void renderCarriedItems(List<Item> items) {
+        if (items.isEmpty()) {
+            console.write(new AttributedStringBuilder().append("You are carrying nothing."));
+            return;
+        }
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN))
+                .append("You are carrying:")
+                .style(AttributedStyle.DEFAULT);
+        items.stream()
+                .map(Item::getShortDescription)
+                .sorted()
+                .forEach(description -> sb.append(System.lineSeparator()).append("  ").append(description));
+        console.write(sb);
+    }
+
     /** The player picked a number outside the offered menu; the menu still stands. */
     public void renderNoSuchOption(int ordinal) {
         console.printError("There is no option %d. Type one of the numbers shown.".formatted(ordinal));
