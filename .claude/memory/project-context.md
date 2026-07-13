@@ -54,7 +54,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C>` Template-Method base + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C>` Template-Method base + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -414,8 +414,24 @@ second inventory goal, and the second `select` provisioner that extracted the Te
   `DropConversation` — conversation #3, which *confirms* the kind-routed dispatcher (dispatcher and startup
   completeness assertion untouched). Composition root: `dropUseCase` prototype + `dropConversation` singleton.
 
-Tests: 304 unit (Surefire, DB-free) + 19 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Inventory` vertical **complete** (issue #60) — the summary goal's one read (`inventory`/`i` lists the
+player's keeping):
+
+- **Use case** — `Inventory` (`core/usecase/inventory/`): `playerReviewsBelongings()` (no args, ambient
+  player), read-only, no tx, no subcases. Opens by resolving the **player inline, not via `orient`** —
+  inventory is grounded in the player alone, so the scene would be over-fetch and a dangling current-scene
+  reference must not block it (outcome-sharing tracks the shared prologue, which inventory doesn't share).
+  `InventoryPresenterOutputPort`: one success `presentCarriedItems(List<Item>)` (empty keeping = same
+  outcome, phrased by the renderer — the `presentScene` empty-ground precedent) + its **own**
+  `presentPlayerNotFound` (rendered via the shared `OrientRenderer` — shared rendering by composition, not
+  port reuse). No new ports (`findItemsHeldBy` from drop).
+- **Terminal** — `InventoryCommand` (marker) + `inventory`/`i` verbs; `TerminalInventoryPresenter` (one flat
+  port, no `AffordanceContext`); `ItemRenderer.renderCarriedItems` (sorted list / "You are carrying
+  nothing."); prototype bean in `UseCaseConfig`. Guidance's curated `AVAILABLE_COMMANDS` also caught up
+  (`take`/`drop` had been missing) and gained `inventory`.
+
+Tests: 311 unit (Surefire, DB-free) + 19 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
-and from prior runs; issue #17). Not yet: NPCs, `look <exit>` (awaits an `Exit` description), an
-inventory-listing command (`inventory`/`i`), `examine` over carried items (needs a composite ground∪keeping
-provisioner), async/event processing (the ticker polls; the outbox event spine is still ahead).
+and from prior runs; issue #17). Not yet: NPCs, `look <exit>` (awaits an `Exit` description), `examine`
+over carried items (needs a composite ground∪keeping provisioner), async/event processing (the ticker
+polls; the outbox event spine is still ahead).

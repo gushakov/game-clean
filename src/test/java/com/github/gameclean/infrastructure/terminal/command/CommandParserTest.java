@@ -66,6 +66,18 @@ class CommandParserTest {
     }
 
     @Test
+    void parses_inventory_and_its_i_synonym() {
+        assertThat(parser.parse("inventory")).contains(new InventoryCommand());
+        assertThat(parser.parse("i")).contains(new InventoryCommand());
+    }
+
+    @Test
+    void inventory_with_an_argument_is_unknown() {
+        assertThat(parser.parse("inventory dagger")).contains(new UnknownCommand("inventory dagger"));
+        assertThat(parser.parse("i dagger")).contains(new UnknownCommand("i dagger"));
+    }
+
+    @Test
     void parses_a_bare_positive_integer_into_a_select_command() {
         assertThat(parser.parse("2")).contains(new SelectCommand(2));
         assertThat(parser.parse("  10 ")).contains(new SelectCommand(10));
