@@ -510,6 +510,21 @@ per-use-case part. `take` will confirm the split from the other side: it needs t
 **presents none of them**, so it reuses the same fetch without the rendering — the contents are an input to
 its logic, not an outcome.
 
+**`inventory` bounds the prologue from below: an interaction not grounded in the scene does not reuse
+`orient` at all.** `[thread #2]` `[thread #4]` Listing the player's keeping needs the acting player but not
+where they stand, and the reflex to reuse the `orient` subcase anyway (every other player-facing use case
+opens with it) fails the same test that kept items out of the prologue. Reuse would over-fetch a scene the
+interaction never reads — and, worse, *import a false failure*: a dangling current-scene reference would
+block looking into one's own pockets, presenting a scene outcome for a goal the scene does not touch. So
+`inventory` resolves the player **inline** (the four-line player half of the prologue) and declares
+`presentPlayerNotFound` on its *own* presenter port; only the *rendering* is shared, through the same
+`OrientRenderer` collaborator (the composition axis of sharing — vocabulary stays per-goal, English stays
+single-sourced). The duplication is the cheaper debt: a resolve-player-only subcase would be speculation
+until a second player-only interaction exists (emergence, §2), at which point `orient` itself could be
+recast as "resolve player" + "resolve their scene". The finding completes the earlier one: outcome-sharing
+tracks the shared prologue — and so does *subcase reuse*; an interaction that shares only half the
+grounding shares neither the port nor the subcase, only the renderer.
+
 This split sharpens the project's headline finding into **three orthogonal axes of sharing**, each
 resolved by its own mechanism. The *port vocabulary* is shared — by interface extension, with **no
 default methods** (a presenter port stays behaviour-free; how a scene renders is an adapter concern).

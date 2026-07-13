@@ -1,10 +1,10 @@
 /**
- * The <b>inventory</b> summary goal (Cockburn): interactions by which the player changes <em>what they
- * carry</em> — picking things up off the ground and (later) putting them back down. Distinct from
- * {@code explore} (perceive and navigate): exploring reads the world, inventory <em>moves</em> an item
- * between the ground and a holder.
+ * The <b>inventory</b> summary goal (Cockburn): interactions about <em>what the player carries</em> —
+ * picking things up off the ground, putting them back down, and reviewing the keeping. Distinct from
+ * {@code explore} (perceive and navigate): exploring reads the world, inventory moves an item between the
+ * ground and a holder (or reads the holder's keeping).
  *
- * <p>Two user goals live here, mirror images over the same {@code orient}+{@code select} opening — a perfect
+ * <p>Two writing user goals are mirror images over the same {@code orient}+{@code select} opening — a perfect
  * criss-cross: {@code Take} ({@link com.github.gameclean.core.usecase.inventory.TakeInputPort}) selects by
  * scene and mutates by player, {@code Drop}
  * ({@link com.github.gameclean.core.usecase.inventory.DropInputPort}) selects by player and mutates by
@@ -13,5 +13,10 @@
  * select-then-mutate on a contested resource, so it carries optimistic-locking handling; drop targets the
  * player's own keeping (single-writer), so it deliberately does not (see each use case). Drop's inventory
  * provisioner is the second instance that extracted the {@code select} Template-Method base.
+ *
+ * <p>The third user goal is the summary goal's one <em>read</em>: {@code Inventory}
+ * ({@link com.github.gameclean.core.usecase.inventory.InventoryInputPort}) lists the keeping — a single
+ * interaction with no target, no {@code select}, no transaction, and no {@code orient} (it is grounded in
+ * the player alone, so the player is resolved inline rather than coupled to the current scene).
  */
 package com.github.gameclean.core.usecase.inventory;

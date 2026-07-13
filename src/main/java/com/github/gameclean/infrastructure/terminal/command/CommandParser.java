@@ -55,6 +55,9 @@ public class CommandParser {
         // 'drop'/'put' take the described target as the line remainder (multi-word), like 'take'.
         register("drop", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
         register("put", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
+        // 'inventory'/'i' review the player's keeping; they take no argument.
+        register("inventory", args -> args.isEmpty() ? new InventoryCommand() : null);
+        register("i", args -> args.isEmpty() ? new InventoryCommand() : null);
         // 'move'/'go' take exactly one exit-name token.
         register("move", args -> args.size() == 1 ? new MoveCommand(args.get(0)) : null);
         register("go", args -> args.size() == 1 ? new MoveCommand(args.get(0)) : null);

@@ -30,6 +30,8 @@ import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.core.usecase.initialize.InitializeGameUseCase;
 import com.github.gameclean.core.usecase.inventory.DropInputPort;
 import com.github.gameclean.core.usecase.inventory.DropUseCase;
+import com.github.gameclean.core.usecase.inventory.InventoryInputPort;
+import com.github.gameclean.core.usecase.inventory.InventoryUseCase;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
@@ -45,6 +47,7 @@ import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTime
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalDropPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalGuidancePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalInventoryPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
@@ -187,6 +190,22 @@ public class UseCaseConfig {
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectInventoryItemSubcase select = new SelectInventoryItemSubcase(presenter, itemOps);
         return new DropUseCase(presenter, orient, select, itemOps, txOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public InventoryInputPort inventoryUseCase(
+            OrientRenderer orientRenderer,
+            ItemRenderer itemRenderer,
+            Console console,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            ItemRepositoryOperationsOutputPort itemOps) {
+        // No subcases to share the presenter with: the use case resolves the player inline (player-only
+        // grounding — no orient) and offers no disambiguation (no select, no AffordanceContext).
+        TerminalInventoryPresenter presenter =
+                new TerminalInventoryPresenter(orientRenderer, itemRenderer, console);
+        return new InventoryUseCase(presenter, playerOps, playerRepositoryOps, itemOps);
     }
 
     /**

@@ -7,6 +7,7 @@ import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
 import com.github.gameclean.core.usecase.inventory.DropInputPort;
+import com.github.gameclean.core.usecase.inventory.InventoryInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
@@ -152,6 +153,7 @@ public class ConsoleSession {
                 case ExamineCommand examine -> examineTarget(examine.getTarget());
                 case TakeCommand take -> takeTarget(take.getTarget());
                 case DropCommand drop -> dropTarget(drop.getTarget());
+                case InventoryCommand ignored -> reviewBelongings();
                 case SelectCommand select -> selectCandidate(select);
                 case MoveCommand move -> move(move.getExitName());
                 case TimeCommand ignored -> checkTime();
@@ -194,6 +196,13 @@ public class ConsoleSession {
         // case present a menu and arm the AffordanceContext (kind DROP), so the next bare number resumes dropping.
         DropInputPort dropUseCase = applicationContext.getBean(DropInputPort.class);
         dropUseCase.playerDropsTarget(target);
+    }
+
+    private void reviewBelongings() {
+        // Same idiom as look: a fresh prototype use case per interaction, presenting its own outcome.
+        // No target and no disambiguation follow-up — nothing arms the AffordanceContext here.
+        InventoryInputPort inventoryUseCase = applicationContext.getBean(InventoryInputPort.class);
+        inventoryUseCase.playerReviewsBelongings();
     }
 
     private void selectCandidate(SelectCommand command) {
