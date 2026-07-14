@@ -1,6 +1,7 @@
 package com.github.gameclean.core.usecase.initialize;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
@@ -32,14 +33,15 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
 
     /**
      * Happy path: the game is in a playable starting state — the authored {@code scenes} are present, a
-     * player with {@code playerId} is placed in the world, and {@code spawnedItems} were placed on the
-     * ground. Covers both first-run initialization and an idempotent re-run; the outcome the system actor
-     * cares about is identical, so it is one presentation. {@code spawnedItems} lists the items <em>this
-     * run</em> spawned (the freshly placed instances), and is empty on a re-run where items were already
-     * present — distinct from {@code scenes}, the full authored world either way, because items are
-     * generated effects rather than authored singletons.
+     * player with {@code playerId} is placed in the world, {@code spawnedItems} were placed on the ground, and
+     * {@code spawnedNpcs} were placed into the world. Covers both first-run initialization and an idempotent
+     * re-run; the outcome the system actor cares about is identical, so it is one presentation.
+     * {@code spawnedItems} and {@code spawnedNpcs} list what was spawned <em>this run</em> (the freshly placed
+     * instances), and are empty on a re-run where they were already present — distinct from {@code scenes}, the
+     * full authored world either way, because items and NPCs are generated effects rather than authored
+     * singletons.
      */
-    void presentGameInitialized(List<Scene> scenes, PlayerId playerId, List<Item> spawnedItems);
+    void presentGameInitialized(List<Scene> scenes, PlayerId playerId, List<Item> spawnedItems, List<Npc> spawnedNpcs);
 
     // --- failure stripes ------------------------------------------------------------------------
 
@@ -63,6 +65,14 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
      * unknown candidate scene ids.
      */
     void presentItemSpawnSceneUnknown(Map<String, List<SceneId>> unknownSpawnScenesByItem);
+
+    /**
+     * Inter-aggregate consistency failure: one or more authored NPCs name a candidate spawn scene that no
+     * authored scene defines. Reported as a meaningful domain outcome rather than a dangling reference, the
+     * NPC twin of {@link #presentItemSpawnSceneUnknown}. Keyed by the NPC's authoring id, each mapped to its
+     * unknown candidate scene ids.
+     */
+    void presentNpcSpawnSceneUnknown(Map<String, List<SceneId>> unknownSpawnScenesByNpc);
 
     /**
      * Validation failure while constructing value objects from authored input — a blank scene name, a

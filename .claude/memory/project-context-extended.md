@@ -15,7 +15,7 @@
 ## Persistence (Spring Data JDBC + MapStruct + Flyway, no ORM)
 
 Established by the scenes persistence spike, repeated for each aggregate. Lives under
-`infrastructure/persistence/{aggregate}/` (`scene/`, `player/`, `item/`, `clock/`, `daytime/`).
+`infrastructure/persistence/{aggregate}/` (`scene/`, `player/`, `item/`, `npc/`, `clock/`, `daytime/`).
 
 - **DB entities** — `*DbEntity` (e.g. `SceneDbEntity`, `ExitDbEntity`): plain Lombok
   `@Data` holders, single no-arg constructor (so Spring Data JDBC + MapStruct both bind
@@ -47,7 +47,8 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   `PersistenceOperationsError` — never a domain-input invalidity (design-notes §2/§3).
 - **Schema (Flyway)** — migrations in `src/main/resources/db/migration/`: `V1` scene + exit, `V2` player,
   `V3` item, `V4` game_clock, `V5` day_phase_log (with a `version` column), `V6` item mobile location
-  (`scene_id` → `(location_kind, location_ref)`) + `version`. A composite PK on an owned child
+  (`scene_id` → `(location_kind, location_ref)`) + `version`, `V7` npc (`current_scene_id` + a
+  `move_chance_num`/`move_chance_den` pair; no FK, **no version** — single-writer). A composite PK on an owned child
   `(scene_id, name)` enforces a domain uniqueness invariant at the DB level. A merged migration is immutable
   (fix forward with a new `Vxx`); `V6` is the first to *alter* an existing table. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
   carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.
@@ -56,6 +57,13 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   `PlayerDbEntityMapper` (`PlayerId`/`SceneId` ↔ String converters), `PlayerSpringDataRepository`,
   `SpringPlayerRepositoryAdapter` implementing `PlayerRepositoryOperationsOutputPort` (`findPlayer` via
   `findById().map(toDomain)`, `savePlayer` via `aggregateTemplate.insert`).
+- **Npc family** (`infrastructure/persistence/npc/`) — mirrors the player family: `NpcDbEntity`
+  (`@Table("npc")`, `current_scene_id` + a `move_chance_num`/`move_chance_den` pair, **no `@Version`**),
+  `NpcDbEntityMapper` (`NpcId`/`SceneId` ↔ String, `Chance` ↔ the num/den pair via a `toChance` default),
+  `NpcSpringDataRepository` (`findByCurrentSceneId`, plus `findAll`/`count` from `CrudRepository`),
+  `SpringNpcRepositoryAdapter` implementing `NpcRepositoryOperationsOutputPort` — the **version-less
+  `existsById ? update : insert` upsert** (single-writer, so the version-driven item save is not used); reads
+  catch `DataAccessException | InvalidDomainObjectError` (a corrupt row is an integrity fault).
 
 ### Test layering — Surefire (unit) vs Failsafe (integration)
 

@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.render;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.usecase.explore.CurrentScenePresenterOutputPort;
@@ -37,10 +38,10 @@ public class CurrentSceneRenderer {
     Console console;
 
     /**
-     * Renders a scene: its name, full description, the sorted list of exit names, and — when any lie on the
-     * ground — the items present, each on its own line by short description.
+     * Renders a scene: its name, full description, the sorted list of exit names, then — when any are present —
+     * the items on the ground and the NPCs standing here, each on its own line by short description.
      */
-    public void renderScene(Scene scene, List<Item> itemsOnGround) {
+    public void renderScene(Scene scene, List<Item> itemsOnGround, List<Npc> npcsPresent) {
         AttributedStringBuilder sb = new AttributedStringBuilder();
         sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW).bold())
                 .append(scene.getName())
@@ -53,6 +54,7 @@ public class CurrentSceneRenderer {
                 .style(AttributedStyle.DEFAULT)
                 .append(exitNames(scene));
         appendItemsOnGround(sb, itemsOnGround);
+        appendNpcsPresent(sb, npcsPresent);
         console.write(sb);
     }
 
@@ -71,6 +73,25 @@ public class CurrentSceneRenderer {
                 .style(AttributedStyle.DEFAULT);
         itemsOnGround.stream()
                 .map(Item::getShortDescription)
+                .sorted(Comparator.naturalOrder())
+                .forEach(description -> sb.append(System.lineSeparator()).append("  ").append(description));
+    }
+
+    /**
+     * Appends the NPCs standing in the scene, each on its own line, sorted by short description for a stable
+     * display order (the persisted collection is unordered, and several NPCs may share a description). Nothing
+     * is appended when none are present — the line appears only when there is someone to see.
+     */
+    private static void appendNpcsPresent(AttributedStringBuilder sb, List<Npc> npcsPresent) {
+        if (npcsPresent.isEmpty()) {
+            return;
+        }
+        sb.append(System.lineSeparator())
+                .style(AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN))
+                .append("Also here:")
+                .style(AttributedStyle.DEFAULT);
+        npcsPresent.stream()
+                .map(Npc::getShortDescription)
                 .sorted(Comparator.naturalOrder())
                 .forEach(description -> sb.append(System.lineSeparator()).append("  ").append(description));
     }

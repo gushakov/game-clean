@@ -1,4 +1,4 @@
-package com.github.gameclean.core.model.item;
+package com.github.gameclean.core.model.spawn;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.dice.Chance;

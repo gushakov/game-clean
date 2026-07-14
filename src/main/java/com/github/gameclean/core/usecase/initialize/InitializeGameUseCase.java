@@ -7,21 +7,25 @@ import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemTemplate;
-import com.github.gameclean.core.model.item.SpawnRule;
+import com.github.gameclean.core.model.npc.Npc;
+import com.github.gameclean.core.model.npc.NpcTemplate;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.model.spawn.SpawnRule;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.NpcEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
@@ -85,6 +89,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     SceneRepositoryOperationsOutputPort sceneOps;
     ItemRepositoryOperationsOutputPort itemOps;
+    NpcRepositoryOperationsOutputPort npcOps;
     GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps;
     Dice dice;
@@ -161,13 +166,37 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             // construction with no persistence side effect, so it runs outside the transaction.
             List<Item> spawnedItems = spawnItems(authoredItems);
 
-            // Checkpoint 9 — one outcome, one atomic unit. A single transaction seeds the world if it is
-            // still empty, creates the player if none exists yet, spawns items if none were spawned yet,
-            // creates the world clock at time zero if none exists yet, and seeds the day-phase log at its
-            // sentinel if none exists yet; holding all five read-then-write guards in one transaction stops a
-            // concurrent initialization from double-seeding, double-creating, or double-spawning. Exactly one after-commit presentation reports the
-            // single success — carrying the items spawned this run (empty if already spawned) — and the
-            // interaction ends here, since nothing runs past a presentation.
+            // Checkpoint 9 — construct the NPC templates from the authored NPCs (validity gate). Each template
+            // validates its descriptions, its spawn rule, and its move chance up front, independent of how the
+            // spawn later rolls — the item phase's up-front-gate discipline, applied to NPCs.
+            List<AuthoredNpc> authoredNpcs;
+            try {
+                authoredNpcs = buildAuthoredNpcs(seed.getNpcs());
+            } catch (InvalidDomainObjectError e) {
+                presenter.presentInvalidParametersError(e);
+                return;
+            }
+
+            // Checkpoint 10 — inter-aggregate rule: every NPC's candidate spawn scenes resolve to an authored
+            // scene. Resolved in-memory against the world being built, like the exit and item-spawn checks.
+            Map<String, List<SceneId>> unknownNpcSpawnScenes = findUnknownNpcSpawnScenes(authoredNpcs, scenes);
+            if (!unknownNpcSpawnScenes.isEmpty()) {
+                presenter.presentNpcSpawnSceneUnknown(unknownNpcSpawnScenes);
+                return;
+            }
+
+            // Checkpoint 11 — roll and place the NPC instances, outside the transaction (a pure in-memory
+            // construction with no persistence side effect, like item spawning).
+            List<Npc> spawnedNpcs = spawnNpcs(authoredNpcs);
+
+            // Checkpoint 12 — one outcome, one atomic unit. A single transaction seeds the world if it is
+            // still empty, creates the player if none exists yet, spawns items if none were spawned yet, spawns
+            // NPCs if none were spawned yet, creates the world clock at time zero if none exists yet, and seeds
+            // the day-phase log at its sentinel if none exists yet; holding all these read-then-write guards in
+            // one transaction stops a concurrent initialization from double-seeding, double-creating, or
+            // double-spawning. Exactly one after-commit presentation reports the single success — carrying the
+            // items and NPCs spawned this run (empty if already spawned) — and the interaction ends here, since
+            // nothing runs past a presentation.
             txOps.doInTransaction(false, () -> {
                 if (sceneOps.worldIsEmpty()) {
                     scenes.forEach(sceneOps::saveScene);
@@ -182,6 +211,13 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                     spawnedItems.forEach(itemOps::saveItem);
                     reportedItems = spawnedItems;
                 }
+                List<Npc> reportedNpcs;
+                if (npcOps.npcsAlreadySpawned()) {
+                    reportedNpcs = List.of();
+                } else {
+                    spawnedNpcs.forEach(npcOps::saveNpc);
+                    reportedNpcs = spawnedNpcs;
+                }
                 // The clock has no domain precondition on the world/player/items — it is independent
                 // world-singleton state — so it is just another create-if-absent guard, not an ordered phase.
                 if (gameClockRepositoryOps.findClock().isEmpty()) {
@@ -192,7 +228,8 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 if (dayPhaseLogRepositoryOps.findDayPhaseLog().isEmpty()) {
                     dayPhaseLogRepositoryOps.saveDayPhaseLog(DayPhaseLog.initial());
                 }
-                txOps.doAfterCommit(() -> presenter.presentGameInitialized(scenes, playerId, reportedItems));
+                txOps.doAfterCommit(() ->
+                        presenter.presentGameInitialized(scenes, playerId, reportedItems, reportedNpcs));
             });
             return;
 
@@ -273,6 +310,49 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         return spawned;
     }
 
+    private static List<AuthoredNpc> buildAuthoredNpcs(List<NpcEntry> entries) {
+        if (entries == null) {
+            return List.of();
+        }
+        List<AuthoredNpc> authored = new ArrayList<>(entries.size());
+        for (NpcEntry entry : entries) {
+            SpawnEntry spawn = entry.getSpawn();
+            if (spawn == null) {
+                throw new InvalidDomainObjectError(
+                        "npc '%s' has no spawn rule".formatted(entry.getId()));
+            }
+            Chance chance = new Chance(spawn.getChanceNumerator(), spawn.getChanceDenominator());
+            List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::new).toList();
+            SpawnRule rule = new SpawnRule(chance, spawn.getMax(), candidateScenes);
+            Chance moveChance = new Chance(entry.getMoveChanceNumerator(), entry.getMoveChanceDenominator());
+            NpcTemplate template =
+                    new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(), rule, moveChance);
+            authored.add(new AuthoredNpc(entry.getId(), template));
+        }
+        return authored;
+    }
+
+    private static Map<String, List<SceneId>> findUnknownNpcSpawnScenes(List<AuthoredNpc> authoredNpcs,
+                                                                        List<Scene> scenes) {
+        Set<SceneId> known = scenes.stream().map(Scene::getId).collect(Collectors.toSet());
+        Map<String, List<SceneId>> unknown = new LinkedHashMap<>();
+        for (AuthoredNpc npc : authoredNpcs) {
+            List<SceneId> dangling = npc.candidateScenesNotIn(known);
+            if (!dangling.isEmpty()) {
+                unknown.put(npc.getAuthoredId(), dangling);
+            }
+        }
+        return unknown;
+    }
+
+    private List<Npc> spawnNpcs(List<AuthoredNpc> authoredNpcs) {
+        List<Npc> spawned = new ArrayList<>();
+        for (AuthoredNpc npc : authoredNpcs) {
+            spawned.addAll(npc.spawnInto(dice));
+        }
+        return spawned;
+    }
+
     /**
      * Use-case-private pairing of an item's authoring handle (used only for diagnostics — e.g. reporting an
      * unknown spawn scene) with its always-valid {@link ItemTemplate}. The handle is not a domain identity,
@@ -292,6 +372,27 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         }
 
         List<Item> spawnInto(Dice dice) {
+            return template.spawnInto(dice);
+        }
+    }
+
+    /**
+     * Use-case-private pairing of an NPC's authoring handle (used only for diagnostics — e.g. reporting an
+     * unknown spawn scene) with its always-valid {@link NpcTemplate} — the NPC twin of {@link AuthoredItem}.
+     * The handle is not a domain identity, so it stays out of the model. It forwards
+     * {@link #candidateScenesNotIn} and {@link #spawnInto} to the template one level, so the use case tells
+     * the holder rather than reaching through it into the template and rule.
+     */
+    @Value
+    private static class AuthoredNpc {
+        String authoredId;
+        NpcTemplate template;
+
+        List<SceneId> candidateScenesNotIn(Set<SceneId> knownSceneIds) {
+            return template.candidateScenesNotIn(knownSceneIds);
+        }
+
+        List<Npc> spawnInto(Dice dice) {
             return template.spawnInto(dice);
         }
     }

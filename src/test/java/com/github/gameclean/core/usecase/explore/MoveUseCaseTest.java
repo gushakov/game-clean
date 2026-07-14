@@ -1,8 +1,11 @@
 package com.github.gameclean.core.usecase.explore;
 
+import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
+import com.github.gameclean.core.model.npc.Npc;
+import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
@@ -10,6 +13,7 @@ import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
@@ -60,6 +64,8 @@ class MoveUseCaseTest {
     @Mock
     private ItemRepositoryOperationsOutputPort itemOps;
     @Mock
+    private NpcRepositoryOperationsOutputPort npcOps;
+    @Mock
     private TransactionOperationsOutputPort txOps;
     @Mock
     private OrientPlayerSubcaseInputPort orientPlayerSubcase;
@@ -71,9 +77,11 @@ class MoveUseCaseTest {
     void movesThePlayerThroughTheExitAndPresentsTheEnteredSceneAfterCommit() {
         Scene courtyard = scene("scn2", "Courtyard");
         List<Item> itemsInCourtyard = List.of(item("itm1", "scn2", "A rusty dagger."));
+        List<Npc> npcsInCourtyard = List.of(npc("npc1", "scn2"));
         orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard));
         when(itemOps.findItemsInScene(new SceneId("scn2"))).thenReturn(itemsInCourtyard);
+        when(npcOps.findNpcsInScene(new SceneId("scn2"))).thenReturn(npcsInCourtyard);
         runTransactionAndFireAfterCommit(txOps);
 
         useCase.playerMovesThrough("east");
@@ -83,8 +91,8 @@ class MoveUseCaseTest {
         verify(playerRepositoryOps).savePlayer(saved.capture());
         assertThat(saved.getValue().getId()).isEqualTo(new PlayerId("plr1"));
         assertThat(saved.getValue().getCurrentScene()).isEqualTo(new SceneId("scn2"));
-        // ...and the entered scene is presented after the move commits, with the items on its ground.
-        verify(presenter).presentScene(courtyard, itemsInCourtyard);
+        // ...and the entered scene is presented after the move commits, with the items and NPCs in it.
+        verify(presenter).presentScene(courtyard, itemsInCourtyard, npcsInCourtyard);
         verifyNoMoreInteractions(presenter);
     }
 
@@ -97,7 +105,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("EAST");
 
         verify(playerRepositoryOps).savePlayer(any(Player.class));
-        verify(presenter).presentScene(any(Scene.class), anyList());
+        verify(presenter).presentScene(any(Scene.class), anyList(), anyList());
     }
 
     @Test
@@ -106,7 +114,7 @@ class MoveUseCaseTest {
 
         useCase.playerMovesThrough("east");
 
-        verifyNoInteractions(presenter, playerRepositoryOps, sceneOps, itemOps, txOps);
+        verifyNoInteractions(presenter, playerRepositoryOps, sceneOps, itemOps, npcOps, txOps);
     }
 
     @Test
@@ -140,7 +148,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentScene(any(), any());
+        verify(presenter, never()).presentScene(any(), any(), any());
         verifyNoWriteOrScene();
     }
 
@@ -155,7 +163,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentScene(any(), any());
+        verify(presenter, never()).presentScene(any(), any(), any());
     }
 
     // --- fixtures -----------------------------------------------------------------------------------
@@ -194,7 +202,7 @@ class MoveUseCaseTest {
 
     private void verifyNoWriteOrScene() {
         verify(playerRepositoryOps, never()).savePlayer(any());
-        verify(presenter, never()).presentScene(any(), any());
+        verify(presenter, never()).presentScene(any(), any(), any());
         verify(txOps, never()).doInTransaction(anyBoolean(), any());
     }
 
@@ -204,6 +212,16 @@ class MoveUseCaseTest {
                 .location(new Location.OnGround(new SceneId(scene)))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
+                .build();
+    }
+
+    private static Npc npc(String id, String scene) {
+        return Npc.builder()
+                .id(new NpcId(id))
+                .currentScene(new SceneId(scene))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
                 .build();
     }
 }

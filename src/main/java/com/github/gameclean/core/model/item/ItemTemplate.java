@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.model.spawn.SpawnRule;
 import lombok.Value;
 
 import java.util.ArrayList;
