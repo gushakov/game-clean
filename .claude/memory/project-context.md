@@ -45,7 +45,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 ## Package layout (Clean DDD)
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
-  `item/`, `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
+  `item/`, `npc/` (the `Npc` aggregate + `NpcId`/`NpcTemplate`), `spawn/` (the shared `SpawnRule` VO, used by item and npc templates), `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
   `dice/` (the `Dice` domain capability — interface + `AbstractDice`/`SystemDice`/`SeededDice` impls — and the `Chance` VO it rolls; design-notes §4),
   `id/` (the `Ids` helper — the model's single knower of the generated-id-body alphabet+length; `ItemId.mint(Dice)` rolls bodies through it, design-notes §2/§4/#53)) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
@@ -54,14 +54,14 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C>` Template-Method base + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C>` Template-Method base + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/npc/` holds `AnimateNpcs` (system-actor autonomous NPC movement)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
   `Terminal`, `Player`, `Time`). Sub-packages:
   `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
-  `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`),
+  `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving `AnimateNpcs`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
   (session-lifetime disambiguation buffer resource, now carrying a `SelectionKind` tag) + the `SelectionKind` enum;
@@ -430,8 +430,36 @@ player's keeping):
   nothing."); prototype bean in `UseCaseConfig`. Guidance's curated `AVAILABLE_COMMANDS` also caught up
   (`take`/`drop` had been missing) and gained `inventory`.
 
-Tests: 311 unit (Surefire, DB-free) + 19 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`NPC` step 1 vertical **complete** (issue #63) — authored NPCs: spawned at init, listed in the room,
+autonomously wandering; the first realization of the `[thread #3]` "Player and NPCs act in parallel" premise:
+
+- **Domain** — `Npc` aggregate (`core/model/npc/`): `NpcId` (prefix `npc`, `mint(Dice)`), `currentScene`
+  (`SceneId` reference), short/full descriptions, `moveChance` (`Chance`), `moveTo(SceneId)` copy-on-write.
+  **No `@Version`** — single-writer (only the ticker writes), deferred until the player can affect an NPC
+  (design-notes §5). `NpcTemplate` (descriptions + `SpawnRule` + `moveChance`, `spawnInto(Dice)`). `SpawnRule`
+  **relocated** `item/` → **`core/model/spawn/`** (its second consumer is NPC spawning; a neutral package
+  avoids a bogus `npc → item` edge).
+- **Use case — `AnimateNpcs`** (new summary goal `core/usecase/npc/`): system-actor `systemAdvancesNpcs()`,
+  no security assertion, no `orient` reuse. Loads all NPCs; per NPC rolls `moveChance`; on a hit picks a
+  random exit (`Dice.pick`) and `moveTo` the target (skips silently on no-exits / dangling target). Resolves
+  the player's scene inline to filter *perceptible* movements (`PerceivedNpcMovement` + `MovementKind`
+  DEPARTED/ARRIVED); one **plain** transaction saving moved NPCs; `presentNpcMovements`/`presentNothingHappened`
+  after commit (quiet tick, empty world, off-stage move all present the quiet outcome). Co-located presenter.
+- **InitializeGame** gained a fourth spawn phase (build → resolve-scenes → roll → `npcsAlreadySpawned`
+  spawn-if-none guard, folded into the one transaction and `presentGameInitialized(scenes, playerId, items, npcs)`);
+  new `presentNpcSpawnSceneUnknown` stripe.
+- **Ports / persistence** — `NpcRepositoryOperationsOutputPort` (`findAllNpcs`/`findNpcsInScene`/`saveNpc`/
+  `npcsAlreadySpawned`); Flyway `V7__create_npc.sql` (no FK, no version), `NpcDbEntity`, MapStruct mapper
+  (`Chance ↔ (num,den)`), `findByCurrentSceneId` repo, `SpringNpcRepositoryAdapter` (version-less `existsById`
+  upsert, mirroring the player adapter).
+- **Room-listing ripple** — `presentScene(Scene, items, npcs)`; `look`/`move` fetch `findNpcsInScene` for the
+  presented scene (current / target); `CurrentSceneRenderer` "Also here:" block.
+- **Ticker / infra** — `NpcActivityTicker` (`infrastructure/npc/`, blind `SchedulingConfigurer`, second async
+  writer/metronome; reads `game.npc.ticker.interval` default `10s`); `TerminalAnimateNpcsPresenter` +
+  `NpcRenderer` (async `printAbove` narration); `game.npc.*` on `GameConfigurationProperties`.
+
+Tests: 345 unit (Surefire, DB-free) + 22 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
-and from prior runs; issue #17). Not yet: NPCs, `look <exit>` (awaits an `Exit` description), `examine`
-over carried items (needs a composite ground∪keeping provisioner), async/event processing (the ticker
-polls; the outbox event spine is still ahead).
+and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
+over carried items (needs a composite ground∪keeping provisioner), NPCs *reacting* to the player and
+async/event processing (both tickers poll; the outbox event spine is still ahead).

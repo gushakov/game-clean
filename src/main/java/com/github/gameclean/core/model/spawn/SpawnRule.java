@@ -1,4 +1,4 @@
-package com.github.gameclean.core.model.item;
+package com.github.gameclean.core.model.spawn;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
@@ -13,10 +13,16 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * How — and how often, and where — an item populates the world: a Value Object bundling the spawn
+ * How — and how often, and where — something populates the world: a Value Object bundling the spawn
  * {@link Chance}, the number of placement attempts, and the candidate scenes an instance may land in.
  * Always-valid: a non-null chance, a non-negative number of tries, and at least one candidate scene (a
  * rule that could spawn nowhere is meaningless). Equality by value.
+ *
+ * <p>It lives in its <em>own</em> neutral package rather than under any one aggregate: items spawn with it,
+ * and NPCs spawn with it too, so nesting it under {@code item} would force a bogus {@code npc → item}
+ * package edge. It depends only on {@code dice} ({@link Chance}, {@link Dice}) and {@code scene}
+ * ({@link SceneId}) — never on {@code item} or {@code npc} — so both aggregates' templates can reuse it
+ * without a cycle.
  *
  * <p>It owns the <em>whole</em> stochastic placement policy — the loop that runs up to {@code maxTries}
  * attempts, each rolling its {@link Chance} and, on a hit, picking a candidate scene ({@link #rollPlacements}).

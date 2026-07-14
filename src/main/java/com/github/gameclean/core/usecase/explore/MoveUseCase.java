@@ -1,11 +1,13 @@
 package com.github.gameclean.core.usecase.explore;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
@@ -33,8 +35,8 @@ import java.util.Optional;
  * dissolves that straddle — each invocation either presents-and-throws or returns-without-presenting.)
  *
  * <p>It presents the scene the player <em>enters</em>, so it fetches the items on that target scene's
- * ground (not the current scene's) — the items belong to the presented scene, which is why they are
- * resolved per use case rather than in the shared {@code orient} prologue.
+ * ground and the NPCs standing in it (not the current scene's) — both belong to the presented scene, which
+ * is why they are resolved per use case rather than in the shared {@code orient} prologue.
  *
  * <p>Unlike {@code look}, {@code move} <b>writes</b>: it records the player's new position. The reads and
  * the validity checks all run <em>outside</em> any transaction; a single
@@ -53,6 +55,7 @@ public class MoveUseCase implements MoveInputPort {
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     SceneRepositoryOperationsOutputPort sceneOps;
     ItemRepositoryOperationsOutputPort itemOps;
+    NpcRepositoryOperationsOutputPort npcOps;
     TransactionOperationsOutputPort txOps;
     OrientPlayerSubcaseInputPort orientPlayerSubcase;
 
@@ -77,9 +80,11 @@ public class MoveUseCase implements MoveInputPort {
                 return;
             }
 
-            // The items on the ground in the scene being entered — fetched for the *target* scene (what the
-            // player will see), not the current one. A read, so it runs outside the transaction.
+            // The items on the ground and the NPCs standing in the scene being entered — fetched for the
+            // *target* scene (what the player will see), not the current one. Reads, so they run outside the
+            // transaction.
             List<Item> itemsInEntered = itemOps.findItemsInScene(targetId);
+            List<Npc> npcsInEntered = npcOps.findNpcsInScene(targetId);
 
             // One write, one atomic unit. Record the new position; present the entered scene only once the
             // move has committed, and end the interaction there — nothing runs past a presentation.
@@ -87,7 +92,7 @@ public class MoveUseCase implements MoveInputPort {
             Scene entered = targetScene.get();
             txOps.doInTransaction(false, () -> {
                 playerRepositoryOps.savePlayer(moved);
-                txOps.doAfterCommit(() -> presenter.presentScene(entered, itemsInEntered));
+                txOps.doAfterCommit(() -> presenter.presentScene(entered, itemsInEntered, npcsInEntered));
             });
             return;
 

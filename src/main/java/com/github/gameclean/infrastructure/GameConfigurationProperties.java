@@ -46,13 +46,16 @@ public class GameConfigurationProperties {
     Terminal terminal;
     Player player;
     Time time;
+    Npc npc;
 
     public GameConfigurationProperties(@DefaultValue World world, @DefaultValue Terminal terminal,
-                                       @DefaultValue Player player, @DefaultValue Time time) {
+                                       @DefaultValue Player player, @DefaultValue Time time,
+                                       @DefaultValue Npc npc) {
         this.world = world;
         this.terminal = terminal;
         this.player = player;
         this.time = time;
+        this.npc = npc;
     }
 
     /** {@code game.world.*} — world construction and seeding. */
@@ -138,6 +141,37 @@ public class GameConfigurationProperties {
             Duration interval;
 
             public Ticker(@DefaultValue("5s") Duration interval) {
+                this.interval = interval;
+            }
+        }
+    }
+
+    /** {@code game.npc.*} — the background metronome that drives autonomous NPC movement. */
+    @Getter
+    @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+    public static class Npc {
+
+        /** {@code game.npc.ticker.*} — the background metronome that advances the NPCs. */
+        Ticker ticker;
+
+        public Npc(@DefaultValue Ticker ticker) {
+            this.ticker = ticker;
+        }
+
+        /** {@code game.npc.ticker.*} — the background NPC-activity ticker. */
+        @Getter
+        @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+        public static class Ticker {
+
+            /**
+             * Real-time interval between ticks of autonomous NPC movement. The ticker is a blind metronome: it
+             * fires the animate use case this often, and each NPC's move is an independent dice roll against its
+             * authored move chance, so the interval sets the pace of wandering, not its certainty. A Spring Boot
+             * {@link Duration} string, e.g. {@code 10s}.
+             */
+            Duration interval;
+
+            public Ticker(@DefaultValue("10s") Duration interval) {
                 this.interval = interval;
             }
         }
