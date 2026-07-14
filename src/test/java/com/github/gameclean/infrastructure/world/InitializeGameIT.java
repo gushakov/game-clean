@@ -5,6 +5,7 @@ import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import com.github.gameclean.infrastructure.persistence.clock.GameClockSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.daytime.DayPhaseLogSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.item.ItemSpringDataRepository;
+import com.github.gameclean.infrastructure.persistence.npc.NpcSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.player.PlayerSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -50,6 +51,9 @@ class InitializeGameIT extends AbstractPostgresIT {
     private ItemSpringDataRepository itemRepository;
 
     @Autowired
+    private NpcSpringDataRepository npcRepository;
+
+    @Autowired
     private GameClockSpringDataRepository gameClockRepository;
 
     @Autowired
@@ -58,6 +62,7 @@ class InitializeGameIT extends AbstractPostgresIT {
     @AfterEach
     void cleanUp() {
         itemRepository.deleteAll();
+        npcRepository.deleteAll();
         gameClockRepository.deleteAll();
         dayPhaseLogRepository.deleteAll();
         playerRepository.deleteById(SEEDED_PLAYER_ID);
@@ -81,14 +86,18 @@ class InitializeGameIT extends AbstractPostgresIT {
         assertThat(dayPhaseLogRepository.count()).isEqualTo(1);
         assertThat(dayPhaseLogRepository.findAll().iterator().next().getAnnouncedThroughHour()).isEqualTo(-1);
         long itemsAfterFirstRun = itemRepository.count();
+        // the authored hooded wanderer (chance 1/1, max 1, scn1) is spawned exactly once, at scn1 ...
+        assertThat(npcRepository.count()).isEqualTo(1);
+        assertThat(npcRepository.findAll().iterator().next().getCurrentSceneId()).isEqualTo("scn1");
 
-        // ... a second run finds world, player and items already present and writes no duplicate rows —
-        // notably the spawn is not re-rolled, so the item count is unchanged.
+        // ... a second run finds world, player, items and NPCs already present and writes no duplicate rows —
+        // notably the spawns are not re-rolled, so the item and NPC counts are unchanged.
         initializeGame.systemInitializesGame();
 
         assertThat(sceneRepository.count()).isEqualTo(4);
         assertThat(playerRepository.count()).isEqualTo(1);
         assertThat(itemRepository.count()).isEqualTo(itemsAfterFirstRun);
+        assertThat(npcRepository.count()).isEqualTo(1);
         // the clock and the day-phase log are not re-created and stay single rows
         assertThat(gameClockRepository.count()).isEqualTo(1);
         assertThat(dayPhaseLogRepository.count()).isEqualTo(1);

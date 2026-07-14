@@ -7,6 +7,7 @@ import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOu
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
@@ -34,6 +35,8 @@ import com.github.gameclean.core.usecase.inventory.InventoryInputPort;
 import com.github.gameclean.core.usecase.inventory.InventoryUseCase;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeUseCase;
+import com.github.gameclean.core.usecase.npc.AnimateNpcsInputPort;
+import com.github.gameclean.core.usecase.npc.AnimateNpcsUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
 import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
@@ -42,6 +45,7 @@ import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
 import com.github.gameclean.infrastructure.terminal.conversation.DropConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.TakeConversation;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnimateNpcsPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalDropPresenter;
@@ -56,6 +60,7 @@ import com.github.gameclean.infrastructure.terminal.render.CalendarRenderer;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
 import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
+import com.github.gameclean.infrastructure.terminal.render.NpcRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
 import com.github.gameclean.infrastructure.world.LoggingInitializeGamePresenter;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
@@ -92,12 +97,13 @@ public class UseCaseConfig {
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
             ItemRepositoryOperationsOutputPort itemOps,
+            NpcRepositoryOperationsOutputPort npcOps,
             GameClockRepositoryOperationsOutputPort gameClockRepositoryOps,
             DayPhaseLogRepositoryOperationsOutputPort dayPhaseLogRepositoryOps,
             TransactionOperationsOutputPort txOps) {
         return new InitializeGameUseCase(
                 new LoggingInitializeGamePresenter(), seedSourceOps, playerOps, playerRepositoryOps,
-                sceneOps, itemOps, gameClockRepositoryOps, dayPhaseLogRepositoryOps,
+                sceneOps, itemOps, npcOps, gameClockRepositoryOps, dayPhaseLogRepositoryOps,
                 new SystemDice(), txOps);
     }
 
@@ -110,10 +116,11 @@ public class UseCaseConfig {
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
-            ItemRepositoryOperationsOutputPort itemOps) {
+            ItemRepositoryOperationsOutputPort itemOps,
+            NpcRepositoryOperationsOutputPort npcOps) {
         TerminalLookPresenter presenter = new TerminalLookPresenter(orientRenderer, sceneRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
-        return new LookUseCase(presenter, orient, itemOps);
+        return new LookUseCase(presenter, orient, itemOps, npcOps);
     }
 
     @Bean
@@ -126,10 +133,11 @@ public class UseCaseConfig {
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
             ItemRepositoryOperationsOutputPort itemOps,
+            NpcRepositoryOperationsOutputPort npcOps,
             TransactionOperationsOutputPort txOps) {
         TerminalMovePresenter presenter = new TerminalMovePresenter(orientRenderer, sceneRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
-        return new MoveUseCase(presenter, playerRepositoryOps, sceneOps, itemOps, txOps, orient);
+        return new MoveUseCase(presenter, playerRepositoryOps, sceneOps, itemOps, npcOps, txOps, orient);
     }
 
     @Bean
@@ -255,6 +263,20 @@ public class UseCaseConfig {
         TerminalAnnounceTimeOfDayPresenter presenter = new TerminalAnnounceTimeOfDayPresenter(console);
         return new AnnounceTimeOfDayUseCase(presenter, calendarSourceOps, dayPhaseScheduleSourceOps,
                 gameClockRepositoryOps, dayPhaseLogRepositoryOps, gameTimeSourceOps, new SystemDice(), txOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public AnimateNpcsInputPort animateNpcsUseCase(
+            NpcRenderer npcRenderer,
+            NpcRepositoryOperationsOutputPort npcOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            TransactionOperationsOutputPort txOps) {
+        TerminalAnimateNpcsPresenter presenter = new TerminalAnimateNpcsPresenter(npcRenderer);
+        return new AnimateNpcsUseCase(
+                presenter, npcOps, sceneOps, playerOps, playerRepositoryOps, new SystemDice(), txOps);
     }
 
     @Bean

@@ -7,6 +7,8 @@ import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
+import com.github.gameclean.core.model.npc.Npc;
+import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
@@ -15,6 +17,7 @@ import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
@@ -24,6 +27,7 @@ import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsError;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.NpcEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
@@ -82,6 +86,8 @@ class InitializeGameUseCaseTest {
     private SceneRepositoryOperationsOutputPort sceneOps;
     @Mock
     private ItemRepositoryOperationsOutputPort itemOps;
+    @Mock
+    private NpcRepositoryOperationsOutputPort npcOps;
     @Mock
     private GameClockRepositoryOperationsOutputPort gameClockRepositoryOps;
     @Mock
@@ -198,7 +204,8 @@ class InitializeGameUseCaseTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Item>> presentedItems = ArgumentCaptor.forClass(List.class);
-        verify(presenter).presentGameInitialized(anyList(), eq(new PlayerId("plr1")), presentedItems.capture());
+        verify(presenter).presentGameInitialized(
+                anyList(), eq(new PlayerId("plr1")), presentedItems.capture(), anyList());
         assertThat(presentedItems.getValue()).extracting(i -> i.getId().getValue()).containsExactly("itm00000000");
     }
 
@@ -220,7 +227,8 @@ class InitializeGameUseCaseTest {
         verify(itemOps, never()).saveItem(any());
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Item>> presentedItems = ArgumentCaptor.forClass(List.class);
-        verify(presenter).presentGameInitialized(anyList(), eq(new PlayerId("plr1")), presentedItems.capture());
+        verify(presenter).presentGameInitialized(
+                anyList(), eq(new PlayerId("plr1")), presentedItems.capture(), anyList());
         assertThat(presentedItems.getValue()).isEmpty();
     }
 
@@ -249,6 +257,84 @@ class InitializeGameUseCaseTest {
         verify(presenter).presentItemSpawnSceneUnknown(captor.capture());
         assertThat(captor.getValue()).containsOnlyKeys("itm1");
         assertThat(captor.getValue().get("itm1")).containsExactly(new SceneId("scn9"));
+        verifyNothingInitialized();
+    }
+
+    // --- npc spawning ---------------------------------------------------------------------------
+
+    @Test
+    void spawnsNpcsByTheRollsAndPresentsThem() {
+        givenSeed(seedWithNpcs(twoConnectedScenes(), "scn1", npc("npc1", 1, 4, 1, 1, 1, "scn1", "scn2")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        // One NPC over two candidate scenes, always-hit spawn chance, one try: roll hits, pick scene index 1
+        // (scn2), then mint the id by picking 8 alphabet glyphs — all index 0 ('0') -> "npc00000000".
+        dice.willRoll(true).willPick(1, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
+        verify(npcOps).saveNpc(saved.capture());
+        assertThat(saved.getValue().getId()).isEqualTo(new NpcId("npc00000000"));
+        assertThat(saved.getValue().getCurrentScene()).isEqualTo(new SceneId("scn2"));
+        assertThat(saved.getValue().getMoveChance().getNumerator()).isEqualTo(1);
+        assertThat(saved.getValue().getMoveChance().getDenominator()).isEqualTo(4);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Npc>> presentedNpcs = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(anyList(), eq(new PlayerId("plr1")), anyList(), presentedNpcs.capture());
+        assertThat(presentedNpcs.getValue()).extracting(n -> n.getId().getValue()).containsExactly("npc00000000");
+    }
+
+    @Test
+    void doesNotReSpawnNpcsWhenNpcsAlreadyExist() {
+        givenSeed(seedWithNpcs(twoConnectedScenes(), "scn1", npc("npc1", 1, 4, 1, 1, 1, "scn1")));
+        when(sceneOps.worldIsEmpty()).thenReturn(false);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
+                .thenReturn(Optional.of(player("plr1", "scn1")));
+        when(npcOps.npcsAlreadySpawned()).thenReturn(true);
+        // The rolls still happen (outside the transaction) — scene pick + 8 id glyphs — but the guard means
+        // nothing is saved.
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        verify(npcOps, never()).saveNpc(any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Npc>> presentedNpcs = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(anyList(), eq(new PlayerId("plr1")), anyList(), presentedNpcs.capture());
+        assertThat(presentedNpcs.getValue()).isEmpty();
+    }
+
+    @Test
+    void rejectsAnNpcWithAnInvalidMoveChanceAndDoesNotInitialize() {
+        // Move-chance denominator 0 — Chance construction fails the intra-aggregate validity gate.
+        givenSeed(seedWithNpcs(twoConnectedScenes(), "scn1", npc("npc1", 1, 0, 1, 1, 1, "scn1")));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsAnNpcSpawningIntoAnUnknownSceneAndDoesNotInitialize() {
+        // scn9 is a well-formed id but no authored scene defines it — an inter-aggregate failure.
+        givenSeed(seedWithNpcs(twoConnectedScenes(), "scn1", npc("npc1", 1, 4, 1, 2, 1, "scn9")));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, List<SceneId>>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentNpcSpawnSceneUnknown(captor.capture());
+        assertThat(captor.getValue()).containsOnlyKeys("npc1");
+        assertThat(captor.getValue().get("npc1")).containsExactly(new SceneId("scn9"));
         verifyNothingInitialized();
     }
 
@@ -338,7 +424,7 @@ class InitializeGameUseCaseTest {
         useCase.systemInitializesGame();
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentGameInitialized(any(), any(), any());
+        verify(presenter, never()).presentGameInitialized(any(), any(), any(), any());
     }
 
     @Test
@@ -354,7 +440,7 @@ class InitializeGameUseCaseTest {
         useCase.systemInitializesGame();
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentGameInitialized(any(), any(), any());
+        verify(presenter, never()).presentGameInitialized(any(), any(), any(), any());
     }
 
     // --- fixtures -------------------------------------------------------------------------------
@@ -365,7 +451,18 @@ class InitializeGameUseCaseTest {
     }
 
     private static GameSeed seed(List<SceneEntry> scenes, String startingSceneId, ItemEntry... items) {
-        return new GameSeed(scenes, startingSceneId, List.of(items));
+        return new GameSeed(scenes, startingSceneId, List.of(items), List.of());
+    }
+
+    private static GameSeed seedWithNpcs(List<SceneEntry> scenes, String startingSceneId, NpcEntry... npcs) {
+        return new GameSeed(scenes, startingSceneId, List.of(), List.of(npcs));
+    }
+
+    private static NpcEntry npc(String id, int moveNumerator, int moveDenominator,
+                                int chanceNumerator, int chanceDenominator, int max, String... candidateScenes) {
+        return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
+                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max),
+                moveNumerator, moveDenominator);
     }
 
     private static List<SceneEntry> twoConnectedScenes() {
@@ -409,11 +506,14 @@ class InitializeGameUseCaseTest {
         ArgumentCaptor<List<Scene>> scenesCaptor = ArgumentCaptor.forClass(List.class);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Item>> itemsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(presenter).presentGameInitialized(
-                scenesCaptor.capture(), eq(new PlayerId(expectedPlayerId)), itemsCaptor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Npc>> npcsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(scenesCaptor.capture(), eq(new PlayerId(expectedPlayerId)),
+                itemsCaptor.capture(), npcsCaptor.capture());
         assertThat(scenesCaptor.getValue()).extracting(scene -> scene.getId().getValue())
                 .containsExactly(expectedSceneIds);
         assertThat(itemsCaptor.getValue()).isEmpty();
+        assertThat(npcsCaptor.getValue()).isEmpty();
     }
 
     private void verifyNothingInitialized() {
@@ -421,8 +521,9 @@ class InitializeGameUseCaseTest {
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(itemOps, never()).saveItem(any());
+        verify(npcOps, never()).saveNpc(any());
         verify(gameClockRepositoryOps, never()).saveClock(any());
         verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
-        verify(presenter, never()).presentGameInitialized(any(), any(), any());
+        verify(presenter, never()).presentGameInitialized(any(), any(), any(), any());
     }
 }

@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.presenter;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -32,8 +33,8 @@ public class TerminalMovePresenter implements MovePresenterOutputPort {
     Console console;
 
     @Override
-    public void presentScene(Scene scene, List<Item> itemsOnGround) {
-        sceneRenderer.renderScene(scene, itemsOnGround);
+    public void presentScene(Scene scene, List<Item> itemsOnGround, List<Npc> npcsPresent) {
+        sceneRenderer.renderScene(scene, itemsOnGround, npcsPresent);
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.model.spawn.SpawnRule;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;

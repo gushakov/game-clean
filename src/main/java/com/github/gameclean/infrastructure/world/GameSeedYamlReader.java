@@ -3,6 +3,7 @@ package com.github.gameclean.infrastructure.world;
 import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.NpcEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import org.springframework.stereotype.Component;
@@ -41,8 +42,8 @@ import java.util.Objects;
 public class GameSeedYamlReader {
 
     /**
-     * Parses the given YAML stream and assembles the full game seed. The document may carry a top-level
-     * {@code scenes:} sequence and an {@code items:} sequence; either absent yields an empty list.
+     * Parses the given YAML stream and assembles the full game seed. The document may carry top-level
+     * {@code scenes:}, {@code items:} and {@code npcs:} sequences; any absent yields an empty list.
      *
      * @param yamlStream      the authored seed document
      * @param startingSceneId the configured starting scene id (not read from the file)
@@ -54,7 +55,7 @@ public class GameSeedYamlReader {
         Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         Map<String, Object> root = yaml.load(yamlStream);
 
-        return new GameSeed(parseScenes(root), startingSceneId, parseItems(root));
+        return new GameSeed(parseScenes(root), startingSceneId, parseItems(root), parseNpcs(root));
     }
 
     private static List<SceneEntry> parseScenes(Map<String, Object> root) {
@@ -77,6 +78,17 @@ public class GameSeedYamlReader {
             items.add(toItemEntry(itemNode));
         }
         return items;
+    }
+
+    private static List<NpcEntry> parseNpcs(Map<String, Object> root) {
+        if (root == null || root.get("npcs") == null) {
+            return List.of();
+        }
+        List<NpcEntry> npcs = new ArrayList<>();
+        for (Map<String, Object> npcNode : asListOfMaps(root.get("npcs"))) {
+            npcs.add(toNpcEntry(npcNode));
+        }
+        return npcs;
     }
 
     private static SceneEntry toSceneEntry(Map<String, Object> node) {
@@ -103,6 +115,19 @@ public class GameSeedYamlReader {
                 asString(node.get("shortDescription")),
                 asString(node.get("fullDescription")),
                 spawn);
+    }
+
+    private static NpcEntry toNpcEntry(Map<String, Object> node) {
+        Object spawnNode = node.get("spawn");
+        SpawnEntry spawn = spawnNode == null ? null : toSpawnEntry(asMap(spawnNode));
+        int[] moveChance = parseChance(asString(node.get("moveChance")));
+        return new NpcEntry(
+                asString(node.get("id")),
+                asString(node.get("shortDescription")),
+                asString(node.get("fullDescription")),
+                spawn,
+                moveChance[0],
+                moveChance[1]);
     }
 
     private static SpawnEntry toSpawnEntry(Map<String, Object> node) {

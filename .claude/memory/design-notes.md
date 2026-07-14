@@ -1148,6 +1148,18 @@ outcome. (Promotion candidate, flagged not promoted: *adopt the lock-detected ha
 real; a single-writer aggregate keeps the propagating default, and a unit test pinning the propagation turns
 the choice into doctrine.*)
 
+**`Npc` takes the contrast one step further — single-writer with *no version at all*.** `[thread #3]`
+Autonomous NPC movement writes NPCs, and today the movement ticker is their *only* writer, so `AnimateNpcs`
+uses the **plain** `doInTransaction` (like `drop`) — but `Npc` also carries **no** `@Version`, where `drop`'s
+`Item` still carries the one `take` needs. So the aggregate progression is now three-deep: contested and
+versioned with a handler (`Item` under `take`); single-writer but versioned-because-a-*peer*-interaction-is-not
+(`Item` under `drop`, plain overload, version dead-but-present); and single-writer with the version omitted
+outright (`Npc`). The trigger to add `Npc.@Version` is named and deferred by emergence — **the player being
+able to affect an NPC** (take-from, attack, trade), which is exactly what introduces the second writer a lock
+guards against, and is the same event that turns NPC behaviour from polling into the §8 event spine. Carrying
+a version now would be speculation against an interaction that does not exist; the plain-transaction unit test
+(mirroring `DropUseCaseTest`) pins that a lock loss is unreachable rather than merely absent.
+
 ## 6. The composition root — the framework held at arm's length
 
 **Wiring is explicit and hidden from the core.** Use cases are declared as
@@ -1457,6 +1469,24 @@ overwhelmingly common no-op tick. The watermark earned its own **singleton aggre
 `GameClock`: "how far have we narrated" is a different concern from "how much time is banked," and keeping them
 apart gives the concurrency thread a clean second example (and the natural `@Version` home — §5) instead of
 muddying the accumulator (§2 minimalism applied to aggregate boundaries).
+
+**The second parallel actor confirms the prediction — NPC wandering is a *second polling metronome*, still
+not the event spine.** `[thread #3]` Autonomous NPC movement (`AnimateNpcs`, driven by `NpcActivityTicker`) is
+the project's second concurrency, and it lands on the *same* side of the polling/event line as the clock: a
+blind metronome fires one `void` interaction per tick and the use case enumerates the NPCs and rolls each one's
+authored `moveChance` — "dumb metronome, smart use case" again, the enumeration and the roll in the use case,
+never the ticker. This is deliberately polling, not causation: an NPC *wandering* is a self-scheduled behaviour
+it does on its own (derived from the tick, like a phase boundary is derived from the instant), **not** a
+reaction to anything that happened. The event spine's first causal site — an NPC *reacting* to the player
+entering its scene — remains the unbuilt next step, so the "two will coexist" prediction now has *both*
+polling exemplars in hand (clock, NPC wandering) and still nothing on the event side. It also cashes §6's
+second-async-writer prediction with the cleanest possible result: two blind metronomes now write to one
+terminal, both cancelled by Spring at context close, and because neither must stop *relative to the other*
+(§6's trigger for a hand-rolled `SmartLifecycle`), that machinery is *still* not needed — the prediction that
+a second writer would arrive as a peer, not an ordering constraint, held. A closing nuance ties back to §4:
+the tick's *perceptibility filter* (only movements whose source or target is the player's current scene are
+narrated; the rest are a presented quiet outcome) keeps "exactly one `present*` per run" honest for the
+overwhelmingly common off-stage tick, exactly as `AnnounceTimeOfDay`'s quiet poll does.
 
 ## 9. Command parsing as a delivery-mechanism concern
 

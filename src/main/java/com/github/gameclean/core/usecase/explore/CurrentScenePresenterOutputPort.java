@@ -1,6 +1,7 @@
 package com.github.gameclean.core.usecase.explore;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 
@@ -28,7 +29,8 @@ public interface CurrentScenePresenterOutputPort extends OrientPlayerPresenterOu
      * Happy path: render the scene being presented (the current scene for {@code look}, the scene just
      * entered for {@code move}) together with the items lying on its ground — empty if none. The items are
      * those located in <em>that</em> scene, fetched by each use case for the scene it presents, since the
-     * presented scene differs between {@code look} (current) and {@code move} (target).
+     * presented scene differs between {@code look} (current) and {@code move} (target). The items and NPCs are
+     * those located in that scene, each empty if none.
      */
-    void presentScene(Scene scene, List<Item> itemsOnGround);
+    void presentScene(Scene scene, List<Item> itemsOnGround, List<Npc> npcsPresent);
 }
