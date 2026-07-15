@@ -908,8 +908,9 @@ coordinate, so there is no dead parameter (the ISP objection that killed the uni
 alternative), and `select` stays ⟂ `orient` (the bearings alternative would have coupled select's port to
 orient's result type and pre-committed every selection to being *grounded* — which also resolves the residual
 tension this section had named: a future non-grounded selection simply binds its own `C`). Deliberately *not*
-generalized: the candidate type stays `Item` (no `<C, T>`) until a non-item selection actually exists — the
-same one-instance discipline, one level up. The extraction also produced a small port-vocabulary rule: the
+generalized at that point: the candidate type stayed `Item` (no `<C, T>`) until a non-item selection actually
+existed — the same one-instance discipline, one level up (since cashed at the second candidate *kind*; next
+paragraph). The extraction also produced a small port-vocabulary rule: the
 shared outcome `presentItemNoLongerHere` was renamed **provenance-neutral**
 (`presentItemNoLongerAvailable`), because the *outcome* belongs to the subcase while the *English* belongs to
 each presenter — the ground consumers render "no longer here", drop renders "no longer carrying" — so the
@@ -918,6 +919,35 @@ port method never lies for half its consumers. (Promotion candidate, flagged not
 genuine is-a subtypes bound at wiring time, is legitimate; defer both the base and its generic input until
 the second concrete makes the generalization visible; when a shared skeleton's outcome reads differently per
 concrete, name it provenance-neutrally on the port and leave the phrasing to the presenters.*)
+
+**The `<C, T>` cashing at the second candidate *kind* — `Designatable`, and where the token's shape gate had
+to move.** `[thread #1]` `[thread #4]` Combat targets (`hit <npc>`, #66) are the second candidate kind, and the
+deferral above was cashed as its own behavior-preserving refactor PR (#67) *before* the `hit` vertical, so the
+first non-item consumer ships with full disambiguation rather than an interim hardcoded single-match path.
+Three decisions fixed the shape. **(1) The candidate capability is a model-level interface,
+`Designatable`** (`core/model/designation/` — the neutral-package precedent of `SpawnRule`→`spawn/`): the
+skeleton asks each candidate exactly two Tell-Don't-Ask facts — `matches(fragment)` (designation by
+description) and `hasIdToken(token)` (re-confirmation by remembered identity, a *pure comparison* against the
+id flatten). It cannot live in `usecase/select/` — the model never depends on the use-case layer — and the
+input port bounds its `T` with it, while the presenter port's `<T>` stays deliberately *unbounded* (it demands
+nothing of `T`; don't require what you don't use). **(2) The token's *shape* gate became the base's second
+hook.** The old base reconstituted `new ItemId(token)` eagerly — malformed remembered token = internal fault,
+gated *before* any read. A type-blind skeleton cannot reconstitute, and folding the gate into per-candidate
+`hasIdToken` would silently downgrade the empty-candidates+malformed-token corner to a presented "no longer
+available" — mislabeling a programming error as a player outcome, the very invariant the empty-offer
+precondition defends. Java cannot dispatch statically over `T`, so the gate lands as an eager
+`requireWellFormedToken(token)` hook beside `provisionCandidates`: the concrete is the site that binds `T`, so
+declaring `T`'s token shape there is not mis-homed, and "single point of variation" honestly becomes *two
+type-bound facts — provenance and token shape*. **(3) The shared gone-outcome was renamed one axis further,
+`presentItemNoLongerAvailable(ItemId)` → `presentTargetNoLongerAvailable(String idToken)`** — the #55
+provenance-neutral rename rule applied to the *candidate type* (the outcome is the subcase's, the English each
+presenter's), now carrying the raw token because that is all the type-blind skeleton holds on that branch.
+The terminal side needed **zero changes** — `AffordanceContext`, `SelectCommand`, the conversation dispatcher
+already traded in raw string tokens, the "primitives inward" decision (§4 above) paying off in full.
+(Promotion candidate, flagged not promoted: *when a Template-Method base generalizes over a type parameter,
+each fact the skeleton used to know statically becomes either a capability interface method (asked of an
+instance) or an additional hook (needed before instances exist); an eager validity gate that must fire before
+provisioning is necessarily a hook, and its natural home is the concrete that binds the type.*)
 
 **`take` is the select subcase's first *writing* consumer — orchestration + a write tail, and no construction
 checkpoint.** `[thread #4]` `take` is `examine`'s twin with a write: the *same* two interactions

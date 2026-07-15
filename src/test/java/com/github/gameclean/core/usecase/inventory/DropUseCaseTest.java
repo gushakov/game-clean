@@ -57,7 +57,7 @@ class DropUseCaseTest {
     @Mock
     private OrientPlayerSubcaseInputPort orientPlayerSubcase;
     @Mock
-    private SelectTargetSubcaseInputPort<PlayerId> selectTargetSubcase;
+    private SelectTargetSubcaseInputPort<PlayerId, Item> selectTargetSubcase;
     @Mock
     private ItemRepositoryOperationsOutputPort itemOps;
     @Mock

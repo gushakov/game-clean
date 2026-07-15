@@ -38,7 +38,7 @@ public class ExamineUseCase implements ExamineInputPort {
 
     ExaminePresenterOutputPort presenter;
     OrientPlayerSubcaseInputPort orientPlayerSubcase;
-    SelectTargetSubcaseInputPort<SceneId> selectTargetSubcase;
+    SelectTargetSubcaseInputPort<SceneId, Item> selectTargetSubcase;
 
     @Override
     public void playerExaminesTarget(String target) {
