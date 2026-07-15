@@ -414,6 +414,23 @@ keeps the rule from over-reaching: a `doAfterCommit(present)` and a domain-event
 triggers a *different* interaction, is allowed (that is the §8 event spine); the invariant governs
 an interaction's own forward `present*` calls, not the causal chain it may set in motion.
 
+**The converse boundary — an interaction may set a causal chain in motion, but may not defer its
+*own* outcome into one.** `[thread #3]` Designing the first combat strike (`hit <npc>`, #66) posed
+the tempting inversion: end `playerTriesToHitNpc` by dispatching a "combat episode" event and
+presenting "you've tried poking the goblin", letting a system-actor interaction roll the attack
+later. That is *not* the sanctioned event dispatch above — it cuts the user goal in the middle.
+The interaction's outcome stripes (*miss / hit for damage / kill / target no longer here*) are
+exactly what the presenter needs to situate the player's next action ("swing again or flee");
+"you've tried" is a *receipt*, not a stripe, and the real outcome would arrive later,
+asynchronously, unattributed to any goal the player is still pursuing. It also splits actor from
+decision: the roll — the domain decision belonging to the player's goal — would migrate to a
+system interaction, leaving the asserted actor's interaction deciding nothing. The line, then:
+the causal chain an interaction may launch carries the *world's reactions* to its outcome; the
+outcome itself — everything the initiating actor needs answered to choose their next action —
+resolves synchronously within the interaction. (Promotion candidate, flagged not promoted: *an
+interaction may dispatch events for reactions, never for its own resolution — if the actor needs
+the result to decide their next step, it is an outcome stripe, not a reaction.*)
+
 **A third phase, and the use case turns stochastic without losing its testability.** `[thread #2]` `[thread #3]`
 Seeding *items* is a third phase of the same `InitializeGame` interaction — world → player → items — for the
 same reason player-placement was the second: world→items is a *domain precondition* (items need scenes to
@@ -1487,6 +1504,25 @@ a second writer would arrive as a peer, not an ordering constraint, held. A clos
 the tick's *perceptibility filter* (only movements whose source or target is the player's current scene are
 narrated; the rest are a presented quiet outcome) keeps "exactly one `present*` per run" honest for the
 overwhelmingly common off-stage tick, exactly as `AnnounceTimeOfDay`'s quiet poll does.
+
+**Combat retaliation lands on the *polling* side too — a stance is state, not an event — and it sharpens
+what the first causal site will be.** `[thread #3]` The `hit <npc>` design (#66) looked like the event
+spine's moment at last: an NPC striking back *is* a reaction to something that happened. But modeled as a
+one-shot chain (struck-event → retaliate-interaction), combat becomes tit-for-tat — one counter-blow per
+player hit, then silence — which misdescribes the domain: combat is a **stance** the NPC is *in* (it keeps
+attacking every round until someone dies or leaves), not a sequence of discrete episodes. A stance is
+*state*: the hit's transaction persists hostility on the NPC, and the existing animation tick's behaviour
+selection *derives* the counterattack from it (hostile & co-located → attack; the stance cancels the
+wander roll) — squarely the polling/deriving shape of the clock and wandering exemplars above, with combat
+*rounds* falling out of the tick cadence for free (per-mode cadence, if 10s rounds ever feel wrong, is a
+ticker concern, not a domain one). So the third would-be event customer also resolves to polling, and the
+pattern refines the line's wording: an event fits a **discrete** causal fact demanding a one-shot
+reaction; an **ongoing disposition** belongs in persisted state, derived by a loop. The event spine's
+first causal site is accordingly *not* "an NPC reacting to the player" in general — being struck begets a
+stance — but the first genuinely discrete reaction: witness propagation (a guard in the next room
+responding to the assault) or an on-death effect. (Promotion candidate, flagged not promoted: *choreograph
+discrete facts, persist dispositions — if the reaction recurs while a condition holds, it is state polled
+by a loop, not an event.*)
 
 ## 9. Command parsing as a delivery-mechanism concern
 
