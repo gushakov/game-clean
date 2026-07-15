@@ -38,7 +38,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class TerminalTakePresenter
-        implements OrientPlayerPresenterOutputPort, SelectTargetPresenterOutputPort, TakePresenterOutputPort {
+        implements OrientPlayerPresenterOutputPort, SelectTargetPresenterOutputPort<Item>, TakePresenterOutputPort {
 
     OrientRenderer orientRenderer;
     ItemRenderer itemRenderer;
@@ -74,8 +74,8 @@ public class TerminalTakePresenter
     }
 
     @Override
-    public void presentItemNoLongerAvailable(ItemId itemId) {
-        itemRenderer.renderItemNoLongerHere(itemId);
+    public void presentTargetNoLongerAvailable(String idToken) {
+        itemRenderer.renderItemNoLongerHere(idToken);
     }
 
     @Override

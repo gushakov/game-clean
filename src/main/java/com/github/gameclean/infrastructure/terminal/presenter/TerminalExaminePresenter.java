@@ -1,7 +1,6 @@
 package com.github.gameclean.infrastructure.terminal.presenter;
 
 import com.github.gameclean.core.model.item.Item;
-import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.explore.ExaminePresenterOutputPort;
@@ -53,7 +52,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class TerminalExaminePresenter
-        implements OrientPlayerPresenterOutputPort, SelectTargetPresenterOutputPort, ExaminePresenterOutputPort {
+        implements OrientPlayerPresenterOutputPort, SelectTargetPresenterOutputPort<Item>, ExaminePresenterOutputPort {
 
     OrientRenderer orientRenderer;
     ItemRenderer itemRenderer;
@@ -86,8 +85,8 @@ public class TerminalExaminePresenter
     }
 
     @Override
-    public void presentItemNoLongerAvailable(ItemId itemId) {
-        itemRenderer.renderItemNoLongerHere(itemId);
+    public void presentTargetNoLongerAvailable(String idToken) {
+        itemRenderer.renderItemNoLongerHere(idToken);
     }
 
     @Override
