@@ -462,7 +462,7 @@ class InitializeGameUseCaseTest {
                                 int chanceNumerator, int chanceDenominator, int max, String... candidateScenes) {
         return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
                 new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max),
-                moveNumerator, moveDenominator);
+                moveNumerator, moveDenominator, 10);
     }
 
     private static List<SceneEntry> twoConnectedScenes() {

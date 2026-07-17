@@ -16,7 +16,9 @@ import lombok.Value;
  *
  * <p>The move chance is carried as a numerator/denominator pair (parsed from a {@code "1/4"} fraction), like
  * {@link SpawnEntry}'s chance — the {@link com.github.gameclean.core.model.dice.Chance} value object is
- * constructed inside the use case.
+ * constructed inside the use case. {@code hitPoints} is the authored health pool an instance spawns at (its
+ * max, and its initial current); the {@link com.github.gameclean.core.model.combat.HitPoints} value object is
+ * likewise built inside the use case.
  *
  * <p>Lombok {@code @Value} (not a Java record), matching the shape used across the codebase.
  */
@@ -29,4 +31,5 @@ public class NpcEntry {
     SpawnEntry spawn;
     int moveChanceNumerator;
     int moveChanceDenominator;
+    int hitPoints;
 }

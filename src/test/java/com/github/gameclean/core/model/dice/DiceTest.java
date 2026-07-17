@@ -54,6 +54,24 @@ class DiceTest {
     }
 
     @Test
+    void roll_die_scales_the_draw_across_the_faces_one_based() {
+        assertThat(diceDrawing(0.0).rollDie(10)).isEqualTo(1);    // (int)(0.0 * 10) + 1 = 1
+        assertThat(diceDrawing(0.5).rollDie(10)).isEqualTo(6);    // (int)(0.5 * 10) + 1 = 6
+        assertThat(diceDrawing(0.999).rollDie(10)).isEqualTo(10); // (int)(0.999 * 10) + 1 = 10
+    }
+
+    @Test
+    void roll_die_clamps_a_draw_at_the_top_of_the_range_to_the_last_face() {
+        assertThat(diceDrawing(1.0).rollDie(6)).isEqualTo(6);
+    }
+
+    @Test
+    void roll_die_rejects_a_non_positive_side_count() {
+        assertThatIllegalArgumentException().isThrownBy(() -> diceDrawing(0.0).rollDie(0));
+        assertThatIllegalArgumentException().isThrownBy(() -> diceDrawing(0.0).rollDie(-1));
+    }
+
+    @Test
     void roll_rejects_a_null_chance() {
         assertThatNullPointerException().isThrownBy(() -> diceDrawing(0.0).roll(null));
     }

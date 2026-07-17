@@ -199,11 +199,12 @@ items:
       chance: 1/1
       max: 2
 
-# Authored NPCs — like the items, tuned so you actually see them without hunting. Both
+# Authored NPCs — like the items, tuned so you actually see them without hunting. All three
 # spawn *certainly* (chance 1/1, max 1) into the starting scene scn1, so a fresh game
-# lists them under "Also here:" the moment you `look`. Each then wanders on the NPC ticker:
-# `moveChance` is the odds it steps to a random adjacent scene on any given tick, so give
-# it a few ticks and watch them drift off into the fog (and, if you follow, arrive after you).
+# lists them under "Also here:" the moment you `look`. Each then wanders on the NPC ticker,
+# which fires every second: `moveChance` is the per-tick odds it steps to a random adjacent
+# scene, so watch over tens of seconds and they drift off into the fog (and, if you follow,
+# arrive after you). The odds are tuned to the 1s tick — 1/30 ≈ a move every ~30s.
 #
 # NOTE: spawning is idempotent — a restart never re-rolls, and the guard is world-wide, so
 # start from a clean play database to see them on a DB that already seeded another world.
@@ -213,7 +214,8 @@ npcs:
     fullDescription: >
       A stooped old woman in oilskins gone stiff with salt, a gutting-knife still loose in
       one hand. She watches the water more than she watches you.
-    moveChance: 1/3        # wanders fairly often
+    moveChance: 1/30       # wanders fairly often (~every 30s at the 1s tick)
+    hitPoints: 15          # health pool it spawns at; a strike does 1..10 damage
     spawn:
       scenes: scn1
       chance: 1/1          # certain to spawn
@@ -224,7 +226,20 @@ npcs:
     fullDescription: >
       A gaunt man feeling his way along the walls with a tarred pole, though every lamp on
       this coast went dark years ago. He hums a tune the tide seems to answer.
-    moveChance: 1/5        # wanders, but lingers longer
+    moveChance: 1/50       # wanders, but lingers longer (~every 50s)
+    hitPoints: 12          # health pool it spawns at; a strike does 1..10 damage
+    spawn:
+      scenes: scn1
+      chance: 1/1
+      max: 1
+
+  - id: npc3
+    shortDescription: A barnacled harbor-watchman.
+    fullDescription: >
+      An old man so long at his post he seems grown to it, oilskins crusted with barnacle
+      and weed. He has not left these steps in living memory, and does not mean to start.
+    moveChance: 1/200      # moves very rarely — all but rooted to the spot (~every few minutes)
+    hitPoints: 18          # health pool it spawns at; a strike does 1..10 damage
     spawn:
       scenes: scn1
       chance: 1/1

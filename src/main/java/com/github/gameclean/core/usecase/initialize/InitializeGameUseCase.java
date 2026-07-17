@@ -325,8 +325,8 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::new).toList();
             SpawnRule rule = new SpawnRule(chance, spawn.getMax(), candidateScenes);
             Chance moveChance = new Chance(entry.getMoveChanceNumerator(), entry.getMoveChanceDenominator());
-            NpcTemplate template =
-                    new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(), rule, moveChance);
+            NpcTemplate template = new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(),
+                    rule, moveChance, entry.getHitPoints());
             authored.add(new AuthoredNpc(entry.getId(), template));
         }
         return authored;

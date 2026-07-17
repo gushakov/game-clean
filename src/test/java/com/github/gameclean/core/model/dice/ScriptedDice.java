@@ -17,6 +17,7 @@ public class ScriptedDice implements Dice {
 
     private final Deque<Boolean> rolls = new ArrayDeque<>();
     private final Deque<Integer> picks = new ArrayDeque<>();
+    private final Deque<Integer> dieFaces = new ArrayDeque<>();
 
     /** Enqueue the outcomes the next {@code roll} calls will return, in order. */
     public ScriptedDice willRoll(boolean... outcomes) {
@@ -30,6 +31,14 @@ public class ScriptedDice implements Dice {
     public ScriptedDice willPick(int... indices) {
         for (int index : indices) {
             picks.addLast(index);
+        }
+        return this;
+    }
+
+    /** Enqueue the face values the next {@code rollDie} calls will return, in order. */
+    public ScriptedDice willRollDie(int... faces) {
+        for (int face : faces) {
+            dieFaces.addLast(face);
         }
         return this;
     }
@@ -48,5 +57,13 @@ public class ScriptedDice implements Dice {
             throw new AssertionError("no scripted pick left");
         }
         return options.get(picks.removeFirst());
+    }
+
+    @Override
+    public int rollDie(int sides) {
+        if (dieFaces.isEmpty()) {
+            throw new AssertionError("no scripted die roll left");
+        }
+        return dieFaces.removeFirst();
     }
 }
