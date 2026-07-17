@@ -48,7 +48,7 @@ public class DropUseCase implements DropInputPort {
 
     DropPresenterOutputPort presenter;
     OrientPlayerSubcaseInputPort orientPlayerSubcase;
-    SelectTargetSubcaseInputPort<PlayerId> selectTargetSubcase;
+    SelectTargetSubcaseInputPort<PlayerId, Item> selectTargetSubcase;
     ItemRepositoryOperationsOutputPort itemOps;
     TransactionOperationsOutputPort txOps;
 

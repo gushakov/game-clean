@@ -19,6 +19,8 @@ import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.AskForTimeUseCase;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameUseCase;
+import com.github.gameclean.core.usecase.combat.HitInputPort;
+import com.github.gameclean.core.usecase.combat.HitUseCase;
 import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.ExamineUseCase;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
@@ -40,10 +42,12 @@ import com.github.gameclean.core.usecase.npc.AnimateNpcsUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
 import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
+import com.github.gameclean.core.usecase.select.SelectSceneNpcSubcase;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
 import com.github.gameclean.infrastructure.terminal.conversation.DropConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
+import com.github.gameclean.infrastructure.terminal.conversation.HitConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.TakeConversation;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnimateNpcsPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
@@ -51,6 +55,7 @@ import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTime
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalDropPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalGuidancePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalHitPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalInventoryPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
@@ -202,6 +207,28 @@ public class UseCaseConfig {
 
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public HitInputPort hitUseCase(
+            OrientRenderer orientRenderer,
+            NpcRenderer npcRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            NpcRepositoryOperationsOutputPort npcOps,
+            TransactionOperationsOutputPort txOps) {
+        // One presenter instance, shared with the orient and the scene-sourced NPC select subcases (as take does
+        // with items), so every outcome — struck, slain, got-away, the orient not-founds, the disambiguation
+        // outcomes — reaches the same one. Dice is a domain collaborator (a fresh SystemDice, like the ticker).
+        TerminalHitPresenter presenter =
+                new TerminalHitPresenter(orientRenderer, npcRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        SelectSceneNpcSubcase select = new SelectSceneNpcSubcase(presenter, npcOps);
+        return new HitUseCase(presenter, orient, select, npcOps, txOps, new SystemDice());
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public InventoryInputPort inventoryUseCase(
             OrientRenderer orientRenderer,
             ItemRenderer itemRenderer,
@@ -236,6 +263,11 @@ public class UseCaseConfig {
     @Bean
     public Conversation dropConversation(ApplicationContext applicationContext) {
         return new DropConversation(applicationContext);
+    }
+
+    @Bean
+    public Conversation hitConversation(ApplicationContext applicationContext) {
+        return new HitConversation(applicationContext);
     }
 
     @Bean

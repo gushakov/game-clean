@@ -10,11 +10,11 @@ package com.github.gameclean.infrastructure.terminal.command;
  *
  * <p>Implementations are the small closed set of intents the parser can produce: {@link LookCommand},
  * {@link ExamineCommand}, {@link TakeCommand}, {@link DropCommand}, {@link InventoryCommand},
- * {@link SelectCommand}, {@link MoveCommand}, {@link TimeCommand}, {@link QuitCommand},
+ * {@link HitCommand}, {@link SelectCommand}, {@link MoveCommand}, {@link TimeCommand}, {@link QuitCommand},
  * {@link UnknownCommand}. The {@code sealed} clause makes that closure
  * explicit, so the console controller's pattern-matching {@code switch} over a command is <em>exhaustive</em> —
  * adding a new intent is a compile error until every dispatch handles it, rather than silently falling through.
  */
 public sealed interface Command
-        permits LookCommand, ExamineCommand, TakeCommand, DropCommand, InventoryCommand, SelectCommand, MoveCommand, TimeCommand, QuitCommand, UnknownCommand {
+        permits LookCommand, ExamineCommand, TakeCommand, DropCommand, InventoryCommand, HitCommand, SelectCommand, MoveCommand, TimeCommand, QuitCommand, UnknownCommand {
 }

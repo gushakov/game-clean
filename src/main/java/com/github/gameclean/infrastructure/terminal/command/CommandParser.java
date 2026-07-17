@@ -55,6 +55,8 @@ public class CommandParser {
         // 'drop'/'put' take the described target as the line remainder (multi-word), like 'take'.
         register("drop", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
         register("put", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
+        // 'hit' takes the described target NPC as the line remainder (multi-word), like 'take'.
+        register("hit", args -> args.isEmpty() ? null : new HitCommand(joinRemainder(args)));
         // 'inventory'/'i' review the player's keeping; they take no argument.
         register("inventory", args -> args.isEmpty() ? new InventoryCommand() : null);
         register("i", args -> args.isEmpty() ? new InventoryCommand() : null);

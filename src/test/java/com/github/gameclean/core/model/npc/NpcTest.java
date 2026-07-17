@@ -1,6 +1,7 @@
 package com.github.gameclean.core.model.npc;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.junit.jupiter.api.Test;
@@ -10,9 +11,11 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
- * Tests for the {@link Npc} aggregate: the always-valid construction gate and the {@link Npc#moveTo(SceneId)}
- * copy-on-write behaviour (the {@code Player.moveTo} twin). Pinning these directly here (rather than only
- * through the use-case tests) is the testability dividend of keeping the behaviour on the model.
+ * Tests for the {@link Npc} aggregate: the always-valid construction gate, the {@link Npc#moveTo(SceneId)}
+ * copy-on-write behaviour (the {@code Player.moveTo} twin), the {@link Npc#takeDamage(int)} write-side twin of
+ * {@code Item.takenBy} (carrying the version forward), and the {@code Designatable} designation facts. Pinning
+ * these directly here (rather than only through the use-case tests) is the testability dividend of keeping the
+ * behaviour on the model.
  */
 class NpcTest {
 
@@ -23,6 +26,7 @@ class NpcTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A figure in a travel-worn hooded cloak.")
                 .moveChance(new Chance(1, 4))
+                .hitPoints(HitPoints.full(10))
                 .build();
     }
 
@@ -90,9 +94,92 @@ class NpcTest {
     }
 
     @Test
+    void rejects_a_null_hit_points() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
+                .id(new NpcId("npc1"))
+                .currentScene(new SceneId("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .hitPoints(null)
+                .build());
+    }
+
+    @Test
+    void rejects_a_negative_version() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
+                .id(new NpcId("npc1"))
+                .currentScene(new SceneId("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .hitPoints(HitPoints.full(10))
+                .version(-1)
+                .build());
+    }
+
+    @Test
     void equality_is_by_id_ignoring_position() {
         Npc atGate = npc("scn1");
         Npc moved = atGate.moveTo(new SceneId("scn2"));   // same id, different scene
         assertThat(moved).isEqualTo(atGate);
+    }
+
+    @Test
+    void takeDamage_lowers_hit_points_and_carries_the_version_forward() {
+        Npc goblin = Npc.builder()
+                .id(new NpcId("npc1"))
+                .currentScene(new SceneId("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .hitPoints(new HitPoints(10, 10))
+                .version(7)
+                .build();
+
+        Npc struck = goblin.takeDamage(4);
+
+        // Copy-on-write: new hit points, same identity and version (checked against what the use case read).
+        assertThat(struck.getHitPoints()).isEqualTo(new HitPoints(6, 10));
+        assertThat(struck.getVersion()).isEqualTo(7);
+        assertThat(struck.isDead()).isFalse();
+        assertThat(goblin.getHitPoints()).isEqualTo(new HitPoints(10, 10));   // original untouched
+    }
+
+    @Test
+    void takeDamage_that_meets_or_exceeds_current_kills_the_npc() {
+        Npc goblin = Npc.builder()
+                .id(new NpcId("npc1"))
+                .currentScene(new SceneId("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .hitPoints(new HitPoints(3, 10))
+                .build();
+
+        Npc slain = goblin.takeDamage(9);   // overkill floors at zero (HitPoints' clamp)
+
+        assertThat(slain.getHitPoints()).isEqualTo(new HitPoints(0, 10));
+        assertThat(slain.isDead()).isTrue();
+    }
+
+    @Test
+    void matches_is_a_case_insensitive_substring_of_the_short_description() {
+        Npc wanderer = npc("scn1");   // "A hooded wanderer."
+        assertThat(wanderer.matches("hooded")).isTrue();
+        assertThat(wanderer.matches("WANDERER")).isTrue();
+        assertThat(wanderer.matches("goblin")).isFalse();
+    }
+
+    @Test
+    void matches_a_null_fragment_is_a_caller_bug() {
+        assertThatNullPointerException().isThrownBy(() -> npc("scn1").matches(null));
+    }
+
+    @Test
+    void hasIdToken_compares_the_raw_id_flatten() {
+        Npc wanderer = npc("scn1");
+        assertThat(wanderer.hasIdToken("npc1")).isTrue();
+        assertThat(wanderer.hasIdToken("npc2")).isFalse();
     }
 }

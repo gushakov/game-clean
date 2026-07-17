@@ -1,7 +1,6 @@
 package com.github.gameclean.infrastructure.terminal.presenter;
 
 import com.github.gameclean.core.model.item.Item;
-import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.inventory.DropPresenterOutputPort;
@@ -40,7 +39,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class TerminalDropPresenter
-        implements OrientPlayerPresenterOutputPort, SelectTargetPresenterOutputPort, DropPresenterOutputPort {
+        implements OrientPlayerPresenterOutputPort, SelectTargetPresenterOutputPort<Item>, DropPresenterOutputPort {
 
     OrientRenderer orientRenderer;
     ItemRenderer itemRenderer;
@@ -71,8 +70,8 @@ public class TerminalDropPresenter
     }
 
     @Override
-    public void presentItemNoLongerAvailable(ItemId itemId) {
-        itemRenderer.renderItemNoLongerCarried(itemId);
+    public void presentTargetNoLongerAvailable(String idToken) {
+        itemRenderer.renderItemNoLongerCarried(idToken);
     }
 
     @Override

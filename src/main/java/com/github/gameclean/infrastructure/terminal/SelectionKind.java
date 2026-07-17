@@ -22,5 +22,8 @@ public enum SelectionKind {
     TAKE,
 
     /** A pending {@code drop} disambiguation: the next pick drops the chosen item. */
-    DROP
+    DROP,
+
+    /** A pending {@code hit} disambiguation: the next pick strikes the chosen NPC. */
+    HIT
 }

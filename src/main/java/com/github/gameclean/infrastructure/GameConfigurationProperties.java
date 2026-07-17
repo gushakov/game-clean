@@ -164,14 +164,17 @@ public class GameConfigurationProperties {
         public static class Ticker {
 
             /**
-             * Real-time interval between ticks of autonomous NPC movement. The ticker is a blind metronome: it
+             * Real-time interval between ticks of autonomous NPC activity. The ticker is a blind metronome: it
              * fires the animate use case this often, and each NPC's move is an independent dice roll against its
-             * authored move chance, so the interval sets the pace of wandering, not its certainty. A Spring Boot
-             * {@link Duration} string, e.g. {@code 10s}.
+             * authored per-tick move chance. It fires frequently — default {@code 1s} — so one metronome can
+             * pace several NPC behaviours (wandering today, combat rounds later), each at its own cadence set by
+             * its authored chance rather than by the tick rate. The authored move chances in the world seed are
+             * tuned to this interval (e.g. {@code 1/30} per {@code 1s} tick ≈ a move every ~30s). A Spring Boot
+             * {@link Duration} string, e.g. {@code 1s}.
              */
             Duration interval;
 
-            public Ticker(@DefaultValue("10s") Duration interval) {
+            public Ticker(@DefaultValue("1s") Duration interval) {
                 this.interval = interval;
             }
         }

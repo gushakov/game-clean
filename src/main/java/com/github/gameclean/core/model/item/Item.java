@@ -2,6 +2,7 @@ package com.github.gameclean.core.model.item;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.designation.Designatable;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import lombok.AccessLevel;
@@ -41,7 +42,7 @@ import java.util.Objects;
 @With
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
-public class Item {
+public class Item implements Designatable {
 
     @EqualsAndHashCode.Include
     ItemId id;
@@ -81,9 +82,23 @@ public class Item {
      * (which throws {@link InvalidDomainObjectError}). The use case only ever calls this with a non-blank,
      * already-trimmed target.
      */
+    @Override
     public boolean matches(String fragment) {
         String needle = Objects.requireNonNull(fragment, "fragment must not be null").strip().toLowerCase(Locale.ROOT);
         return shortDescription.toLowerCase(Locale.ROOT).contains(needle);
+    }
+
+    /**
+     * Tells whether the given raw id token identifies this item — a pure comparison against this item's own
+     * id flatten ({@code id.getValue()}), the {@link Designatable} re-confirmation fact. No reconstitution
+     * happens here: the token's shape gate is the select concrete's, fired before any candidate is asked.
+     *
+     * <p>A null token is a <em>caller programming error</em> (the select subcase gates the token before
+     * comparing), so it stays a plain {@link NullPointerException} per the behaviour-method guard convention.
+     */
+    @Override
+    public boolean hasIdToken(String idToken) {
+        return id.getValue().equals(Objects.requireNonNull(idToken, "id token must not be null"));
     }
 
     /**

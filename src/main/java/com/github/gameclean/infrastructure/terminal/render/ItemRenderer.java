@@ -74,12 +74,12 @@ public class ItemRenderer {
     }
 
     /** A chosen item that is no longer on the ground here (taken, moved, or despawned since it was offered). */
-    public void renderItemNoLongerHere(ItemId itemId) {
+    public void renderItemNoLongerHere(String idToken) {
         console.printError("That is no longer here.");
     }
 
     /** A chosen item that is no longer in the player's keeping — the carry-flavored twin of {@link #renderItemNoLongerHere}. */
-    public void renderItemNoLongerCarried(ItemId itemId) {
+    public void renderItemNoLongerCarried(String idToken) {
         console.printError("You are no longer carrying that.");
     }
 
@@ -93,7 +93,7 @@ public class ItemRenderer {
 
     /**
      * The take lost a concurrent race — the item was there when chosen but another actor took it first, so this
-     * take was rejected. The write-side twin of {@link #renderItemNoLongerHere(ItemId)}; reads the same to the
+     * take was rejected. The write-side twin of {@link #renderItemNoLongerHere(String)}; reads the same to the
      * player.
      */
     public void renderItemGotAway(ItemId itemId) {

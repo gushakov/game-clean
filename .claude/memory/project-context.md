@@ -47,6 +47,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
   `item/`, `npc/` (the `Npc` aggregate + `NpcId`/`NpcTemplate`), `spawn/` (the shared `SpawnRule` VO, used by item and npc templates), `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
   `dice/` (the `Dice` domain capability — interface + `AbstractDice`/`SystemDice`/`SeededDice` impls — and the `Chance` VO it rolls; design-notes §4),
+  `designation/` (the `Designatable` capability interface — the two facts the `select` dialogue asks of a candidate, implemented by `Item`; #67),
   `id/` (the `Ids` helper — the model's single knower of the generated-id-body alphabet+length; `ItemId.mint(Dice)` rolls bodies through it, design-notes §2/§4/#53)) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
@@ -54,7 +55,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C>` Template-Method base + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/npc/` holds `AnimateNpcs` (system-actor autonomous NPC movement)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/npc/` holds `AnimateNpcs` (system-actor autonomous NPC movement)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -396,10 +397,10 @@ second inventory goal, and the second `select` provisioner that extracted the Te
   decision #6: one Cockburn goal = one port; provenance is a parameter, not a different goal);
   `AbstractSelectTargetSubcase<C>` holds the whole dialogue skeleton (`final` template methods) with one
   `provisionCandidates(C)` hook; concretes `SelectSceneItemSubcase` (`SceneId` → scene ground, `examine`/`take`)
-  and `SelectInventoryItemSubcase` (`PlayerId` → player's keeping, `drop`). Candidate type stays `Item` (no
-  `<C, T>` until a non-item selection exists). Shared outcome renamed provenance-neutral:
-  `presentItemNoLongerHere` → `presentItemNoLongerAvailable` (presenters render ground- vs carry-flavored
-  English). (design-notes §4.)
+  and `SelectInventoryItemSubcase` (`PlayerId` → player's keeping, `drop`). Candidate type stayed `Item` at
+  this point (`<C, T>` deferred until a non-item selection exists — since cashed, #67 below). Shared outcome
+  renamed provenance-neutral: `presentItemNoLongerHere` → `presentItemNoLongerAvailable` (presenters render
+  ground- vs carry-flavored English; since renamed again type-neutral, #67). (design-notes §4.)
 - **Use case** — `Drop` (`core/usecase/inventory/`): `playerDropsTarget(String)` +
   `playerDropsChosenCandidate(int, List<String>)` converging on `presentItemDropped(Item)`. The criss-cross
   mirror of take — selects by player, mutates by scene — over the same `orient`+`select` opening; no
@@ -457,6 +458,27 @@ autonomously wandering; the first realization of the `[thread #3]` "Player and N
 - **Ticker / infra** — `NpcActivityTicker` (`infrastructure/npc/`, blind `SchedulingConfigurer`, second async
   writer/metronome; reads `game.npc.ticker.interval` default `10s`); `TerminalAnimateNpcsPresenter` +
   `NpcRenderer` (async `printAbove` narration); `game.npc.*` on `GameConfigurationProperties`.
+
+`select` candidate-type generalization **complete** (issue #67) — the deferred `<C, T>` step, cashed as a pure
+behavior-preserving refactor ahead of the `hit` vertical (#66, whose combat targets are the second candidate
+kind), so `hit` lands with full disambiguation from day one:
+
+- **Domain** — `Designatable` capability interface (`core/model/designation/`, the neutral-package precedent
+  of `spawn/`): `matches(String fragment)` + `hasIdToken(String idToken)` (pure comparison against the id
+  flatten). `Item` implements it (its `matches` promoted to the interface; `hasIdToken` = value-compare, no
+  reconstitution).
+- **Select** — `SelectTargetSubcaseInputPort<C, T extends Designatable>` and
+  `AbstractSelectTargetSubcase<C, T>`: the skeleton is type-blind, with **two** type-bound hooks —
+  `provisionCandidates(C)` (provenance) and the new eager `requireWellFormedToken(String)` (token shape: the
+  concrete reconstitutes its candidate's id VO as a pure validity gate, preserving malformed-token-is-an-
+  internal-fault *before any read*; folding it into per-candidate `hasIdToken` would mislabel the
+  empty-candidates+malformed corner as a presented outcome). `SelectTargetPresenterOutputPort<T>` goes
+  generic-in-T (deliberately unbounded — it demands nothing of `T`);
+  `presentItemNoLongerAvailable(ItemId)` renamed type-neutral `presentTargetNoLongerAvailable(String idToken)`
+  (carries the raw token — all the type-blind skeleton holds on that branch; renderers ignore it). Concretes
+  re-typed `<SceneId, Item>` / `<PlayerId, Item>`; parents (`Examine`/`Take`/`Drop`) and presenters bind
+  `Item`; terminal side (AffordanceContext, SelectCommand, conversation dispatcher) untouched — already
+  string-token-based ("primitives inward" payoff). (design-notes §4.)
 
 Tests: 345 unit (Surefire, DB-free) + 22 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB

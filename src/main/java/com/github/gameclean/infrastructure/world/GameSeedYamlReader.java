@@ -127,13 +127,14 @@ public class GameSeedYamlReader {
                 asString(node.get("fullDescription")),
                 spawn,
                 moveChance[0],
-                moveChance[1]);
+                moveChance[1],
+                asInt(node.get("hitPoints"), "npc hit points"));
     }
 
     private static SpawnEntry toSpawnEntry(Map<String, Object> node) {
         List<String> scenes = parseSceneList(asString(node.get("scenes")));
         int[] chance = parseChance(asString(node.get("chance")));
-        int max = asInt(node.get("max"));
+        int max = asInt(node.get("max"), "spawn max");
         return new SpawnEntry(scenes, chance[0], chance[1], max);
     }
 
@@ -168,11 +169,11 @@ public class GameSeedYamlReader {
         return (Map<String, Object>) node;
     }
 
-    private static int asInt(Object value) {
+    private static int asInt(Object value, String what) {
         if (value instanceof Number number) {
             return number.intValue();
         }
-        return Integer.parseInt(Objects.requireNonNull(value, "max must not be null").toString().strip());
+        return Integer.parseInt(Objects.requireNonNull(value, what + " must not be null").toString().strip());
     }
 
     private static String asString(Object value) {

@@ -40,4 +40,16 @@ public abstract class AbstractDice implements Dice {
         }
         return options.get(index);
     }
+
+    @Override
+    public int rollDie(int sides) {
+        if (sides <= 0) {
+            throw new IllegalArgumentException("a die must have a strictly positive number of sides, got " + sides);
+        }
+        int face = (int) (nextDraw() * sides) + 1;
+        if (face > sides) {
+            face = sides;   // clamp so a draw arbitrarily close to 1 lands on the top face, never sides+1
+        }
+        return face;
+    }
 }

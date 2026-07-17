@@ -244,6 +244,18 @@ pickup. (Promotion candidate, flagged not promoted: *model a value with a closed
 shapes as a sealed type, not co-existing nullable fields plus an XOR guard — the type makes the invariant
 structural and the exhaustive `switch` makes the next case unforgettable.*)
 
+**Combat cashes the last two deferrals on `Npc` — a health VO and the version — each exactly when its trigger
+arrived.** `[thread #1]` `[thread #3]` The `hit` strike forced `HitPoints` (current + max) into existence: a
+health *pool* with a clamp-at-zero rule and a dead predicate is *behaviour*, so it is a VO in a neutral
+`combat/` package (the `dice/`/`designation/` precedent), not a bare int on `Npc`. `max` earns its place not on
+speculation but because spawning must author *some* pool and full-health-at-spawn makes `current == max` — the
+same "one field, because that is all the interaction reads" beat as `Player`, one concept richer. The
+optimistic-locking `version`, whose absence `Npc` had *documented* as deferred until a second writer exists,
+arrived in the same slice: the player's strike is that second writer alongside the wandering ticker, so the
+field appears now, cashing the promise verbatim — the `take` (contested, versioned) vs `drop` (single-writer,
+plain) contrast among items, replayed for NPCs. Neither was invented ahead of the interaction that reads it;
+both are the §2 discipline holding under a genuinely new pressure — a live adversary, not just a second command.
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -413,6 +425,23 @@ keeps the rule from over-reaching: a `doAfterCommit(present)` and a domain-event
 **not** a second presentation — scheduling deferred work, or dispatching an event that later
 triggers a *different* interaction, is allowed (that is the §8 event spine); the invariant governs
 an interaction's own forward `present*` calls, not the causal chain it may set in motion.
+
+**The converse boundary — an interaction may set a causal chain in motion, but may not defer its
+*own* outcome into one.** `[thread #3]` Designing the first combat strike (`hit <npc>`, #66) posed
+the tempting inversion: end `playerTriesToHitNpc` by dispatching a "combat episode" event and
+presenting "you've tried poking the goblin", letting a system-actor interaction roll the attack
+later. That is *not* the sanctioned event dispatch above — it cuts the user goal in the middle.
+The interaction's outcome stripes (*miss / hit for damage / kill / target no longer here*) are
+exactly what the presenter needs to situate the player's next action ("swing again or flee");
+"you've tried" is a *receipt*, not a stripe, and the real outcome would arrive later,
+asynchronously, unattributed to any goal the player is still pursuing. It also splits actor from
+decision: the roll — the domain decision belonging to the player's goal — would migrate to a
+system interaction, leaving the asserted actor's interaction deciding nothing. The line, then:
+the causal chain an interaction may launch carries the *world's reactions* to its outcome; the
+outcome itself — everything the initiating actor needs answered to choose their next action —
+resolves synchronously within the interaction. (Promotion candidate, flagged not promoted: *an
+interaction may dispatch events for reactions, never for its own resolution — if the actor needs
+the result to decide their next step, it is an outcome stripe, not a reaction.*)
 
 **A third phase, and the use case turns stochastic without losing its testability.** `[thread #2]` `[thread #3]`
 Seeding *items* is a third phase of the same `InitializeGame` interaction — world → player → items — for the
@@ -891,8 +920,9 @@ coordinate, so there is no dead parameter (the ISP objection that killed the uni
 alternative), and `select` stays ⟂ `orient` (the bearings alternative would have coupled select's port to
 orient's result type and pre-committed every selection to being *grounded* — which also resolves the residual
 tension this section had named: a future non-grounded selection simply binds its own `C`). Deliberately *not*
-generalized: the candidate type stays `Item` (no `<C, T>`) until a non-item selection actually exists — the
-same one-instance discipline, one level up. The extraction also produced a small port-vocabulary rule: the
+generalized at that point: the candidate type stayed `Item` (no `<C, T>`) until a non-item selection actually
+existed — the same one-instance discipline, one level up (since cashed at the second candidate *kind*; next
+paragraph). The extraction also produced a small port-vocabulary rule: the
 shared outcome `presentItemNoLongerHere` was renamed **provenance-neutral**
 (`presentItemNoLongerAvailable`), because the *outcome* belongs to the subcase while the *English* belongs to
 each presenter — the ground consumers render "no longer here", drop renders "no longer carrying" — so the
@@ -901,6 +931,35 @@ port method never lies for half its consumers. (Promotion candidate, flagged not
 genuine is-a subtypes bound at wiring time, is legitimate; defer both the base and its generic input until
 the second concrete makes the generalization visible; when a shared skeleton's outcome reads differently per
 concrete, name it provenance-neutrally on the port and leave the phrasing to the presenters.*)
+
+**The `<C, T>` cashing at the second candidate *kind* — `Designatable`, and where the token's shape gate had
+to move.** `[thread #1]` `[thread #4]` Combat targets (`hit <npc>`, #66) are the second candidate kind, and the
+deferral above was cashed as its own behavior-preserving refactor PR (#67) *before* the `hit` vertical, so the
+first non-item consumer ships with full disambiguation rather than an interim hardcoded single-match path.
+Three decisions fixed the shape. **(1) The candidate capability is a model-level interface,
+`Designatable`** (`core/model/designation/` — the neutral-package precedent of `SpawnRule`→`spawn/`): the
+skeleton asks each candidate exactly two Tell-Don't-Ask facts — `matches(fragment)` (designation by
+description) and `hasIdToken(token)` (re-confirmation by remembered identity, a *pure comparison* against the
+id flatten). It cannot live in `usecase/select/` — the model never depends on the use-case layer — and the
+input port bounds its `T` with it, while the presenter port's `<T>` stays deliberately *unbounded* (it demands
+nothing of `T`; don't require what you don't use). **(2) The token's *shape* gate became the base's second
+hook.** The old base reconstituted `new ItemId(token)` eagerly — malformed remembered token = internal fault,
+gated *before* any read. A type-blind skeleton cannot reconstitute, and folding the gate into per-candidate
+`hasIdToken` would silently downgrade the empty-candidates+malformed-token corner to a presented "no longer
+available" — mislabeling a programming error as a player outcome, the very invariant the empty-offer
+precondition defends. Java cannot dispatch statically over `T`, so the gate lands as an eager
+`requireWellFormedToken(token)` hook beside `provisionCandidates`: the concrete is the site that binds `T`, so
+declaring `T`'s token shape there is not mis-homed, and "single point of variation" honestly becomes *two
+type-bound facts — provenance and token shape*. **(3) The shared gone-outcome was renamed one axis further,
+`presentItemNoLongerAvailable(ItemId)` → `presentTargetNoLongerAvailable(String idToken)`** — the #55
+provenance-neutral rename rule applied to the *candidate type* (the outcome is the subcase's, the English each
+presenter's), now carrying the raw token because that is all the type-blind skeleton holds on that branch.
+The terminal side needed **zero changes** — `AffordanceContext`, `SelectCommand`, the conversation dispatcher
+already traded in raw string tokens, the "primitives inward" decision (§4 above) paying off in full.
+(Promotion candidate, flagged not promoted: *when a Template-Method base generalizes over a type parameter,
+each fact the skeleton used to know statically becomes either a capability interface method (asked of an
+instance) or an additional hook (needed before instances exist); an eager validity gate that must fire before
+provisioning is necessarily a hook, and its natural home is the concrete that binds the type.*)
 
 **`take` is the select subcase's first *writing* consumer — orchestration + a write tail, and no construction
 checkpoint.** `[thread #4]` `take` is `examine`'s twin with a write: the *same* two interactions
@@ -916,6 +975,28 @@ already-valid `PlayerId`; the lone literal in the interaction (the target fragme
 whose every input is already a domain object needs no gate, and inventing one (re-wrapping an id "to be safe")
 would be ceremony. The checkpoint count tracks where *literals* cross the boundary, not a fixed per-use-case
 ritual.
+
+**`hit` is the select subcase's first *combat* consumer — and the first contested write against a *live
+actor*.** `[thread #4]` `[thread #3]` The candidate-type generalization (#67) predicted combat as the second
+candidate *kind*; `hit` collects, binding the generic `select` to `<SceneId, Npc>` with `Npc implements
+Designatable` and an NPC-in-scene provisioner (`SelectSceneNpcSubcase`). It is `examine`/`take`'s twin one
+candidate-type over — the *same* `orient`+`select` opening, the two designation modalities, the
+guarded-prologue reuse — and the terminal side needed **zero changes**: the conversation dispatcher,
+`AffordanceContext`, and `SelectCommand` already trade in raw string tokens, so the "primitives inward" cut
+(§4) paid off in full. The strike obeys the *synchronous-outcome* rule this project argued for at design time
+(§4 converse boundary): `playerHitsTarget` rolls a `Dice.rollDie(10)` of damage *outside* the transaction,
+mutates the NPC copy-on-write, and presents — miss-free (option A) — struck or slain *after commit*; no "combat
+episode" event, because the outcome stripes are what the player needs to choose their next move. What is *new*
+over `take` is the **contestant**: `take`'s race is against any actor who might grab the same ground item;
+`hit`'s is against the wandering *ticker* — a system writer mutating the very same aggregate on its own clock,
+the first place two writer *kinds* collide. Yet the close is identical machinery
+(`doInTransaction(action, onLockDetected)` → `presentNpcGotAway`), and that is the point: the transactional
+idiom the item slice built for a contested *resource* carries over unchanged to a contested *actor*, so thread
+#3's "who wins the write" stays answered by the optimistic version, never a lock held across the read. Like
+`take`, there is no construction checkpoint — every input is already a domain object. (Promotion candidate,
+flagged not promoted: *the optimistic-version idiom for a contested resource generalizes without change to an
+aggregate contested by a background system writer; the discriminator for a select-then-mutate is not "how many
+actors" but "does a second writer touch this aggregate," and a live system writer is just the sharpest case.*)
 
 ## 5. Explicit transaction demarcation
 
@@ -1487,6 +1568,42 @@ a second writer would arrive as a peer, not an ordering constraint, held. A clos
 the tick's *perceptibility filter* (only movements whose source or target is the player's current scene are
 narrated; the rest are a presented quiet outcome) keeps "exactly one `present*` per run" honest for the
 overwhelmingly common off-stage tick, exactly as `AnnounceTimeOfDay`'s quiet poll does.
+
+**Combat retaliation lands on the *polling* side too — a stance is state, not an event — and it sharpens
+what the first causal site will be.** `[thread #3]` The `hit <npc>` design (#66) looked like the event
+spine's moment at last: an NPC striking back *is* a reaction to something that happened. But modeled as a
+one-shot chain (struck-event → retaliate-interaction), combat becomes tit-for-tat — one counter-blow per
+player hit, then silence — which misdescribes the domain: combat is a **stance** the NPC is *in* (it keeps
+attacking every round until someone dies or leaves), not a sequence of discrete episodes. A stance is
+*state*: the hit's transaction persists hostility on the NPC, and the existing animation tick's behaviour
+selection *derives* the counterattack from it (hostile & co-located → attack; the stance cancels the
+wander roll) — squarely the polling/deriving shape of the clock and wandering exemplars above, with combat
+*rounds* falling out of the tick cadence for free (per-mode cadence, if 10s rounds ever feel wrong, is a
+ticker concern, not a domain one). So the third would-be event customer also resolves to polling, and the
+pattern refines the line's wording: an event fits a **discrete** causal fact demanding a one-shot
+reaction; an **ongoing disposition** belongs in persisted state, derived by a loop. The event spine's
+first causal site is accordingly *not* "an NPC reacting to the player" in general — being struck begets a
+stance — but the first genuinely discrete reaction: witness propagation (a guard in the next room
+responding to the assault) or an on-death effect. (Promotion candidate, flagged not promoted: *choreograph
+discrete facts, persist dispositions — if the reaction recurs while a condition holds, it is state polled
+by a loop, not an event.*)
+
+**Cadence decoupled from frequency — one fast metronome, per-behaviour authored odds.** `[thread #3]` Once
+retaliation lands on the polling side (above), `move` and the coming attack-stance must share the one NPC
+ticker — which forces a distinction the single-behaviour ticker never had to make: the metronome's *fire rate*
+is not each NPC's *action frequency*. The resolution is to fire fast and regularly (the default interval
+dropped 10s → **1s**) and let each authored chance set how often its behaviour actually fires — a fishwife at
+`1/30` per 1s tick wanders about as often as her old `1/3` per 10s tick did. Combat rounds then fall out of the
+same tick at whatever the attack chance implies, with no second ticker (the per-mode cadence #66 deferred). The
+pragmatic cost, taken knowingly: a per-tick chance re-entangles authored data with the tick interval — the
+number means what it means only *given* a 1s poll, and per-tick odds do not compose linearly (1/3 per 10s is
+about 1/25, not exactly 1/30, per 1s). The cleaner regime — author an intrinsic *period* (`movesEvery: 30s`)
+and let the ticker derive `p = dt / period` from its own interval, rate-independent and honouring "cadence is a
+ticker concern" — is sketched and **deferred** to the retaliate slice; for now the chances are simply re-scaled
+×10 and the tick sped up, folded into #66. (Promotion candidate, flagged not promoted: *when one metronome
+paces several behaviours, fire it fast and gate each behaviour by its own authored frequency; prefer authoring
+an intrinsic period and deriving the per-tick probability from the poll interval over baking the tick rate into
+the authored odds.*)
 
 ## 9. Command parsing as a delivery-mechanism concern
 

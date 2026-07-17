@@ -14,12 +14,6 @@ logs/
 ### VS Code ###
 .vscode/
 
-### Eclipse / Eclipse JDT.LS (jdtls) metadata ###
-.classpath
-.project
-.factorypath
-.settings/
-
 ### Claude Code: project notes ARE versioned (design reasoning is part of the
 ### showcase). Only machine-local settings stay out — they hold absolute paths,
 ### the username and the local JDK location.

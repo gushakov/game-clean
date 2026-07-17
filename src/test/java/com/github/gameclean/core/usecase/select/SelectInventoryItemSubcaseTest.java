@@ -34,7 +34,7 @@ class SelectInventoryItemSubcaseTest {
     private static final PlayerId SELF = new PlayerId("plr1");
 
     @Mock
-    private SelectTargetPresenterOutputPort presenter;
+    private SelectTargetPresenterOutputPort<Item> presenter;
     @Mock
     private ItemRepositoryOperationsOutputPort itemOps;
 
@@ -93,14 +93,14 @@ class SelectInventoryItemSubcaseTest {
     }
 
     @Test
-    void presentsItemNoLongerAvailableAndSignalsWhenTheChosenCandidateIsNoLongerCarried() {
+    void presentsTargetNoLongerAvailableAndSignalsWhenTheChosenCandidateIsNoLongerCarried() {
         // The token was offered earlier, but the item is no longer in the player's keeping (dropped / lost).
         when(itemOps.findItemsHeldBy(SELF)).thenReturn(List.of(heldItem("itmLm2bQ9Zx", "A brass lantern.")));
 
         assertThatThrownBy(() -> subcase.playerDesignatesChosenCandidate(1, List.of("itmRt4Xw7Kq"), SELF))
                 .isInstanceOf(SubcaseAlreadyPresented.class);
 
-        verify(presenter).presentItemNoLongerAvailable(new ItemId("itmRt4Xw7Kq"));
+        verify(presenter).presentTargetNoLongerAvailable("itmRt4Xw7Kq");
     }
 
     @Test
@@ -125,7 +125,8 @@ class SelectInventoryItemSubcaseTest {
     @Test
     void propagatesAMalformedChosenTokenWithoutPresenting() {
         // The token comes from our own remembered offer, so a malformed one is an internal fault — it reaches
-        // the parent's catch-all, never a presented outcome. Built before provisioning, so no read happens.
+        // the parent's catch-all, never a presented outcome. Gated (the concrete's requireWellFormedToken
+        // reconstitutes the ItemId) before provisioning, so no read happens.
         assertThatThrownBy(() -> subcase.playerDesignatesChosenCandidate(1, List.of("not-an-item-id"), SELF))
                 .isInstanceOf(InvalidDomainObjectError.class);
 
