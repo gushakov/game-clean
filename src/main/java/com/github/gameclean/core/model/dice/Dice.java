@@ -41,4 +41,15 @@ public interface Dice {
      * @return the chosen option
      */
     <T> T pick(List<T> options);
+
+    /**
+     * Rolls a single {@code sides}-sided die, returning a face value in {@code 1..sides} inclusive, each face
+     * equally likely. The RPG die primitive — {@code rollDie(10)} is a d10. Named distinctly from
+     * {@link #roll(Chance)} (which answers a yes/no) rather than overloaded, so a caller never confuses an
+     * odds-weighted decision with a magnitude.
+     *
+     * @param sides the number of faces — must be strictly positive
+     * @return a face value in {@code 1..sides}
+     */
+    int rollDie(int sides);
 }

@@ -1,5 +1,6 @@
 package com.github.gameclean.core.usecase.explore;
 
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
@@ -222,6 +223,7 @@ class MoveUseCaseTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .hitPoints(HitPoints.full(10))
                 .build();
     }
 }

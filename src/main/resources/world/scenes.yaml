@@ -91,17 +91,19 @@ items:
 
 # Authored NPCs. Each is a *template*: its `spawn` rule places 0..max instances into
 # randomly chosen candidate scenes (one chance roll per try), exactly like items.
-# Spawned NPCs then wander on a background metronome — each tick, `moveChance` decides
-# whether the NPC steps to a random adjacent scene. Instances are minted fresh generated
-# ids at seed time; the `id` here is only an authoring handle. Spawning is idempotent —
-# a restart never re-rolls, and NPCs resume from their last position.
+# Spawned NPCs then wander on a background metronome that fires every second — each tick,
+# `moveChance` decides whether the NPC steps to a random adjacent scene, so it is the
+# per-tick odds (1/40 ≈ a move every ~40s). Instances are minted fresh generated ids at
+# seed time; the `id` here is only an authoring handle. Spawning is idempotent — a restart
+# never re-rolls, and NPCs resume from their last position.
 npcs:
   - id: npc1
     shortDescription: A hooded wanderer.
     fullDescription: >
       A figure in a travel-worn hooded cloak, face lost in shadow. It moves without
       hurry, as though it has walked these ruins many times before.
-    moveChance: 1/4        # chance of wandering to an adjacent scene each tick
+    moveChance: 1/40       # per-tick odds of wandering (~a move every 40s at the 1s tick)
+    hitPoints: 20          # health pool it spawns at; a strike does 1..10 damage
     spawn:
       scenes: scn1         # scenes where the NPC can spawn
       chance: 1/1          # chance of spawning on each try

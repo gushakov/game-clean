@@ -3,6 +3,7 @@ package com.github.gameclean.infrastructure.persistence.npc;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import lombok.AccessLevel;
@@ -10,10 +11,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -27,12 +27,17 @@ import java.util.List;
  * reconstitution, and that is an integrity fault of this port — so it too becomes a {@code PersistenceOperationsError}.
  * (See {@code SpringSceneRepositoryAdapter} for the full rationale.)
  *
- * <p><b>Version-less upsert, mirroring the player adapter — not the versioned item save.</b> NPCs carry no
- * {@code @Version} (single-writer today), so Spring Data JDBC's {@code save} cannot tell a new NPC from an
- * existing one — it would always attempt an update. The adapter decides explicitly, issuing
- * {@link JdbcAggregateTemplate#insert} when no row exists yet (the boot seeder spawning an NPC) and
- * {@link JdbcAggregateTemplate#update} when one does (autonomous movement recording a new position). Optimistic
- * locking is deferred until the player can affect an NPC (the trigger for a second writer).
+ * <p><b>Versioned save, mirroring the item adapter.</b> Now that the player's {@code hit} makes NPCs a
+ * two-writer aggregate (alongside the wandering ticker), the {@code @Version} on {@link NpcDbEntity} lets plain
+ * {@link NpcSpringDataRepository#save} decide insert-vs-update — a {@code 0} version inserts (the boot seeder
+ * spawning an NPC), a positive one updates (a strike or a wander). A stale write is rejected with Spring's
+ * {@link OptimisticLockingFailureException}, caught <em>before</em> the broader {@code DataAccessException} and
+ * translated to the core's {@link OptimisticLockingError} so the transaction adapter can fire an
+ * {@code onLockDetected} reaction (the loser's "the target got away").
+ *
+ * <p>The two reads return <b>living</b> NPCs only (hit points {@code > 0}): a dead NPC stays in the table but
+ * is gone from listings and targeting. {@link #npcsAlreadySpawned()} counts <em>all</em> rows on purpose — a
+ * world that spawned NPCs is already seeded even if they have since died, so a restart never re-rolls them.
  */
 @Component
 @RequiredArgsConstructor
@@ -41,15 +46,13 @@ import java.util.List;
 public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutputPort {
 
     NpcSpringDataRepository repository;
-    JdbcAggregateTemplate aggregateTemplate;
     NpcDbEntityMapper mapper;
 
     @Override
     public List<Npc> findAllNpcs() {
         try {
-            List<Npc> npcs = new ArrayList<>();
-            repository.findAll().forEach(entity -> npcs.add(mapper.toDomain(entity)));
-            return npcs;
+            return repository.findByHitPointsGreaterThan(0)
+                    .stream().map(mapper::toDomain).toList();
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError("Cannot load NPCs (unreadable or corrupt)", e);
         }
@@ -58,7 +61,7 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
     @Override
     public List<Npc> findNpcsInScene(SceneId sceneId) {
         try {
-            return repository.findByCurrentSceneId(sceneId.getValue())
+            return repository.findByCurrentSceneIdAndHitPointsGreaterThan(sceneId.getValue(), 0)
                     .stream().map(mapper::toDomain).toList();
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
@@ -69,16 +72,12 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
     @Override
     public void saveNpc(Npc npc) {
         try {
-            NpcDbEntity entity = mapper.toDbEntity(npc);
-            if (repository.existsById(entity.getId())) {
-                aggregateTemplate.update(entity);
-                log.debug("[Persistence] Updated npc {} (now in scene {})",
-                        npc.getId().getValue(), npc.getCurrentScene().getValue());
-            } else {
-                aggregateTemplate.insert(entity);
-                log.debug("[Persistence] Inserted npc {} (in scene {})",
-                        npc.getId().getValue(), npc.getCurrentScene().getValue());
-            }
+            NpcDbEntity saved = repository.save(mapper.toDbEntity(npc));
+            log.debug("[Persistence] Saved npc {} (version {}, in scene {})",
+                    saved.getId(), saved.getVersion(), npc.getCurrentScene().getValue());
+        } catch (OptimisticLockingFailureException e) {
+            throw new OptimisticLockingError(
+                    "Npc %s was modified concurrently (stale version)".formatted(npc.getId().getValue()), e);
         } catch (DataAccessException e) {
             throw new PersistenceOperationsError("Cannot save npc %s".formatted(npc.getId().getValue()), e);
         }

@@ -2,6 +2,7 @@ package com.github.gameclean.core.model.npc;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -33,18 +34,25 @@ public class NpcTemplate {
     String fullDescription;
     SpawnRule spawnRule;
     Chance moveChance;
+    int maxHitPoints;
 
-    public NpcTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule, Chance moveChance) {
+    public NpcTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule, Chance moveChance,
+                       int maxHitPoints) {
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
         this.fullDescription = requireNonBlank(fullDescription, "npc full description");
         this.spawnRule = DomainValidation.requireNonNull(spawnRule, "npc spawn rule must not be null");
         this.moveChance = DomainValidation.requireNonNull(moveChance, "npc move chance must not be null");
+        if (maxHitPoints <= 0) {
+            throw new InvalidDomainObjectError("npc max hit points must be strictly positive, got " + maxHitPoints);
+        }
+        this.maxHitPoints = maxHitPoints;
     }
 
     /**
      * Builds one NPC instance of this template at the given scene, stamped with the given freshly generated id.
      * The descriptions and move chance are copied onto the instance — instances hold their own state and do not
-     * reference the template.
+     * reference the template. The instance spawns at full health ({@link HitPoints#full(int)} of
+     * {@link #maxHitPoints}) and version {@code 0} (a new, not-yet-persisted row).
      */
     public Npc instanceAt(NpcId id, SceneId currentScene) {
         return Npc.builder()
@@ -53,6 +61,8 @@ public class NpcTemplate {
                 .shortDescription(shortDescription)
                 .fullDescription(fullDescription)
                 .moveChance(moveChance)
+                .hitPoints(HitPoints.full(maxHitPoints))
+                .version(0)
                 .build();
     }
 

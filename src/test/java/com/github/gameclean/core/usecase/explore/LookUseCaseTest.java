@@ -5,6 +5,7 @@ import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
@@ -119,6 +120,7 @@ class LookUseCaseTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .hitPoints(HitPoints.full(10))
                 .build();
     }
 }

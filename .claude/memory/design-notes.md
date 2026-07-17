@@ -244,6 +244,18 @@ pickup. (Promotion candidate, flagged not promoted: *model a value with a closed
 shapes as a sealed type, not co-existing nullable fields plus an XOR guard — the type makes the invariant
 structural and the exhaustive `switch` makes the next case unforgettable.*)
 
+**Combat cashes the last two deferrals on `Npc` — a health VO and the version — each exactly when its trigger
+arrived.** `[thread #1]` `[thread #3]` The `hit` strike forced `HitPoints` (current + max) into existence: a
+health *pool* with a clamp-at-zero rule and a dead predicate is *behaviour*, so it is a VO in a neutral
+`combat/` package (the `dice/`/`designation/` precedent), not a bare int on `Npc`. `max` earns its place not on
+speculation but because spawning must author *some* pool and full-health-at-spawn makes `current == max` — the
+same "one field, because that is all the interaction reads" beat as `Player`, one concept richer. The
+optimistic-locking `version`, whose absence `Npc` had *documented* as deferred until a second writer exists,
+arrived in the same slice: the player's strike is that second writer alongside the wandering ticker, so the
+field appears now, cashing the promise verbatim — the `take` (contested, versioned) vs `drop` (single-writer,
+plain) contrast among items, replayed for NPCs. Neither was invented ahead of the interaction that reads it;
+both are the §2 discipline holding under a genuinely new pressure — a live adversary, not just a second command.
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -964,6 +976,28 @@ whose every input is already a domain object needs no gate, and inventing one (r
 would be ceremony. The checkpoint count tracks where *literals* cross the boundary, not a fixed per-use-case
 ritual.
 
+**`hit` is the select subcase's first *combat* consumer — and the first contested write against a *live
+actor*.** `[thread #4]` `[thread #3]` The candidate-type generalization (#67) predicted combat as the second
+candidate *kind*; `hit` collects, binding the generic `select` to `<SceneId, Npc>` with `Npc implements
+Designatable` and an NPC-in-scene provisioner (`SelectSceneNpcSubcase`). It is `examine`/`take`'s twin one
+candidate-type over — the *same* `orient`+`select` opening, the two designation modalities, the
+guarded-prologue reuse — and the terminal side needed **zero changes**: the conversation dispatcher,
+`AffordanceContext`, and `SelectCommand` already trade in raw string tokens, so the "primitives inward" cut
+(§4) paid off in full. The strike obeys the *synchronous-outcome* rule this project argued for at design time
+(§4 converse boundary): `playerHitsTarget` rolls a `Dice.rollDie(10)` of damage *outside* the transaction,
+mutates the NPC copy-on-write, and presents — miss-free (option A) — struck or slain *after commit*; no "combat
+episode" event, because the outcome stripes are what the player needs to choose their next move. What is *new*
+over `take` is the **contestant**: `take`'s race is against any actor who might grab the same ground item;
+`hit`'s is against the wandering *ticker* — a system writer mutating the very same aggregate on its own clock,
+the first place two writer *kinds* collide. Yet the close is identical machinery
+(`doInTransaction(action, onLockDetected)` → `presentNpcGotAway`), and that is the point: the transactional
+idiom the item slice built for a contested *resource* carries over unchanged to a contested *actor*, so thread
+#3's "who wins the write" stays answered by the optimistic version, never a lock held across the read. Like
+`take`, there is no construction checkpoint — every input is already a domain object. (Promotion candidate,
+flagged not promoted: *the optimistic-version idiom for a contested resource generalizes without change to an
+aggregate contested by a background system writer; the discriminator for a select-then-mutate is not "how many
+actors" but "does a second writer touch this aggregate," and a live system writer is just the sharpest case.*)
+
 ## 5. Explicit transaction demarcation
 
 **Principle.** Transactions are demarcated *explicitly* through a
@@ -1553,6 +1587,23 @@ stance — but the first genuinely discrete reaction: witness propagation (a gua
 responding to the assault) or an on-death effect. (Promotion candidate, flagged not promoted: *choreograph
 discrete facts, persist dispositions — if the reaction recurs while a condition holds, it is state polled
 by a loop, not an event.*)
+
+**Cadence decoupled from frequency — one fast metronome, per-behaviour authored odds.** `[thread #3]` Once
+retaliation lands on the polling side (above), `move` and the coming attack-stance must share the one NPC
+ticker — which forces a distinction the single-behaviour ticker never had to make: the metronome's *fire rate*
+is not each NPC's *action frequency*. The resolution is to fire fast and regularly (the default interval
+dropped 10s → **1s**) and let each authored chance set how often its behaviour actually fires — a fishwife at
+`1/30` per 1s tick wanders about as often as her old `1/3` per 10s tick did. Combat rounds then fall out of the
+same tick at whatever the attack chance implies, with no second ticker (the per-mode cadence #66 deferred). The
+pragmatic cost, taken knowingly: a per-tick chance re-entangles authored data with the tick interval — the
+number means what it means only *given* a 1s poll, and per-tick odds do not compose linearly (1/3 per 10s is
+about 1/25, not exactly 1/30, per 1s). The cleaner regime — author an intrinsic *period* (`movesEvery: 30s`)
+and let the ticker derive `p = dt / period` from its own interval, rate-independent and honouring "cadence is a
+ticker concern" — is sketched and **deferred** to the retaliate slice; for now the chances are simply re-scaled
+×10 and the tick sped up, folded into #66. (Promotion candidate, flagged not promoted: *when one metronome
+paces several behaviours, fire it fast and gate each behaviour by its own authored frequency; prefer authoring
+an intrinsic period and deriving the per-tick probability from the poll interval over baking the tick rate into
+the authored odds.*)
 
 ## 9. Command parsing as a delivery-mechanism concern
 

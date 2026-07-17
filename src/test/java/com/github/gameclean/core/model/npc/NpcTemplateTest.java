@@ -1,6 +1,7 @@
 package com.github.gameclean.core.model.npc;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -23,31 +24,39 @@ class NpcTemplateTest {
     private static final String SHORT = "A hooded wanderer.";
     private static final String FULL = "A figure in a travel-worn hooded cloak.";
     private static final Chance MOVE = new Chance(1, 4);
+    private static final int MAX_HP = 10;
 
     private static NpcTemplate template(int numerator, int denominator, int maxTries, String... candidateScenes) {
         SpawnRule rule = new SpawnRule(new Chance(numerator, denominator), maxTries,
                 Arrays.stream(candidateScenes).map(SceneId::new).toList());
-        return new NpcTemplate(SHORT, FULL, rule, MOVE);
+        return new NpcTemplate(SHORT, FULL, rule, MOVE, MAX_HP);
     }
 
     @Test
     void rejects_a_blank_short_description() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate("  ", FULL, rule, MOVE));
+                .isThrownBy(() -> new NpcTemplate("  ", FULL, rule, MOVE, MAX_HP));
     }
 
     @Test
     void rejects_a_null_spawn_rule() {
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, null, MOVE));
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, null, MOVE, MAX_HP));
     }
 
     @Test
     void rejects_a_null_move_chance() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, null));
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, null, MAX_HP));
+    }
+
+    @Test
+    void rejects_a_non_positive_max_hit_points() {
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, MOVE, 0));
     }
 
     @Test
@@ -67,6 +76,9 @@ class NpcTemplateTest {
             assertThat(npc.getShortDescription()).isEqualTo(SHORT);
             assertThat(npc.getFullDescription()).isEqualTo(FULL);
             assertThat(npc.getMoveChance()).isEqualTo(MOVE);
+            // Spawns at full health and version 0 (a new, not-yet-persisted row).
+            assertThat(npc.getHitPoints()).isEqualTo(HitPoints.full(MAX_HP));
+            assertThat(npc.getVersion()).isZero();
         });
     }
 
