@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.dice;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -51,5 +52,23 @@ public abstract class AbstractDice implements Dice {
             face = sides;   // clamp so a draw arbitrarily close to 1 lands on the top face, never sides+1
         }
         return face;
+    }
+
+    @Override
+    public <T> List<T> shuffle(List<T> items) {
+        Objects.requireNonNull(items, "items must not be null");
+        List<T> shuffled = new ArrayList<>(items);
+        // Fisher–Yates over the same draw source: each position swaps with a uniformly drawn earlier-or-same
+        // position, the index scaled-and-clamped exactly as in pick.
+        for (int i = shuffled.size() - 1; i > 0; i--) {
+            int j = (int) (nextDraw() * (i + 1));
+            if (j > i) {
+                j = i;
+            }
+            T swapped = shuffled.get(i);
+            shuffled.set(i, shuffled.get(j));
+            shuffled.set(j, swapped);
+        }
+        return List.copyOf(shuffled);
     }
 }

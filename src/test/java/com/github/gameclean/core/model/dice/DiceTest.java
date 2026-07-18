@@ -77,6 +77,34 @@ class DiceTest {
     }
 
     @Test
+    void shuffle_permutes_via_the_draw_source_and_leaves_the_input_untouched() {
+        List<String> input = List.of("a", "b", "c");
+        // Fisher–Yates, i from 2 down to 1: draw 0.0 → j=0 swaps c↔a giving [c,b,a]; draw 0.999 → j=1 keeps b.
+        List<String> shuffled = diceDrawing(0.0, 0.999).shuffle(input);
+        assertThat(shuffled).containsExactly("c", "b", "a");
+        assertThat(input).containsExactly("a", "b", "c");
+    }
+
+    @Test
+    void shuffle_keeps_exactly_the_same_items() {
+        List<Integer> input = List.of(1, 2, 3, 4, 5, 6, 7, 8);
+        assertThat(new SeededDice(7).shuffle(input)).containsExactlyInAnyOrderElementsOf(input);
+    }
+
+    @Test
+    void shuffle_of_an_empty_or_single_item_list_draws_nothing() {
+        // The zero-draw fixture throws on any pull, so passing means no entropy was consumed.
+        assertThat(diceDrawing().shuffle(List.of())).isEmpty();
+        assertThat(diceDrawing().shuffle(List.of("only"))).containsExactly("only");
+    }
+
+    @Test
+    void seeded_dice_with_the_same_seed_shuffle_identically() {
+        List<String> items = List.of("a", "b", "c", "d", "e");
+        assertThat(new SeededDice(42).shuffle(items)).isEqualTo(new SeededDice(42).shuffle(items));
+    }
+
+    @Test
     void seeded_dice_with_the_same_seed_produce_the_same_sequence() {
         Chance evens = new Chance(1, 2);
         List<String> options = List.of("a", "b", "c", "d");

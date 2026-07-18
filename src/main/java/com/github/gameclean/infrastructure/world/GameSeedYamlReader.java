@@ -104,7 +104,8 @@ public class GameSeedYamlReader {
                 asString(node.get("name")),
                 asString(node.get("shortDescription")),
                 asString(node.get("fullDescription")),
-                exits);
+                exits,
+                parseCommaList(asString(node.get("mini-games"))));
     }
 
     private static ItemEntry toItemEntry(Map<String, Object> node) {
@@ -132,14 +133,17 @@ public class GameSeedYamlReader {
     }
 
     private static SpawnEntry toSpawnEntry(Map<String, Object> node) {
-        List<String> scenes = parseSceneList(asString(node.get("scenes")));
+        List<String> scenes = parseCommaList(asString(node.get("scenes")));
         int[] chance = parseChance(asString(node.get("chance")));
         int max = asInt(node.get("max"), "spawn max");
         return new SpawnEntry(scenes, chance[0], chance[1], max);
     }
 
-    /** Splits a {@code "scn2, scn3"} authoring list into trimmed, non-empty entries. */
-    private static List<String> parseSceneList(String value) {
+    /**
+     * Splits a comma-separated authoring list ({@code "scn2, scn3"} spawn scenes, {@code "blackjack"}
+     * mini-games) into trimmed, non-empty entries; null/blank yields an empty list.
+     */
+    private static List<String> parseCommaList(String value) {
         if (value == null || value.isBlank()) {
             return List.of();
         }

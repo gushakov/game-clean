@@ -16,7 +16,8 @@ import java.util.Set;
  *
  * <p>Exits are owned children of the scene aggregate, so they are modelled as a
  * {@link MappedCollection}: Spring Data JDBC writes them to the {@code exit} table with a
- * {@code scene_id} back-reference and loads them eagerly with the scene.
+ * {@code scene_id} back-reference and loads them eagerly with the scene. The mini-games the
+ * scene offers follow the identical owned-children pattern over {@code scene_mini_game}.
  */
 @Data
 @Table("scene")
@@ -35,4 +36,7 @@ public class SceneDbEntity {
 
     @MappedCollection(idColumn = "scene_id")
     private Set<ExitDbEntity> exits;
+
+    @MappedCollection(idColumn = "scene_id")
+    private Set<MiniGameDbEntity> miniGames;
 }

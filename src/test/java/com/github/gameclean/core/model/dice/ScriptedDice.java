@@ -1,6 +1,7 @@
 package com.github.gameclean.core.model.dice;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
@@ -18,6 +19,7 @@ public class ScriptedDice implements Dice {
     private final Deque<Boolean> rolls = new ArrayDeque<>();
     private final Deque<Integer> picks = new ArrayDeque<>();
     private final Deque<Integer> dieFaces = new ArrayDeque<>();
+    private final Deque<List<Object>> shuffleFronts = new ArrayDeque<>();
 
     /** Enqueue the outcomes the next {@code roll} calls will return, in order. */
     public ScriptedDice willRoll(boolean... outcomes) {
@@ -43,6 +45,16 @@ public class ScriptedDice implements Dice {
         return this;
     }
 
+    /**
+     * Enqueue the items the next {@code shuffle} call must move to the front, in order; the remaining items
+     * keep their input order behind them. Lets a test rig exactly the cards a blackjack deal will hand out
+     * (e.g. an ace and a king first — a natural) while staying deterministic about the rest.
+     */
+    public ScriptedDice willShuffleToFront(Object... front) {
+        shuffleFronts.addLast(List.of(front));
+        return this;
+    }
+
     @Override
     public boolean roll(Chance chance) {
         if (rolls.isEmpty()) {
@@ -65,5 +77,28 @@ public class ScriptedDice implements Dice {
             throw new AssertionError("no scripted die roll left");
         }
         return dieFaces.removeFirst();
+    }
+
+    @Override
+    public <T> List<T> shuffle(List<T> items) {
+        // Identity shuffle by default: the scripted dice never reorder, so assertions read literally off the
+        // input (e.g. the canonical deck order in a deal test). A scripted front (willShuffleToFront) instead
+        // pulls the named items forward, keeping the rest in input order.
+        if (shuffleFronts.isEmpty()) {
+            return List.copyOf(items);
+        }
+        List<Object> front = shuffleFronts.removeFirst();
+        List<T> rest = new ArrayList<>(items);
+        List<T> shuffled = new ArrayList<>();
+        for (Object item : front) {
+            if (!rest.remove(item)) {
+                throw new AssertionError("scripted shuffle-front item not among the shuffled items: " + item);
+            }
+            @SuppressWarnings("unchecked")
+            T typed = (T) item;
+            shuffled.add(typed);
+        }
+        shuffled.addAll(rest);
+        return List.copyOf(shuffled);
     }
 }

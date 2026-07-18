@@ -49,6 +49,15 @@ class GameSeedYamlReaderTest {
     }
 
     @Test
+    void readsAuthoredMiniGamesSplittingTheCommaListAndDefaultingToNone() {
+        List<SceneEntry> scenes = readSeed().getScenes();
+
+        // scn3 (the Armoury) authors `mini-games: blackjack`; every other scene omits the key.
+        assertThat(scenes.get(2).getMiniGames()).containsExactly("blackjack");
+        assertThat(scenes.getFirst().getMiniGames()).isEmpty();
+    }
+
+    @Test
     void readsAuthoredItemsWithTheirSpawnRulesSplittingTheAuthoringSyntax() {
         List<ItemEntry> items = readSeed().getItems();
 

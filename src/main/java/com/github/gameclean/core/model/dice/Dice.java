@@ -52,4 +52,15 @@ public interface Dice {
      * @return a face value in {@code 1..sides}
      */
     int rollDie(int sides);
+
+    /**
+     * Shuffles the given items into a uniformly random permutation — the sibling of {@link #pick(List)}:
+     * where {@code pick} selects one option uniformly, {@code shuffle} orders them all uniformly. Returns a
+     * new list; the input is left untouched.
+     *
+     * @param items the items to shuffle — may be empty
+     * @param <T>   the item type
+     * @return a new list holding the same items in a uniformly random order
+     */
+    <T> List<T> shuffle(List<T> items);
 }

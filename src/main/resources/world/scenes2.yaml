@@ -55,11 +55,13 @@ scenes:
     name: Net-Menders' Row
     shortDescription: A row of net-menders' cottages.
     fullDescription: >
-      Half-mended nets hang stiff with salt between the doorways. The only way back is
+      Half-mended nets hang stiff with salt between the doorways. On an overturned skiff,
+      an old net-mender deals cards for anyone with time to lose. The only way back is
       east to the market.
     exits:
       - name: east
         target: scn2
+    mini-games: blackjack  # what can be played here (comma-separated, closed vocabulary)
 
   - id: scn5
     name: The Drowned Chapel

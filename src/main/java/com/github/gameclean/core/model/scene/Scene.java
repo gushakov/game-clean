@@ -36,15 +36,20 @@ public class Scene {
     String shortDescription;
     String fullDescription;
     List<Exit> exits;
+    Set<MiniGame> miniGames;
 
     @Builder
-    public Scene(SceneId id, String name, String shortDescription, String fullDescription, List<Exit> exits) {
+    public Scene(SceneId id, String name, String shortDescription, String fullDescription, List<Exit> exits,
+                 Set<MiniGame> miniGames) {
         this.id = DomainValidation.requireNonNull(id, "scene id must not be null");
         this.name = requireNonBlank(name, "scene name");
         this.shortDescription = requireNonBlank(shortDescription, "scene short description");
         this.fullDescription = requireNonBlank(fullDescription, "scene full description");
         this.exits = List.copyOf(DomainValidation.requireNonNull(exits, "scene exits must not be null"));
         requireUniqueExitNames(this.exits);
+        // Most scenes offer no games — authored absence arrives as null as naturally as an empty set, so
+        // both normalize to "none" rather than making every construction site spell out Set.of().
+        this.miniGames = miniGames == null ? Set.of() : Set.copyOf(miniGames);
     }
 
     /**
@@ -63,6 +68,19 @@ public class Scene {
         return exits.stream()
                 .filter(exit -> exit.getName().equalsIgnoreCase(wanted))
                 .findFirst();
+    }
+
+    /**
+     * Whether this scene offers the given mini-game — the grounding check a play-a-game interaction makes
+     * before dealing anything (Tell-Don't-Ask: the use case asks the scene, never reads the set out to
+     * filter). A side-effect-free function over authored state.
+     *
+     * @param game the mini-game asked about (must not be null — a caller programming error)
+     * @return {@code true} when this scene's authored offering includes the game
+     */
+    public boolean offers(MiniGame game) {
+        Objects.requireNonNull(game, "mini-game must not be null");
+        return miniGames.contains(game);
     }
 
     /**

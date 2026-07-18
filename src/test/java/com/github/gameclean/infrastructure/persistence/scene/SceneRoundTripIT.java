@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.persistence.scene;
 
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
@@ -12,6 +13,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -50,6 +52,7 @@ class SceneRoundTripIT extends AbstractPostgresIT {
                 .shortDescription("A cosy roadside tavern.")
                 .fullDescription("A warm, low-beamed common room, thick with pipe-smoke and chatter.")
                 .exits(List.of(new Exit("east", new SceneId("scn2"))))
+                .miniGames(Set.of(MiniGame.BLACKJACK))
                 .build();
         Scene square = Scene.builder()
                 .id(new SceneId("scn2"))
@@ -76,6 +79,11 @@ class SceneRoundTripIT extends AbstractPostgresIT {
         assertThat(reloaded.getShortDescription()).isEqualTo(tavern.getShortDescription());
         assertThat(reloaded.getFullDescription()).isEqualTo(tavern.getFullDescription());
         assertThat(reloaded.getExits()).containsExactlyInAnyOrderElementsOf(tavern.getExits());
+        assertThat(reloaded.getMiniGames()).containsExactly(MiniGame.BLACKJACK);
+
+        // ... while the square, which authors no games, reads back offering none.
+        Scene reloadedSquare = mapper.toDomain(repository.findById("scn2").orElseThrow());
+        assertThat(reloadedSquare.getMiniGames()).isEmpty();
 
         assertThat(repository.count()).isEqualTo(2);
     }
