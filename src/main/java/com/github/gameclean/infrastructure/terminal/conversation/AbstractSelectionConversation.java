@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal.conversation;
 
+import com.github.gameclean.infrastructure.terminal.Affordance;
 import com.github.gameclean.infrastructure.terminal.command.Command;
 import com.github.gameclean.infrastructure.terminal.command.SelectCommand;
 import lombok.AccessLevel;
@@ -29,9 +30,9 @@ public abstract class AbstractSelectionConversation implements Conversation {
     ApplicationContext applicationContext;
 
     @Override
-    public void resume(Command command, List<String> offer) {
+    public void resume(Command command, Affordance affordance) {
         int ordinal = ((SelectCommand) command).getOrdinal();
-        resumeWith(ordinal, offer);
+        resumeWith(ordinal, affordance.getTokens());
     }
 
     /**

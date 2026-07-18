@@ -114,6 +114,22 @@ class SceneTest {
     }
 
     @Test
+    void offers_a_mini_game_only_when_authored() {
+        Scene table = validScene().miniGames(Set.of(MiniGame.BLACKJACK)).build();
+        Scene plain = validScene().build();
+
+        assertThat(table.offers(MiniGame.BLACKJACK)).isTrue();
+        assertThat(plain.offers(MiniGame.BLACKJACK)).isFalse();
+    }
+
+    @Test
+    void normalizes_absent_mini_games_to_none() {
+        // Authored absence arrives as null as naturally as an empty set — both mean "no games here".
+        assertThat(validScene().miniGames(null).build().getMiniGames()).isEmpty();
+        assertThat(validScene().miniGames(Set.of()).build().getMiniGames()).isEmpty();
+    }
+
+    @Test
     void equals_by_id_only() {
         Scene a = validScene().build();
         Scene sameIdDifferentFields = validScene().name("Renamed").build();

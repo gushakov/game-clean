@@ -12,6 +12,7 @@ import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
@@ -338,13 +339,45 @@ class InitializeGameUseCaseTest {
         verifyNothingInitialized();
     }
 
+    // --- authored mini-games pass the gate onto the scene aggregate -----------------------------
+
+    @Test
+    void constructsScenesCarryingTheirAuthoredMiniGames() {
+        givenSeed(seed(twoConnectedScenes(), "scn1"));   // scn2 authors "blackjack", scn1 authors none
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Scene> captor = ArgumentCaptor.forClass(Scene.class);
+        verify(sceneOps, times(2)).saveScene(captor.capture());
+        assertThat(captor.getAllValues().get(0).offers(MiniGame.BLACKJACK)).isFalse();
+        assertThat(captor.getAllValues().get(1).offers(MiniGame.BLACKJACK)).isTrue();
+    }
+
+    @Test
+    void rejectsAnUnknownMiniGameNameAndDoesNotInitialize() {
+        // 'poker' is not in the closed MiniGame vocabulary — invalid authored input at the construction gate.
+        List<SceneEntry> entries = List.of(
+                new SceneEntry("scn1", "Old Gate", "A gate.", "A weathered stone archway.",
+                        List.of(), List.of("poker")));
+        givenSeed(seed(entries, "scn1"));
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
     // --- a world that fails to construct stops the interaction before any player ----------------
 
     @Test
     void rejectsAMalformedSceneEntryAndDoesNotInitialize() {
         // id without the 'scn' prefix — SceneId construction fails the intra-aggregate validity gate
         List<SceneEntry> entries = List.of(
-                new SceneEntry("bogus", "Old Gate", "A gate.", "A weathered stone archway.", List.of()));
+                new SceneEntry("bogus", "Old Gate", "A gate.", "A weathered stone archway.", List.of(), List.of()));
         givenSeed(seed(entries, "scn1"));
 
         useCase.systemInitializesGame();
@@ -358,7 +391,7 @@ class InitializeGameUseCaseTest {
         // scn1's only exit points at scn9, which the seed never defines — an inter-aggregate failure
         List<SceneEntry> entries = List.of(
                 new SceneEntry("scn1", "Old Gate", "A gate.", "A weathered stone archway.",
-                        List.of(new ExitEntry("east", "scn9"))));
+                        List.of(new ExitEntry("east", "scn9")), List.of()));
         givenSeed(seed(entries, "scn1"));
 
         useCase.systemInitializesGame();
@@ -469,10 +502,10 @@ class InitializeGameUseCaseTest {
         return List.of(
                 new SceneEntry("scn1", "Old Gate", "A weathered archway.",
                         "The gate's iron hinges have long since rusted shut.",
-                        List.of(new ExitEntry("east", "scn2"))),
+                        List.of(new ExitEntry("east", "scn2")), List.of()),
                 new SceneEntry("scn2", "Courtyard", "A grass-cracked courtyard.",
                         "Weeds push between the flagstones of a drilling yard.",
-                        List.of(new ExitEntry("west", "scn1"))));
+                        List.of(new ExitEntry("west", "scn1")), List.of("blackjack")));
     }
 
     private static ItemEntry item(String id, int chanceNumerator, int chanceDenominator, int max,

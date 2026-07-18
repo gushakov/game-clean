@@ -104,6 +104,36 @@ class CommandParserTest {
     }
 
     @Test
+    void hit_splits_by_token_shape_between_combat_and_card_talk() {
+        // A remainder designates an NPC to strike (multi-word, like 'take')...
+        assertThat(parser.parse("hit goblin")).contains(new HitCommand("goblin"));
+        assertThat(parser.parse("hit hooded wanderer")).contains(new HitCommand("hooded wanderer"));
+        // ...while bare 'hit' and the idiomatic 'hit me' ask the dealer for a card.
+        assertThat(parser.parse("hit")).contains(new HitCardCommand());
+        assertThat(parser.parse("hit me")).contains(new HitCardCommand());
+        assertThat(parser.parse("hit ME")).contains(new HitCardCommand());
+    }
+
+    @Test
+    void parses_play_without_an_argument() {
+        assertThat(parser.parse("play")).contains(new PlayCommand());
+        assertThat(parser.parse("play blackjack")).contains(new UnknownCommand("play blackjack"));
+    }
+
+    @Test
+    void parses_stand_and_its_stay_synonym() {
+        assertThat(parser.parse("stand")).contains(new StandCommand());
+        assertThat(parser.parse("stay")).contains(new StandCommand());
+        assertThat(parser.parse("stand up")).contains(new UnknownCommand("stand up"));
+    }
+
+    @Test
+    void parses_game_and_its_table_synonym() {
+        assertThat(parser.parse("game")).contains(new GameStandingCommand());
+        assertThat(parser.parse("table")).contains(new GameStandingCommand());
+    }
+
+    @Test
     void parses_now_and_its_time_synonym_into_a_time_command() {
         assertThat(parser.parse("now")).contains(new TimeCommand());
         assertThat(parser.parse("time")).contains(new TimeCommand());

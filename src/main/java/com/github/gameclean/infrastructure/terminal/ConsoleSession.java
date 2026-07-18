@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal;
 
+import com.github.gameclean.core.usecase.blackjack.PlayBlackjackInputPort;
 import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
 import com.github.gameclean.core.usecase.combat.HitInputPort;
@@ -51,15 +52,17 @@ import java.util.Set;
  * parser never produces it (design-notes §9). {@code bye} is intercepted before the dispatch switch because it
  * must {@code break} the loop, which a switch arm cannot do without a flag.
  *
- * <p>It also holds the one piece of conversational state the design admits: a pending disambiguation offer,
- * in the shared {@link AffordanceContext} resource, tagged with the {@link SelectionKind} of the conversation
- * that armed it. With more than one number-continued dialogue ({@code examine}, {@code take}, ...) the offer
- * must remember which dialogue it belongs to, so a bare number resumes that one; on a subsequent bare number
- * ({@link SelectCommand}) the console <em>only detects the selection intent</em> and delegates — it hands the
- * remembered offer to the matching {@code Conversation} (the injected handlers are the resumer map) as a value
- * and lets the resuming use case resolve the pick and present every outcome. Any other command abandons the
- * offer (clearing the buffer); a stray number with nothing armed folds into the guidance nudge. The console
- * makes no selection decision and renders no selection outcome itself; remembering "what was just offered" is a
+ * <p>It also holds the one piece of conversational state the design admits: the armed {@link Affordance} in
+ * the shared {@link AffordanceContext} resource — a disambiguation offer's tokens, or an ephemeral
+ * conversation's opaque state envelope (a blackjack round) — tagged with the {@link SelectionKind} of the
+ * conversation that armed it. Routing is generic over dialogues: while an affordance is armed, the matching
+ * {@code Conversation} (the injected handlers are the resumer map) gets <em>first crack</em> at each parsed
+ * line through its own {@code continuedBy} predicate — a bare number continues a selection, the table-talk
+ * verbs continue blackjack — and on acceptance the console hands it the armed affordance whole, as a value,
+ * letting the resuming use case decide and present every outcome. A refused line <em>abandons</em> the armed
+ * conversation (clearing the buffer — for an ephemeral dialogue that is the forfeit) and dispatches normally;
+ * a stray continuation verb or number with nothing armed folds into the guidance nudge. The console makes no
+ * conversation decision and renders no outcome itself; remembering "what was just afforded" is a
  * delivery-mechanism concern that stays in this driving adapter, but acting on it is the use case's.
  *
  * <p>{@link #start()} blocks until {@code bye}. It is invoked by
@@ -141,14 +144,25 @@ public class ConsoleSession {
                 break;
             }
 
-            // Any command other than picking a number abandons a pending disambiguation offer: doing something
-            // else means the player is no longer answering "which one?". (An ambiguous 'examine' re-arms it.)
-            if (!(command instanceof SelectCommand)) {
-                affordanceContext.clear();
+            // Armed-conversation first crack: while a dialogue is armed, its handler's own continuedBy
+            // predicate decides whether this line continues it (a bare number continues a selection; the
+            // table-talk verbs continue blackjack). On acceptance the armed affordance is handed over whole,
+            // as a value, and the turn ends — one dispatch, then yield.
+            Conversation armedConversation = conversationForArmedKind();
+            if (armedConversation != null && armedConversation.continuedBy(command)) {
+                armedConversation.resume(command, affordanceContext.current());
+                continue;
             }
+
+            // Anything else abandons the armed conversation: doing something different means the player is no
+            // longer answering it. For a selection that just drops the menu (an ambiguous 'examine' re-arms
+            // it); for an ephemeral dialogue it is the forfeit — the dealer sweeps the cards.
+            affordanceContext.clear();
 
             // Exactly one use-case dispatch per turn; nothing runs after it but the loop re-arming. Exhaustive
             // over the sealed Command set (no default); QuitCommand is handled above, so its arm is a no-op.
+            // Continuation intents reaching this switch had nothing armed to continue — stray input, folded
+            // into the guidance nudge like any unrecognized line.
             switch (command) {
                 case LookCommand ignored -> lookAround();
                 case ExamineCommand examine -> examineTarget(examine.getTarget());
@@ -156,7 +170,11 @@ public class ConsoleSession {
                 case DropCommand drop -> dropTarget(drop.getTarget());
                 case HitCommand hit -> hitTarget(hit.getTarget());
                 case InventoryCommand ignored -> reviewBelongings();
-                case SelectCommand select -> selectCandidate(select);
+                case PlayCommand ignored -> sitDownToPlay();
+                case SelectCommand select -> guide(Integer.toString(select.getOrdinal()));
+                case HitCardCommand ignored -> guide("hit");
+                case StandCommand ignored -> guide("stand");
+                case GameStandingCommand ignored -> guide("game");
                 case MoveCommand move -> move(move.getExitName());
                 case TimeCommand ignored -> checkTime();
                 case UnknownCommand unknown -> guide(unknown.getInput());
@@ -214,19 +232,29 @@ public class ConsoleSession {
         inventoryUseCase.playerReviewsBelongings();
     }
 
-    private void selectCandidate(SelectCommand command) {
-        // The controller only detects the selection intent and routes it — it decides and renders nothing. The
-        // container of Conversation beans IS the resumer map: pick the conversation whose kind matches the armed
-        // offer and let it resume on a fresh prototype use case, handing the remembered offer in as a value
-        // (dependency rejection). A bare number with nothing armed (or no handler for the armed kind) is stray
-        // input — fold it into the guidance nudge, like any unrecognized command.
+    private void sitDownToPlay() {
+        // Same idiom as look: a fresh prototype use case per interaction, presenting its own outcome. On a
+        // successful deal the use case's presenter arms the AffordanceContext (kind BLACKJACK) with the round,
+        // so the table-talk verbs continue the hand. While a round is armed, 'play' never reaches here — the
+        // blackjack conversation's first crack routes it to the anytime table view instead.
+        PlayBlackjackInputPort playBlackjackUseCase = applicationContext.getBean(PlayBlackjackInputPort.class);
+        playBlackjackUseCase.playerSitsDownToPlay();
+    }
+
+    /**
+     * The conversation handler owning the armed affordance's kind, or {@code null} when nothing is armed. The
+     * container of Conversation beans IS the resumer map — this only matches, it decides nothing; the
+     * wiring-time completeness check guarantees an armed kind always finds its handler.
+     */
+    private Conversation conversationForArmedKind() {
         SelectionKind armed = affordanceContext.kind();
-        conversations.stream()
+        if (armed == null) {
+            return null;
+        }
+        return conversations.stream()
                 .filter(conversation -> conversation.kind() == armed)
                 .findFirst()
-                .ifPresentOrElse(
-                        conversation -> conversation.resume(command, affordanceContext.currentOffer()),
-                        () -> guide(Integer.toString(command.getOrdinal())));
+                .orElse(null);
     }
 
     private void checkTime() {

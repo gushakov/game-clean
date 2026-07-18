@@ -31,6 +31,10 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  *       meta-annotated with {@code @Component}) were authored in the core, this fails the build
  *       rather than silently inviting a bean into the clean layer.</li>
  * </ul>
+ *
+ * <p>A fifth rule — the blackjack generic subdomain's simulated module boundary — lives in
+ * {@link BlackjackSubdomainArchitectureTest}: being a <em>positive</em> ("may only depend on") rule it
+ * must analyze production classes only, which is a per-{@code @AnalyzeClasses} import option.
  */
 @AnalyzeClasses(packages = "com.github.gameclean")
 class HexagonalArchitectureTest {

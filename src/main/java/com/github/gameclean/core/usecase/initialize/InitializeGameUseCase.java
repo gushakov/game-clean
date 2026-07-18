@@ -12,6 +12,7 @@ import com.github.gameclean.core.model.npc.NpcTemplate;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.model.spawn.SpawnRule;
@@ -252,9 +253,19 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                     .exits(entry.getExits().stream()
                             .map(exit -> new Exit(exit.getName(), new SceneId(exit.getTarget())))
                             .toList())
+                    .miniGames(buildMiniGames(entry.getMiniGames()))
                     .build());
         }
         return scenes;
+    }
+
+    private static Set<MiniGame> buildMiniGames(List<String> authoredNames) {
+        // A carrier may arrive with no mini-games key at all (null) — authored absence, not invalid input.
+        // Each present name passes the closed-vocabulary gate, so an unknown game fails this checkpoint.
+        if (authoredNames == null) {
+            return Set.of();
+        }
+        return authoredNames.stream().map(MiniGame::fromAuthoredName).collect(Collectors.toSet());
     }
 
     private static Map<SceneId, List<Exit>> findUnresolvedExits(List<Scene> scenes) {

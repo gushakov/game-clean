@@ -1893,6 +1893,83 @@ names as the trigger for redefining `Command` as a unit of work with two produce
 family arrives, no background actor's presenter may write the mode buffer (the `AffordanceContext`
 thread-confinement note is the recorded revisit trigger), and the single-slot buffer stands.
 
+**The ephemeral pole realized — blackjack: a conversation whose substance is a value in flight, and the
+aggregate deliberately withheld.** `[thread #1]` `[thread #4]` Where `examine`/`take`/`drop` demonstrated the
+modal machinery around a thin generic dialogue, the blackjack mini-game (#72) is the substance demonstration:
+a genuinely multi-interaction user goal with an arc — sit down (deal) → hit-me rounds → stand → settlement —
+whose every semantic step and outcome stripe lives in one use case, `PlayBlackjack`. The pivotal decision is
+what its between-interaction state *is not*: an aggregate. The tempting ontological argument ("a round is not
+a thing, it's something happening") does **not** hold — `Reservation`, `Order`, `Claim` are all reified
+happenings-with-obligations — and the honest discriminator is the crash-test question: *does the domain owe
+anyone memory of it?* A no-stakes tavern hand, abandoned, leaves zero residue, and "you left the table, the
+dealer sweeps the cards" is an authored **domain rule** that makes ephemerality honest — the litmus passes
+*by rule*, not by omission. So the round is a **position, and positions are values** (chess got there first:
+FEN is a whole game-state as a value). What promotes a position into an entity is never its transition logic
+— an immutable VO with `playerDraws()`/`dealerPlaysOut()` transitions *is* a state machine — but **identity
+plus a custody obligation**; stakes are therefore not a scope cut but *the* aggregate trigger, and the
+upgrade is non-destructive: the future aggregate would *wrap* the position VO as its state, not replace it.
+Until then the state **circulates** through the existing one-way loop — mode buffer →(controller relays it
+in as a value)→ interaction →(computes the next position)→ presenter →(arms the buffer as it renders)→ mode
+buffer — so the **presenter-arming channel is the state write**, interactions stay `void`, and unidirectional
+flow is untouched. The payoffs compound: the use case holds **no persistence and no transaction port** (the
+thinnest orchestration after `Guidance`); capture-at-offer is realized *inside a VO* (the deal captures the
+shuffled deck, so the stand's whole dealer playout consumes **zero entropy** — pinned by a test asserting the
+strict `ScriptedDice` is never touched); and the unit tests need no repository mocks at all — value in,
+presenter capture out. Two Cockburn findings ride along: `playerExaminesGame` answers the "what is an
+out-of-band stateless interaction?" question — it is an **anytime extension** (`*a.` "at any time, the player
+may ask where the game stands"), kept on the input port for traceability — and it doubles as the re-arm path,
+satisfying mode-as-projection through a player-initiated interaction. The dealer is a **persona executed by
+the system**, not a secondary actor (NPC-initiated interaction stays deferred with the system-signal family),
+and the playout resolves synchronously per the combat converse-boundary rule: after `stand`, the settlement
+*is* the outcome the player needs. Finally, the cards subdomain is Evans' generic subdomain made structural:
+kept in-module but ArchUnit-confined (production classes only — a *positive* dependency rule must exclude
+tests) to itself + `dice` + the model root + JDK, so the package **cannot name a `PlayerId`** — the round is
+anonymous by construction, and the binding of *this* hand to *this* player exists only in the armed mode
+entry. The "temporary contractual binding hanging in the air" is literally the mode entry; with stakes it
+would graduate into the aggregate. (Promotion candidate, flagged not promoted: *a conversation's
+between-interaction state is an aggregate only when the domain owes memory across interruptions — value +
+identity + custody obligation; absent the obligation it is a position (a value) circulated through the
+presenter-arming channel, the ephemerality made honest by an authored forfeit rule, and the aggregate is
+withheld until a stake forces it — whereupon it wraps the position VO rather than replacing it.*)
+
+**Opacity replaces minimality when the payload *is* the state — and the lifecycle vocabulary grows
+completion-disarm and `continuedBy`.** `[thread #4]` Parking a whole `BlackjackRound` in the
+`AffordanceContext` looks like a violation of the token discipline ("relay-only tokens, primitives inward")
+until the two rules are scoped by what the buffer holds. **Token-when-correlating**: a durable domain source
+of truth exists, so the buffer carries a pointer, re-validated live on resume — the selection dialogues.
+**Envelope-when-ephemeral**: the domain deliberately remembers nothing, so the buffer carries the state
+itself, sealed — and the discipline that makes this safe is **opacity**, not minimality. "Primitives inward"
+governs *player-authored* input, which is untrusted and must pass the construction gate; the envelope is
+**system-authored, valid by provenance** (§3's provenance rule applied to the arming channel), never touched
+by the player's fingers, so no gate applies on the way back in. The §9 payload tests all pass *precisely
+because* the shell never opens it: the router shape-matches command types and kind only; the one narrowing
+cast lives in the conversation handler (`(BlackjackRound) affordance.payload()` — the `SelectCommand` cast's
+twin); a shell that *read* the round to route would fail transcription-not-computation on the spot. This
+*scopes* rather than repeals the earlier "a payload field wanting domain semantics is the signal to mint the
+aggregate and degrade the token" — that guidance presumed a domain source of truth to correlate against. The
+in-JVM envelope rides as a plain object reference; a string codec is the *wire-ready* variant for a future
+networked front-end, deferred — noting the trap recorded for that day: the envelope holds the hole card and
+the deck order, so **client-held** conversation state would be a cheating vector needing sealing, whereas our
+mode is held on the system's side of the conversation. Two lifecycle refinements landed with it. *Presenters
+arm, re-arm — and now disarm on terminal outcomes*: the **completion-disarm** is as deterministic a
+transcription as the arming (one present method ↔ one fixed arming effect — settlements clear, live hands
+re-arm), and remains distinct from the dispatcher's **abandonment-clear**, which for an ephemeral dialogue
+*is* the forfeit; uniform abandonment also protects the single slot (a mid-hand `take rusty` cannot evict the
+envelope with its menu, because the non-continuing command forfeits the hand *before* any menu arms). And
+`continuedBy` **landed on exactly its reserved trigger**: blackjack is the first conversation continued by
+verbs rather than a bare number, so the continuation predicate moved out of the dispatcher onto the
+`Conversation` (the mode object), with a bare-number `default` keeping the selection family untouched; the
+dispatcher is now fully generic — armed handler gets first crack, refusal falls through to abandonment plus
+normal dispatch. The `hit` verb collision dissolved into two shape-decisions, each in its rightful owner: the
+**parser** splits the verb by token shape (bare `hit` and the idiomatic `hit me` are card talk; any other
+remainder designates a combat target — parsing *is* the adapter's job), and the **kind-gated first crack**
+keeps a stray table verb from resuming anything unarmed (it folds into guidance, the stray-number precedent).
+(Promotion candidate, flagged not promoted: *the affordance buffer's currency splits by whether a domain
+source of truth exists — a correlation token when it does, an opaque state envelope when the conversation is
+deliberately domain-ephemeral; opacity to the shell, not payload minimality, is the load-bearing discipline,
+and the presenter's completion-disarm joins arming as a fixed transcription, distinct from the dispatcher's
+abandonment-clear.*)
+
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 
 This refines §4. An **inter-aggregate consistency rule** (every exit target resolves to an authored scene;
