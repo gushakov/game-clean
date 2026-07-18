@@ -28,4 +28,11 @@ public class SceneEntry {
     String shortDescription;
     String fullDescription;
     List<ExitEntry> exits;
+
+    /**
+     * Authored mini-game names offered in this scene (the {@code mini-games:} key), as raw strings — the
+     * use-case gate resolves them against the closed {@code MiniGame} vocabulary and rejects unknown names
+     * as invalid authored input. Empty when the scene offers none.
+     */
+    List<String> miniGames;
 }

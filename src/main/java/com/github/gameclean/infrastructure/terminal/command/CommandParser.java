@@ -55,8 +55,22 @@ public class CommandParser {
         // 'drop'/'put' take the described target as the line remainder (multi-word), like 'take'.
         register("drop", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
         register("put", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
-        // 'hit' takes the described target NPC as the line remainder (multi-word), like 'take'.
-        register("hit", args -> args.isEmpty() ? null : new HitCommand(joinRemainder(args)));
+        // 'hit' is two intents sharing a verb, split by token shape (parsing is this adapter's job): bare
+        // 'hit' and the idiomatic 'hit me' are blackjack card talk; any other remainder designates an NPC
+        // to strike, multi-word like 'take'.
+        register("hit", args -> {
+            if (args.isEmpty() || joinRemainder(args).equalsIgnoreCase("me")) {
+                return new HitCardCommand();
+            }
+            return new HitCommand(joinRemainder(args));
+        });
+        // Mini-game verbs. 'play' sits down at the table; 'stand'/'stay' and 'game'/'table' continue an armed
+        // blackjack conversation (unarmed they fold into guidance). All argument-free.
+        register("play", args -> args.isEmpty() ? new PlayCommand() : null);
+        register("stand", args -> args.isEmpty() ? new StandCommand() : null);
+        register("stay", args -> args.isEmpty() ? new StandCommand() : null);
+        register("game", args -> args.isEmpty() ? new GameStandingCommand() : null);
+        register("table", args -> args.isEmpty() ? new GameStandingCommand() : null);
         // 'inventory'/'i' review the player's keeping; they take no argument.
         register("inventory", args -> args.isEmpty() ? new InventoryCommand() : null);
         register("i", args -> args.isEmpty() ? new InventoryCommand() : null);

@@ -48,6 +48,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `item/`, `npc/` (the `Npc` aggregate + `NpcId`/`NpcTemplate`), `spawn/` (the shared `SpawnRule` VO, used by item and npc templates), `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
   `dice/` (the `Dice` domain capability — interface + `AbstractDice`/`SystemDice`/`SeededDice` impls — and the `Chance` VO it rolls; design-notes §4),
   `designation/` (the `Designatable` capability interface — the two facts the `select` dialogue asks of a candidate, implemented by `Item`; #67),
+  `blackjack/` (the cards **generic subdomain** as pure VOs — `Suit`/`Rank`/`Card`/`Hand`/`Deck`/`BlackjackRound`/`RoundOutcome`; ArchUnit-confined to itself + `dice/` + the `model/` root + JDK/Lombok — a simulated module boundary, so the package can never name a `PlayerId`; #72),
   `id/` (the `Ids` helper — the model's single knower of the generated-id-body alphabet+length; `ItemId.mint(Dice)` rolls bodies through it, design-notes §2/§4/#53)) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
@@ -55,7 +56,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/npc/` holds `AnimateNpcs` (system-actor autonomous NPC movement)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/npc/` holds `AnimateNpcs` (system-actor autonomous NPC movement); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -65,11 +66,13 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving `AnimateNpcs`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
-  (session-lifetime disambiguation buffer resource, now carrying a `SelectionKind` tag) + the `SelectionKind` enum;
-  `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation` +
-  `AbstractSelectionConversation` Template-Method base + `Examine`/`TakeConversation`); `presenter/` the driven
+  (session-lifetime conversational buffer holding one armed `Affordance` — kind + selection tokens *or* an
+  opaque state envelope, #72) + the `Affordance` value + the `SelectionKind` enum;
+  `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation`
+  with its per-dialogue `continuedBy(Command)` predicate + `AbstractSelectionConversation` Template-Method base +
+  `Examine`/`Take`/`Drop`/`Hit`/`BlackjackConversation`); `presenter/` the driven
   `Terminal*Presenter`s; `render/`
-  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
+  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`NpcRenderer`/`BlackjackRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
 
@@ -480,8 +483,49 @@ kind), so `hit` lands with full disambiguation from day one:
   `Item`; terminal side (AffordanceContext, SelectCommand, conversation dispatcher) untouched — already
   string-token-based ("primitives inward" payoff). (design-notes §4.)
 
-Tests: 345 unit (Surefire, DB-free) + 22 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Blackjack` mini-game vertical **complete** (issue #72) — the first **ephemeral conversation**: a
+multi-interaction use case whose between-interaction state is a pure value riding the terminal session,
+deliberately never persisted (abandonment = forfeit; the dealer sweeps the cards):
+
+- **Domain** — `core/model/blackjack/` (see package layout above): `Hand.bestValue()` owns the soft-ace
+  rule; `BlackjackRound` is a *position, not an entity* — `deal(Dice)` captures the shuffled deck so
+  `playerDraws()`/`dealerPlaysOut()`/`settle()` are pure and the stand playout consumes **zero entropy**
+  (capture-at-offer in a VO). `Dice` gained `shuffle(List)` (Fisher–Yates over `nextDraw()` in
+  `AbstractDice`; `ScriptedDice` shuffles identity + scriptable `willShuffleToFront`). `Scene` gained
+  `Set<MiniGame> miniGames` + `offers(MiniGame)` (`MiniGame` enum, `fromAuthoredName` gate — unknown
+  authored name fails init as invalid parameters), authored per scene as a `mini-games:` comma list.
+- **Use case** — `PlayBlackjack` (`core/usecase/blackjack/`, summary goal *amusement*; dealer is a persona
+  executed by the system — no NPC): `playerSitsDownToPlay()` (orient prologue + `scene.offers(BLACKJACK)`
+  grounding → deal; player natural settles immediately), `playerAsksDealerForHitCard(round)`,
+  `playerRequestsToStand(round)` (synchronous dealer playout → dealer-busted/player-wins/dealer-wins/push),
+  `playerExaminesGame(round)` (Cockburn **anytime extension** `*a`; also where an armed `play` folds). The
+  round crosses the input port **as a value** relayed by the shell; a null/busted round is a
+  wiring-precondition throw to the catch-all. **No persistence or transaction ports** — the thinnest
+  orchestration after `Guidance`; unit tests need no repository mocks at all.
+- **Terminal** — new commands: `PlayCommand` (`play`), `HitCardCommand` (bare `hit` and `hit me` — the
+  parser splits the `hit` verb by token shape; `hit <target>` stays combat), `StandCommand`
+  (`stand`/`stay`), `GameStandingCommand` (`game`/`table`). `AffordanceContext` holds one armed
+  `Affordance` `(kind, tokens, payload)` — the payload an **opaque envelope** the shell never reads;
+  `arm(kind, payload)`/`current()` join `offer`/`kind`/`currentOffer`/`clear`. `Conversation` gained
+  `default continuedBy(Command)` (bare-number default) and `resume(Command, Affordance)`; the dispatcher
+  gives the armed conversation **first crack** at each parsed line, else clears (abandonment — the forfeit
+  for an ephemeral dialogue) and dispatches; stray table-talk verbs fold to guidance.
+  `BlackjackConversation` (kind `BLACKJACK`) is the first verb-continued handler; the presenter owns the
+  arming transcription (live outcomes arm/re-arm the round, terminal outcomes disarm — completion-disarm);
+  `BlackjackRenderer` renders cards as plain English words (encoding-proof). Guidance's curated list
+  gained `hit <target>` and `play`.
+- **Persistence** — only the scene attribute: Flyway `V9__create_scene_mini_game.sql` (child table, the
+  `exit` pattern), `MiniGameDbEntity` + second `@MappedCollection` on `SceneDbEntity`, MapStruct
+  enum↔string through the `fromAuthoredName` gate (a corrupt stored name = wrapped integrity fault). The
+  round itself is never stored. A pre-existing play DB never gains the authored mini-game
+  (seed-if-empty) — reset the docker volume to re-seed.
+- **Composition root / ArchUnit** — `playBlackjackUseCase` prototype (presenter shared with orient,
+  `SystemDice`) + singleton `blackjackConversation`; new `BlackjackSubdomainArchitectureTest` (a
+  *positive* dependency rule, so it analyzes production classes only via `ImportOption.DoNotIncludeTests`).
+
+Tests: 441 unit (Surefire, DB-free) + 24 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), NPCs *reacting* to the player and
-async/event processing (both tickers poll; the outbox event spine is still ahead).
+async/event processing (both tickers poll; the outbox event spine is still ahead), blackjack stakes
+(the trigger that would mint the round aggregate — see design-notes §9).

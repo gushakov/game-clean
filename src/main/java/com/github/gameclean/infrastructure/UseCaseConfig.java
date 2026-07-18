@@ -13,6 +13,8 @@ import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutpu
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import com.github.gameclean.core.usecase.blackjack.PlayBlackjackInputPort;
+import com.github.gameclean.core.usecase.blackjack.PlayBlackjackUseCase;
 import com.github.gameclean.core.usecase.clock.AnnounceTimeOfDayInputPort;
 import com.github.gameclean.core.usecase.clock.AnnounceTimeOfDayUseCase;
 import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
@@ -44,6 +46,7 @@ import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneNpcSubcase;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
+import com.github.gameclean.infrastructure.terminal.conversation.BlackjackConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
 import com.github.gameclean.infrastructure.terminal.conversation.DropConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
@@ -59,8 +62,10 @@ import com.github.gameclean.infrastructure.terminal.presenter.TerminalHitPresent
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalInventoryPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalPlayBlackjackPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalTakePresenter;
+import com.github.gameclean.infrastructure.terminal.render.BlackjackRenderer;
 import com.github.gameclean.infrastructure.terminal.render.CalendarRenderer;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
@@ -229,6 +234,27 @@ public class UseCaseConfig {
 
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public PlayBlackjackInputPort playBlackjackUseCase(
+            OrientRenderer orientRenderer,
+            BlackjackRenderer blackjackRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps) {
+        // One presenter instance, shared with the orient subcase (sit-down grounding), so every outcome —
+        // the deals and settlements, the no-cards-here refusal, the orient not-founds — reaches the same one.
+        // The presenter also owns the conversation's arming transcription: live-hand outcomes park the round
+        // in the AffordanceContext (kind BLACKJACK), terminal outcomes disarm. No persistence or transaction
+        // port: the round is an ephemeral value, and the deal's SystemDice is the conversation's only entropy.
+        TerminalPlayBlackjackPresenter presenter =
+                new TerminalPlayBlackjackPresenter(orientRenderer, blackjackRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        return new PlayBlackjackUseCase(presenter, orient, new SystemDice());
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public InventoryInputPort inventoryUseCase(
             OrientRenderer orientRenderer,
             ItemRenderer itemRenderer,
@@ -268,6 +294,16 @@ public class UseCaseConfig {
     @Bean
     public Conversation hitConversation(ApplicationContext applicationContext) {
         return new HitConversation(applicationContext);
+    }
+
+    /**
+     * The blackjack table talk — the first conversation continued by verbs rather than a bare number, so it
+     * implements {@code Conversation} directly with its own {@code continuedBy} grammar and relays the armed
+     * affordance's opaque round envelope instead of tokens.
+     */
+    @Bean
+    public Conversation blackjackConversation(ApplicationContext applicationContext) {
+        return new BlackjackConversation(applicationContext);
     }
 
     @Bean

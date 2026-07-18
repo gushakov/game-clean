@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.persistence.scene;
 
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.mapstruct.Mapper;
@@ -35,5 +36,20 @@ public interface SceneDbEntityMapper {
 
     default SceneId stringToSceneId(String value) {
         return value == null ? null : new SceneId(value);
+    }
+
+    default MiniGameDbEntity toDbEntity(MiniGame miniGame) {
+        MiniGameDbEntity entity = new MiniGameDbEntity();
+        entity.setMiniGame(miniGame.name());
+        return entity;
+    }
+
+    /**
+     * Reconstitutes the mini-game through the enum's own gate (it accepts the stored constant name
+     * case-insensitively), so a corrupt stored name throws {@code InvalidDomainObjectError} — which the
+     * reading adapter wraps as a persistence integrity fault, like any failed reconstitution.
+     */
+    default MiniGame toDomain(MiniGameDbEntity entity) {
+        return MiniGame.fromAuthoredName(entity.getMiniGame());
     }
 }

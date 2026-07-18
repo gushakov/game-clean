@@ -200,17 +200,24 @@ Established by the JLine entry-point work (issue #6).
   `UnknownCommand` echoes a hint). The `Look` use case drives `TerminalScenePresenter` (now implementing
   `LookPresenterOutputPort`), so the console no longer touches the presenter. ANTLR deferred — rationale
   in design-notes §9. Adding a command/synonym = one `register(...)` line in `CommandParser`.
-- **Conversation dispatcher** (`infrastructure/terminal/conversation/`, issue #55) — resuming a multi-step
-  dialogue (a numbered disambiguation pick) is routed by *kind*, not hardwired. `AffordanceContext` tags its
-  pending offer with a `SelectionKind` (infra enum); each driven presenter arms its own kind when it renders a
-  menu. A `Conversation { SelectionKind kind(); void resume(Command, List<String>); }` handler per dialogue
-  (`Examine`/`Take`/`DropConversation`, sharing the Template-Method base `AbstractSelectionConversation`) is
+- **Conversation dispatcher** (`infrastructure/terminal/conversation/`, issues #55/#72) — continuing a
+  multi-step dialogue is routed by *kind*, not hardwired. `AffordanceContext` holds one armed `Affordance`
+  `(SelectionKind kind, List<String> tokens, Object payload)`: selection dialogues arm **tokens** via
+  `offer(kind, tokens)`; an ephemeral dialogue (blackjack) arms an **opaque payload envelope** via
+  `arm(kind, payload)` — written by the driven presenter, never read by the shell. A
+  `Conversation { kind(); default continuedBy(Command); resume(Command, Affordance) }` handler per dialogue is
   `new`ed in `UseCaseConfig`; `ConsoleSession` injects `List<Conversation>` — the **container is the resumer
-  map**, matched on the armed kind (no hand-maintained `kind→useCase` table) — and asserts at startup that every
-  `SelectionKind` has a handler. Each handler pulls a fresh prototype use case per resume (`getBean`). The
-  abstraction emerged at the *second* number-continued dialogue (`take`) and was confirmed by the third
-  (`drop` — new kind + handler bean, dispatcher untouched), distinct from the `select` base which emerged at
-  the second *provisioner* (`drop`). Rationale: design-notes §9.
+  map** — asserts at startup that every `SelectionKind` has a handler, and gives the armed conversation
+  **first crack** at each parsed line through its `continuedBy` predicate (default: a bare-number
+  `SelectCommand`, suiting the selection family on `AbstractSelectionConversation`); a refused line clears the
+  affordance (abandonment — the forfeit for an ephemeral dialogue) and dispatches normally. Handlers:
+  `Examine`/`Take`/`Drop`/`HitConversation` (Template-Method base) and `BlackjackConversation` (implements
+  `Conversation` directly — the first *verb-continued* dialogue: `hit`/`hit me`, `stand`/`stay`,
+  `game`/`table`, plus `play` folding to the anytime table view; it casts the payload back to
+  `BlackjackRound`, the `SelectCommand` cast's twin). Each handler pulls a fresh prototype use case per
+  resume (`getBean`). Emergence ledger: kind-routing at the second number-continued dialogue (`take`),
+  confirmed by the third (`drop`); `continuedBy` moved onto the handler at the first non-number continuation
+  (`blackjack`), exactly as reserved. Rationale: design-notes §9.
 - **`GameConfigurationProperties`** (`infrastructure/`) — the single catalog of every `game.*` property,
   nested static classes per group (`World.seedLocation`, `Terminal.enabled`). Constructor-bound, Lombok,
   `@DefaultValue` (bare on nested groups). Enabled via `@EnableConfigurationProperties` on
