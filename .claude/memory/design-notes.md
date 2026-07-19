@@ -1970,6 +1970,77 @@ deliberately domain-ephemeral; opacity to the shell, not payload minimality, is 
 and the presenter's completion-disarm joins arming as a fixed transcription, distinct from the dispatcher's
 abandonment-clear.*)
 
+**Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
+lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the
+full round — hole card and deck included — must transit the presenter, because the presenter is the arming
+channel and the single terminal export point. Keeping the secret out *structurally* breaks a load-bearing
+property every way it is tried: a separate armer beside the presenter destroys "one present method ↔ one
+fixed arming effect" (two channels to keep in lockstep); a redacted projection DTO per live view is the §8
+parallel hierarchy — and the arming still carries the secret; sealing the envelope in-process is ceremony
+(same trust ring). So the resolution is **license, split by signature**: the live-view methods name the
+renderable arguments explicitly (`presentInitialDeal(playerHand, upcard, round)` — player hand and upcard
+carry disclosure license; the trailing envelope is custody *without* license), while the settlement methods
+license the whole round because everything is face up. The decision stack is Martin's own strata:
+**information asymmetry between actors is a domain rule** — as much blackjack as stand-on-seventeen — and in
+this game it is *fully derivable* from position and phase (player cards up; dealer's first up, second down
+while live, all up at settlement), so no stored face-up flag exists: storing one would make illegal facings
+representable (inverting the sealed-`Location` lesson) and poison `Card`'s value equality. The model owns the
+derivation, the **use case licenses per outcome stripe**, the presenter transcribes — differentiation without
+decision, humbleness intact (humble was never about *access*, only about *decisions*). Three refinements
+bound the doctrine. *The license ladder:* positional license (signatures — today) → labeled license (facing
+travels with the data; a generic card renderer enforces it uniformly) → structural secrecy (the face-down
+card *replaced* by an opaque element); the rung is chosen by the **trust boundary**, not taste — within one
+trusted ring license suffices; at a wire, structure returns (a client-held envelope is a cheating vector).
+*The actors-diverge law:* presenter ports are per-actor viewports, so a second human actor forces two ports
+and the asymmetry becomes structural *naturally* — single-player collapses two viewports into one channel,
+which is exactly why license substitutes for structure here; **structure when actors diverge, license when
+one channel serves one actor**. Multiplayer would also generalize presentation-is-terminal (the
+single-`present*` rule is the single-viewport shadow of the real invariant: one outcome stripe, one
+transcription per affected viewport) and make the *affordances* actor-relative too (your turn to hit; the
+dealer waits) — and it is where Clean DDD's advantage over canon is sharpest, scoped honestly: CQRS read
+models answer per-actor *queries*, but a return value has exactly one recipient, making the caller the
+distributor of a command's outcome (the `Result<T>` anti-pattern generalized); N void presenter ports make
+the *use case* the distributor — one decision, N transcriptions, each pinned in core. *The enforcement
+gradient:* the use-case tests pin the license **grant** (the captured live-view arguments exclude the hole
+card — a use case that drifted into licensing it fails in core, where the decision lives); the renderer's
+**compliance** is convention plus review (no renderer tests) — enforcement weakening outward matches the
+trust gradient, coherently, since the outermost ring holds the least decision content. One tripwire: the
+round's Lombok `toString` includes the hole card and the deck — the license discipline extends to **log
+surfaces**. Finally, this is the price tag on "remove the affordance": remove when free or cheap; when
+removal would break a load-bearing structural property, fall back to licensed contract, record the trust,
+and test the grant — §8's domain-objects-to-presenters relaxation was already this trade; the hole card is
+its sharpest instance because the misuse would harm an *actor's game*, not the code. Emergence triggers, for
+later: a `visibleToPlayer()` projection SEFF on the round when the visible face grows a third element (the
+DTO-when-structure rule); stored facing only when a game makes flipping a *move* (an independent degree of
+freedom), and then on a dealt-card placement wrapper, never on `Card`. (Promotion candidate, flagged not
+promoted: *when a secret must transit a trusted channel, control the license, not the access — split the
+signature into renderable arguments and unlicensed custody; the asymmetry rule is domain, the per-stripe
+licensing is the use case's, the transcription is the presenter's; escalate the license ladder only at a
+trust boundary, and expect the asymmetry to become structural by itself when actors diverge into their own
+viewports.*)
+
+**Parked: the string-envelope variant — deliberated, deferred by owner decision, shape agreed.** `[thread #4]`
+The one asterisk the object envelope leaves on "primitives inward": `BlackjackConversation.resume` names a
+model type (the `(BlackjackRound)` cast — legal, infra→core, license-disciplined, but a rider the showcase
+must explain). The deliberated alternative encodes the round to a compact string (FEN precedent — a round
+notation is legitimately the *lib's* competence, independently useful for save/replay/network later): the
+buffer arms a `String`, `Affordance.payload` narrows `Object → String`, the whole terminal layer goes
+model-free with no rider, and — the strengthening that emerged in deliberation — the **encode happens in the
+use case**, not the presenter (the `ItemId`-flatten precedent is distinguished: there the presenter needed
+the model to render anyway; here live views render only the visible arguments, so handing the round over
+just to flatten it would be over-supply of the very object the license discipline guards). Live-view
+presenter signatures become *(visible args + encoded string)* — which incidentally upgrades hole-card
+custody to the ladder's labeled rung, mechanically. **The refusal that must survive any implementation:**
+the string changes the carrier, not the provenance — a decode failure, like a busted round arriving, stays a
+*wiring fault*; the decode checkpoint is therefore **catch-less** (`InvalidDomainObjectError` rides to the
+outermost catch-all; no `presentInvalidParametersError` costume). The absent catch *is* the three-signal
+taxonomy (§12) made visible: authored input gets caught-and-presented, provenance-trusted reconstruction
+does not. Why deferred: in-process the string is a fake wire — codec machinery and a new fault surface for
+zero behavioral gain today, and a compact cleartext string is *more* log-leakable than an object reference.
+Revisit triggers: save-game/replay, a networked front-end — or a deliberate choice for demonstration
+crispness (the variant buys three demonstrations for one codec: exceptionless primitives-inward, mechanical
+secrecy, the wire-ready shape). Parked, not rejected.
+
 ## 10. Orchestration vs computation — the use case owns the rule, the model computes it (Law of Demeter)
 
 This refines §4. An **inter-aggregate consistency rule** (every exit target resolves to an authored scene;
@@ -2233,6 +2304,151 @@ list is less code than two special-cased fields.
   relay), at which point explicit `SmartLifecycle` phases return. Confirmed by docs; the runtime path
   (`@Scheduled` firing + `printAbove` over the live prompt) runs only in the real app (tests disable the
   terminal), so it is asserted by inspection/app-run, not yet by an automated test.
+
+## 12. Stripes vs. the state machine — sequencing decompressed out of the model
+
+This section names the theory the blackjack vertical surfaced (§9's ephemeral-conversation passages are its
+evidence): **Cockburn outcome stripes substitute for the refusal half of an aggregate state machine**, and the
+substitution is not a trick but a consequence of Clean DDD's layering. It extends §2's failure-category
+doctrine and carries the emergence discipline (`[thread #1]`) from structure into dynamics.
+
+**Sharpen the substitution first — stripes replace guards, not transitions.** The meaningful transitions
+remain, as interactions calling copy-on-write methods on the position/aggregate. What disappears is the
+**guard matrix**. A classical state machine is *state-major*: N states × M operations, every cell needs a
+decision, most cells are "illegal," each illegal cell a guard whose only vocabulary is `throw`. A Cockburn
+spec is *scenario-major*: it enumerates walks, not cells — and the walks partition the matrix into three
+categories with three different fates:
+
+- **Walked cells** (main success scenario + extensions) → interactions, with presented outcomes.
+- **Attemptable-but-out-of-turn cells** (a player *can* type it at the wrong moment) → *also* extensions —
+  "player attempts to raise after the cards are down → the dealer declines" — presented stripes, decided by
+  branch-and-present on domain predicates inside the interaction. The guard became conversation, and got
+  *richer* in the process: `IllegalStateException` can only say no; a stripe answers in ubiquitous language.
+- **Unreachable cells** (no actor can produce them, because routing/arming/dispatch excludes them) → **never
+  written at all.** At most a wiring tripwire per interaction entry (`requireLiveRound`), which is not a
+  business rule but an assertion that the routing guarantee still holds. This is where whole families of
+  guards go: not relocated — unwritten.
+
+Blackjack is the degenerate proof sitting in the repo: no `RoundStatus` field, no state enum, no State
+pattern, yet the live/bust/settled machine is fully enforced — bust is a derivable predicate, settled-ness
+lives in the arming lifecycle (terminal presentations disarm), and the one domain guard (`playerDraws` on a
+bust hand) protects the *position's own coherence*, not process order. Classically that would have been a
+three-state enum with guards on every method.
+
+**The thesis underneath: the aggregate-as-state-machine is a compression artifact of an anemic application
+layer.** Canonical DDD compresses the entire process defense into the aggregate because it *distrusts the
+layer above* — in the anemic-service world the application layer is transaction scripts, untraceable and
+untested, so "make illegal transitions impossible *in the model*" is the only defensible position; the
+aggregate is the last trench. Clean DDD removes the premise: the use case is a first-class, spec-traceable,
+unit-tested artifact *inside the hexagon*. With a trustworthy ring one step out, the machine can decompress
+into its natural strata — **validity stays in the model** (construction gates, self-guarding transitions,
+sealed phase types where phases carry different data), **sequence moves to the interactions** (where it reads
+as the spec, stripe by stripe), and **the enabled-set projection ships outward as affordance data** (§9's
+arm-time completeness). The State pattern's awkwardness — behavior scattered across state classes, or the
+inline-branching swamp — was the pain of forcing scenario-shaped logic into a state-shaped container: the
+§10 Delivery critique, temporal edition (a full state machine is *process reified as structure*). A caution
+inside the model too: a generic `round.apply(command)` dispatcher — the State pattern absorbing command
+routing — would collapse the distinct interactions into one pass-through and kill the Cockburn traceability
+that is the point; the domain owns per-transition legality, never command dispatch.
+
+**The emergence parallel, made operational.** `[thread #1]` Aggregates are minted only when interactions
+reveal an invariant that must hold in one transaction. States, symmetrically, are minted only when
+interactions must *branch on the distinction* — and the criterion is crisp: two positions are the same state
+precisely when they afford the same continuations (Myhill–Nerode: a state *is* an equivalence class of
+futures; the affordance set is the state made visible without being reified). So: don't name a phase until
+two positions with different afforded-continuation sets force the name; prefer a derivable predicate until
+then; reach for a sealed phase type only when the phases carry different *data* (the `Location` precedent,
+§2). A speculative status enum is exactly as illegitimate as the speculative exit-visibility field §2
+refused.
+
+**Three bounds keep the theory honest.**
+
+- **Integrity guards never move.** "Never draw from an empty deck," "hit points never negative" — these
+  protect the data's validity, not the process's order, and stay in the model under any amount of
+  stripe-thinking. The escape is from the *process half* of the machine only. This adds a **third signal** to
+  §2's two failure categories: `InvalidDomainObjectError` for construction, plain throws for caller bugs and
+  broken *wiring guarantees* (tripwires), and **presented stripes for attemptable out-of-turn process** — and
+  the stripe category *shrinks* the throw category, which is the discovery.
+- **Multi-writer state re-involves the domain — but not the old way.** `[thread #3]` When a second actor
+  races the conversation (the ticker vs. the player), routing cannot guarantee freshness, so the domain must
+  detect the moved state — optimistic versions, live re-validation. But the concurrency doctrine already made
+  the lost race an *outcome* (`presentItemGotAway`, `presentTargetNoLongerAvailable`), not a fault: detection
+  is domain-side, the refusal is still conversational.
+- **The model alone becomes more permissive — own that.** A raw caller of the position VO could walk
+  sequences no scenario permits. The defense has not left the core: it sits at the use-case ring, inside the
+  hexagon, covered by the interaction tests that assert stripes. What *is* per-adapter is the routing
+  guarantee — a future GUI must rebuild its own arming discipline, and the tripwires catch it if it doesn't.
+  The semantic defense (interactions re-validating and presenting "not now") is adapter-neutral; only the
+  unreachability optimization is not.
+
+**Situating against typed-functional DDD.** Wlaschin's "make illegal states unrepresentable" already moved
+*validity* into types — our sealed phases are that move. What it lacks, having no Cockburn layer, is an
+answer to *who speaks when a step is refused*. That is the genuinely new axis here: the refusal cells of the
+state machine are reassigned from the type system and the guard clauses to the **conversation**, where they
+were always going to end up rendered anyway.
+
+**The theory in one line:** *a use-case spec is the scenario-major projection of the state machine; Clean DDD
+implements the projection instead of the matrix, recovers the matrix's safety from routing guarantees
+(tripwired) plus live re-validation, and gets richer refusal semantics for free because refusals were stripes
+all along.*
+
+**Falsification test:** the future haggle/negotiation exemplar — a genuinely sequenced, multi-goal, likely
+aggregate-backed conversation. If its interaction tests stay readable without a status enum sprouting in the
+model, the theory holds; if a phase type emerges, it must arrive by the continuation-set criterion above, not
+by upfront state-charting. (Promotion candidate, flagged not promoted: *stripes substitute for the guard
+matrix, not the transitions — walked cells become interactions, attemptable-out-of-turn cells become
+presented extensions, unreachable cells go unwritten behind tripwired routing guarantees; the
+aggregate-as-state-machine was a compression artifact of an anemic application layer, and a first-class
+use-case ring decompresses it into validity-in-model / sequence-in-interactions /
+enabled-set-as-affordance-data; states are minted by the divergent-continuation criterion, the emergence
+discipline extended from structure to dynamics.*)
+
+**Coda — mental-model alignment is the why-it-matters, and it is manufactured, not conjured.** `[thread #4]`
+The blackjack vertical also tested the project's founding premise (DCI: users hold a mental model of the
+*procedure*, and OOP scatters it, so the code never contains an artifact the user could recognize). The
+finding is about the *mechanism* of the naturalness observed while building it: reaching for the `orient`
+prologue in `playerSitsDownToPlay` was not a design decision but the absence of alternatives — sitting down
+is a scene-grounded act like `take` or `hit`, so the doctrine had already removed every other option, and the
+whole decision budget was spent on the one genuinely novel seam (the opaque envelope). **Naturalness is a
+discipline output, and therefore reproducible**: the quality signal for an accumulating methodology is that
+decision entropy at the point of use falls with each vertical.
+
+Two consequences worth keeping. *The generic subdomain's runtime seam.* Evans' generic-subdomain guidance is
+packaging advice (separate it, don't pollute the core) and near-silent on the runtime relationship. Here the
+relationship distributed itself into three one-liners, each in its owning home: the **world names** the game
+(a scene attribute), the **interaction grounds** it (the `scene.offers(BLACKJACK)` checkpoint after the
+orient prologue), the **library plays** it (world-blind rules). No mini-game framework, no engine interface,
+no anti-corruption layer — and the three-way split is isomorphic to the player's phenomenology: "there's a
+table here" (world fact), "I sit down" (my act), "now we play by the cards' rules" (the game's own logic).
+The architecture nested a game inside a game because the player's mental model nests exactly there.
+
+*The alignment chain is auditable, not a vibe.* Blackjack's procedure is culturally fixed, so the DCI premise
+becomes checkable: the player's head → the Cockburn spec → the input-port methods (`playerSitsDownToPlay`,
+`playerAsksDealerForHitCard`, `playerRequestsToStand`) → the test names
+(`aHitCardBustingThePlayerSettlesTheHand`) → the affordance line the presenter prints ("Say 'hit me' or
+'stand'") — five representations, each a projection of the same procedure, each mechanically traceable to the
+next. The §12 scenario-major choice is what keeps the chain unbroken at the code link: no player thinks in
+transition matrices, so a state-major implementation would have snapped it there. Alignment and the
+state-machine decompression are the same phenomenon seen from two sides — give the procedure one home shaped
+like a procedure, and the user recognizes it *and* the guard matrix dissolves. A vocabulary corollary, almost
+a lint rule: every identifier in the vertical is speakable at the table (deal, hit me, stand, bust, push,
+upcard, hole card, sweep); architect vocabulary survives only in the infra ring (`AffordanceContext`,
+`continuedBy`), whose "user" is the delivery mechanism — **the vocabulary boundary coincides with the hexagon
+boundary**, extending ubiquitous language from Evans' nouns to procedures. Even the one vocabulary collision
+(`hit`) resolved where a human would resolve it: by phrasing, in the parser — the system's ear.
+
+Two pressure points keep the claim honest. Blackjack is a best case — shared procedure, closed vocabulary,
+bounded arc; where mental models are *contested* (an enterprise process whose requester, validator, and
+officer each hold a different procedure of the "same" flow), alignment must be per-actor, and Cockburn's
+primary-actor-plus-extensions structure is the arbitration mechanism — asserted by the methodology,
+not yet stress-tested in this project. And the evidence so far is construction-side; the DCI promise is about
+*maintenance*. Hence the shared falsifier for this coda and §12 proper: **double down**. It should land as
+one new interaction plus its stripes, one affordance entry, one transition on the position — no
+restructuring, no new state field. If instead the round must be refactored into phases to admit it, the
+best-case worry was real. (Promotion candidate, flagged not promoted: *mental-model alignment is an
+architectural consequence, not a talent — a procedure given one home shaped like a procedure is recognizable
+to its actor and needs no guard matrix; audit alignment as a representation chain (mental model → spec →
+interactions → tests → affordance), and check the vocabulary boundary against the hexagon boundary.*)
 
 ## Non-doctrinal project decision
 
