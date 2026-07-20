@@ -34,7 +34,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ExamineUseCaseTest {
 
-    private static final SceneId HERE = new SceneId("scn1");
+    private static final SceneId HERE = SceneId.of("scn1");
 
     @Mock
     private ExaminePresenterOutputPort presenter;
@@ -108,12 +108,12 @@ class ExamineUseCaseTest {
     }
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
     }
 
     private static Scene scene(String id) {
         return Scene.builder()
-                .id(new SceneId(id))
+                .id(SceneId.of(id))
                 .name("Old Gate")
                 .shortDescription("A weathered archway.")
                 .fullDescription("The gate's iron hinges have long since rusted shut.")
@@ -123,8 +123,8 @@ class ExamineUseCaseTest {
 
     private static Item item(String id, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
-                .location(new Location.OnGround(new SceneId("scn1")))
+                .id(ItemId.of(id))
+                .location(new Location.OnGround(SceneId.of("scn1")))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .build();

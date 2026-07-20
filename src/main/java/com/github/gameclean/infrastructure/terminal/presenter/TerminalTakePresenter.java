@@ -65,12 +65,12 @@ public class TerminalTakePresenter
         // Decide the menu order once, here — the visible menu and the remembered offer are produced from it.
         List<Item> ordered = candidates.stream()
                 .sorted(Comparator.comparing(Item::getShortDescription)
-                        .thenComparing(item -> item.getId().getValue()))
+                        .thenComparing(item -> item.getId().asString()))
                 .toList();
         itemRenderer.renderAmbiguousTarget(target, ordered);
         // Flatten identities to tokens on this driven side; tag the offer TAKE so a later bare number takes.
         affordanceContext.offer(SelectionKind.TAKE,
-                ordered.stream().map(item -> item.getId().getValue()).toList());
+                ordered.stream().map(item -> item.getId().asString()).toList());
     }
 
     @Override

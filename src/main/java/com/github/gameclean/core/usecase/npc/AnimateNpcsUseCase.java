@@ -107,7 +107,7 @@ public class AnimateNpcsUseCase implements AnimateNpcsInputPort {
             // Resolve where the player stands, to filter the movements they can witness. A read, so it runs
             // outside the transaction; its absence is tolerated (no player scene => nothing is perceptible).
             SceneId playerScene = playerRepositoryOps
-                    .findPlayer(new PlayerId(playerOps.currentPlayerId()))
+                    .findPlayer(PlayerId.of(playerOps.currentPlayerId()))
                     .map(Player::getCurrentScene)
                     .orElse(null);
             List<PerceivedNpcMovement> perceptible = perceptibleMovements(moves, playerScene);

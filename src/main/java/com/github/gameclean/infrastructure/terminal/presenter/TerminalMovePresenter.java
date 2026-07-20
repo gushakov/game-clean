@@ -54,7 +54,7 @@ public class TerminalMovePresenter implements MovePresenterOutputPort {
 
     @Override
     public void presentTargetSceneNotFound(SceneId target) {
-        console.printError("That way leads nowhere — scene '%s' does not exist.".formatted(target.getValue()));
+        console.printError("That way leads nowhere — scene '%s' does not exist.".formatted(target.asString()));
     }
 
     @Override

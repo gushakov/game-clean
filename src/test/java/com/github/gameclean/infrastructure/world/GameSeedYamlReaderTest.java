@@ -93,12 +93,12 @@ class GameSeedYamlReaderTest {
 
         assertThat(world).hasSize(4);
 
-        Scene gate = world.get(new SceneId("scn1"));
+        Scene gate = world.get(SceneId.of("scn1"));
         assertThat(gate.getName()).isEqualTo("Old Gate");
         assertThat(gate.getExits())
                 .containsExactlyInAnyOrder(
-                        new Exit("north", new SceneId("scn2")),
-                        new Exit("east", new SceneId("scn3")));
+                        new Exit("north", SceneId.of("scn2")),
+                        new Exit("east", SceneId.of("scn3")));
 
         // Every exit target resolves to an authored scene — the spike keeps the graph coherent;
         // the dangling-target -> domain-error case belongs to InitializeGame's two-pass validation.
@@ -117,12 +117,12 @@ class GameSeedYamlReaderTest {
 
     private static Scene toScene(SceneEntry entry) {
         return Scene.builder()
-                .id(new SceneId(entry.getId()))
+                .id(SceneId.of(entry.getId()))
                 .name(entry.getName())
                 .shortDescription(entry.getShortDescription())
                 .fullDescription(entry.getFullDescription())
                 .exits(entry.getExits().stream()
-                        .map(e -> new Exit(e.getName(), new SceneId(e.getTarget())))
+                        .map(e -> new Exit(e.getName(), SceneId.of(e.getTarget())))
                         .toList())
                 .build();
     }

@@ -23,7 +23,7 @@ class SpawnRuleTest {
 
     private static SpawnRule rule(int numerator, int denominator, int maxTries, String... candidateScenes) {
         return new SpawnRule(new Chance(numerator, denominator), maxTries,
-                Arrays.stream(candidateScenes).map(SceneId::new).toList());
+                Arrays.stream(candidateScenes).map(SceneId::of).toList());
     }
 
     @Test
@@ -40,21 +40,21 @@ class SpawnRuleTest {
     @Test
     void rejects_a_null_chance() {
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new SpawnRule(null, 1, List.of(new SceneId("scn1"))));
+                .isThrownBy(() -> new SpawnRule(null, 1, List.of(SceneId.of("scn1"))));
     }
 
     @Test
     void reports_candidate_scenes_not_among_the_known_scenes() {
         SpawnRule rule = rule(1, 2, 1, "scn2", "scn9");
         List<SceneId> unresolved =
-                rule.candidateScenesNotIn(Set.of(new SceneId("scn1"), new SceneId("scn2")));
-        assertThat(unresolved).containsExactly(new SceneId("scn9"));
+                rule.candidateScenesNotIn(Set.of(SceneId.of("scn1"), SceneId.of("scn2")));
+        assertThat(unresolved).containsExactly(SceneId.of("scn9"));
     }
 
     @Test
     void reports_no_unresolved_candidates_when_all_are_known() {
         SpawnRule rule = rule(1, 2, 1, "scn1", "scn2");
-        assertThat(rule.candidateScenesNotIn(Set.of(new SceneId("scn1"), new SceneId("scn2")))).isEmpty();
+        assertThat(rule.candidateScenesNotIn(Set.of(SceneId.of("scn1"), SceneId.of("scn2")))).isEmpty();
     }
 
     @Test
@@ -62,7 +62,7 @@ class SpawnRuleTest {
         SpawnRule rule = rule(1, 1, 2, "scn1", "scn2");
         // attempt 0: hit, pick index 0 -> scn1; attempt 1: hit, pick index 1 -> scn2
         ScriptedDice dice = new ScriptedDice().willRoll(true, true).willPick(0, 1);
-        assertThat(rule.rollPlacements(dice)).containsExactly(new SceneId("scn1"), new SceneId("scn2"));
+        assertThat(rule.rollPlacements(dice)).containsExactly(SceneId.of("scn1"), SceneId.of("scn2"));
     }
 
     @Test
@@ -71,7 +71,7 @@ class SpawnRuleTest {
         // miss; hit then pick index 0 -> scn1; miss. Exactly three rolls and one pick are scripted — the rule
         // pulling more (or fewer) would over-pull the scripted dice and throw, pinning the draw-ordering here.
         ScriptedDice dice = new ScriptedDice().willRoll(false, true, false).willPick(0);
-        assertThat(rule.rollPlacements(dice)).containsExactly(new SceneId("scn1"));
+        assertThat(rule.rollPlacements(dice)).containsExactly(SceneId.of("scn1"));
     }
 
     @Test

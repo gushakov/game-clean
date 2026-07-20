@@ -1,7 +1,7 @@
 package com.github.gameclean.infrastructure.persistence.player;
 
 import com.github.gameclean.core.model.player.Player;
-import com.github.gameclean.infrastructure.persistence.ScalarConverter;
+import com.github.gameclean.infrastructure.mapping.ScalarConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

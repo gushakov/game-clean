@@ -52,8 +52,8 @@ class OrientPlayerSubcaseTest {
         Player plr = player("plr1", "scn1");
         Scene oldGate = scene("scn1");
         when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.of(plr));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(oldGate));
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.of(plr));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(oldGate));
 
         OrientPlayerResult result = subcase.playerGetsBearings();
 
@@ -65,24 +65,24 @@ class OrientPlayerSubcaseTest {
     @Test
     void presentsPlayerNotFoundAndSignalsWhenNoPlayerIsPersisted() {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
 
         assertThatThrownBy(subcase::playerGetsBearings).isInstanceOf(SubcaseAlreadyPresented.class);
 
-        verify(presenter).presentPlayerNotFound(new PlayerId("plr1"));
+        verify(presenter).presentPlayerNotFound(PlayerId.of("plr1"));
         verify(sceneOps, never()).findScene(any());
     }
 
     @Test
     void presentsCurrentSceneNotFoundAndSignalsWhenThePlayersSceneIsMissing() {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1")))
                 .thenReturn(Optional.of(player("plr1", "scn9")));
-        when(sceneOps.findScene(new SceneId("scn9"))).thenReturn(Optional.empty());
+        when(sceneOps.findScene(SceneId.of("scn9"))).thenReturn(Optional.empty());
 
         assertThatThrownBy(subcase::playerGetsBearings).isInstanceOf(SubcaseAlreadyPresented.class);
 
-        verify(presenter).presentCurrentSceneNotFound(new SceneId("scn9"));
+        verify(presenter).presentCurrentSceneNotFound(SceneId.of("scn9"));
     }
 
     @Test
@@ -99,7 +99,7 @@ class OrientPlayerSubcaseTest {
     void propagatesAPersistenceFailureWithoutPresenting() {
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenThrow(boom);
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenThrow(boom);
 
         assertThatThrownBy(subcase::playerGetsBearings).isSameAs(boom);
 
@@ -109,12 +109,12 @@ class OrientPlayerSubcaseTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
     }
 
     private static Scene scene(String id) {
         return Scene.builder()
-                .id(new SceneId(id))
+                .id(SceneId.of(id))
                 .name("Old Gate")
                 .shortDescription("A weathered archway.")
                 .fullDescription("The gate's iron hinges have long since rusted shut.")

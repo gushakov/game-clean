@@ -21,8 +21,8 @@ class NpcTest {
 
     private static Npc npc(String currentScene) {
         return Npc.builder()
-                .id(new NpcId("npc1"))
-                .currentScene(new SceneId(currentScene))
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of(currentScene))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A figure in a travel-worn hooded cloak.")
                 .moveChance(new Chance(1, 4))
@@ -34,13 +34,13 @@ class NpcTest {
     void moveTo_returns_a_copy_standing_in_the_target_preserving_identity() {
         Npc atGate = npc("scn1");
 
-        Npc moved = atGate.moveTo(new SceneId("scn2"));
+        Npc moved = atGate.moveTo(SceneId.of("scn2"));
 
         // Copy-on-write: a new instance in the target scene, same identity; the original is untouched.
-        assertThat(moved.getCurrentScene()).isEqualTo(new SceneId("scn2"));
-        assertThat(moved.getId()).isEqualTo(new NpcId("npc1"));
+        assertThat(moved.getCurrentScene()).isEqualTo(SceneId.of("scn2"));
+        assertThat(moved.getId()).isEqualTo(NpcId.of("npc1"));
         assertThat(moved.getMoveChance()).isEqualTo(new Chance(1, 4));
-        assertThat(atGate.getCurrentScene()).isEqualTo(new SceneId("scn1"));
+        assertThat(atGate.getCurrentScene()).isEqualTo(SceneId.of("scn1"));
     }
 
     @Test
@@ -53,7 +53,7 @@ class NpcTest {
     void rejects_a_null_id() {
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
                 .id(null)
-                .currentScene(new SceneId("scn1"))
+                .currentScene(SceneId.of("scn1"))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
@@ -63,7 +63,7 @@ class NpcTest {
     @Test
     void rejects_a_null_current_scene() {
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
-                .id(new NpcId("npc1"))
+                .id(NpcId.of("npc1"))
                 .currentScene(null)
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
@@ -74,8 +74,8 @@ class NpcTest {
     @Test
     void rejects_a_blank_short_description() {
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
-                .id(new NpcId("npc1"))
-                .currentScene(new SceneId("scn1"))
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
                 .shortDescription("   ")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
@@ -85,8 +85,8 @@ class NpcTest {
     @Test
     void rejects_a_null_move_chance() {
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
-                .id(new NpcId("npc1"))
-                .currentScene(new SceneId("scn1"))
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(null)
@@ -96,8 +96,8 @@ class NpcTest {
     @Test
     void rejects_a_null_hit_points() {
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
-                .id(new NpcId("npc1"))
-                .currentScene(new SceneId("scn1"))
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
@@ -108,8 +108,8 @@ class NpcTest {
     @Test
     void rejects_a_negative_version() {
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
-                .id(new NpcId("npc1"))
-                .currentScene(new SceneId("scn1"))
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
@@ -121,15 +121,15 @@ class NpcTest {
     @Test
     void equality_is_by_id_ignoring_position() {
         Npc atGate = npc("scn1");
-        Npc moved = atGate.moveTo(new SceneId("scn2"));   // same id, different scene
+        Npc moved = atGate.moveTo(SceneId.of("scn2"));   // same id, different scene
         assertThat(moved).isEqualTo(atGate);
     }
 
     @Test
     void takeDamage_lowers_hit_points_and_carries_the_version_forward() {
         Npc goblin = Npc.builder()
-                .id(new NpcId("npc1"))
-                .currentScene(new SceneId("scn1"))
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
@@ -149,8 +149,8 @@ class NpcTest {
     @Test
     void takeDamage_that_meets_or_exceeds_current_kills_the_npc() {
         Npc goblin = Npc.builder()
-                .id(new NpcId("npc1"))
-                .currentScene(new SceneId("scn1"))
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))

@@ -18,13 +18,13 @@ class ItemIdTest {
     void mints_the_exact_id_the_dice_rolls() {
         // Body glyphs all at alphabet index 0 ('0'), prefixed with "itm".
         ScriptedDice dice = new ScriptedDice().willPick(0, 0, 0, 0, 0, 0, 0, 0);
-        assertThat(ItemId.mint(dice).getValue()).isEqualTo("itm00000000");
+        assertThat(ItemId.mint(dice).asString()).isEqualTo("itm00000000");
     }
 
     @Test
     void mints_a_structurally_valid_id_from_any_dice() {
         ItemId id = ItemId.mint(new SeededDice(7));
-        assertThat(id.getValue())
+        assertThat(id.asString())
                 .startsWith(ItemId.PREFIX)
                 .hasSize(ItemId.PREFIX.length() + Ids.BODY_LENGTH)
                 .doesNotContainAnyWhitespaces();

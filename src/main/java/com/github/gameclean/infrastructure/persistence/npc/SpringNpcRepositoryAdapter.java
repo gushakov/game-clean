@@ -61,11 +61,11 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
     @Override
     public List<Npc> findNpcsInScene(SceneId sceneId) {
         try {
-            return repository.findByCurrentSceneIdAndCurrentHitPointsGreaterThan(sceneId.getValue(), 0)
+            return repository.findByCurrentSceneIdAndCurrentHitPointsGreaterThan(sceneId.asString(), 0)
                     .stream().map(mapper::toDomain).toList();
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
-                    "Cannot load NPCs in scene %s (unreadable or corrupt)".formatted(sceneId.getValue()), e);
+                    "Cannot load NPCs in scene %s (unreadable or corrupt)".formatted(sceneId.asString()), e);
         }
     }
 
@@ -74,12 +74,12 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
         try {
             NpcDbEntity saved = repository.save(mapper.toDbEntity(npc));
             log.debug("[Persistence] Saved npc {} (version {}, in scene {})",
-                    saved.getId(), saved.getVersion(), npc.getCurrentScene().getValue());
+                    saved.getId(), saved.getVersion(), npc.getCurrentScene().asString());
         } catch (OptimisticLockingFailureException e) {
             throw new OptimisticLockingError(
-                    "Npc %s was modified concurrently (stale version)".formatted(npc.getId().getValue()), e);
+                    "Npc %s was modified concurrently (stale version)".formatted(npc.getId().asString()), e);
         } catch (DataAccessException e) {
-            throw new PersistenceOperationsError("Cannot save npc %s".formatted(npc.getId().getValue()), e);
+            throw new PersistenceOperationsError("Cannot save npc %s".formatted(npc.getId().asString()), e);
         }
     }
 

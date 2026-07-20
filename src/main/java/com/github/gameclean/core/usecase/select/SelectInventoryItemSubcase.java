@@ -37,6 +37,6 @@ public class SelectInventoryItemSubcase extends AbstractSelectTargetSubcase<Play
     protected void requireWellFormedToken(String idToken) {
         // Reconstitution as pure validity gate — the instance is discarded; only the throw on a malformed
         // token matters.
-        new ItemId(idToken);
+        ItemId.of(idToken);
     }
 }

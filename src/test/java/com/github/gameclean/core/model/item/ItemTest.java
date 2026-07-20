@@ -20,8 +20,8 @@ class ItemTest {
 
     private static Item item(String shortDescription) {
         return Item.builder()
-                .id(new ItemId("itm1"))
-                .location(new Location.OnGround(new SceneId("scn1")))
+                .id(ItemId.of("itm1"))
+                .location(new Location.OnGround(SceneId.of("scn1")))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description.")
                 .build();
@@ -57,20 +57,20 @@ class ItemTest {
     @Test
     void takenBy_moves_the_item_into_the_holders_keeping_preserving_id_and_version() {
         Item onGround = Item.builder()
-                .id(new ItemId("itm1"))
-                .location(new Location.OnGround(new SceneId("scn1")))
+                .id(ItemId.of("itm1"))
+                .location(new Location.OnGround(SceneId.of("scn1")))
                 .shortDescription("A rusty dagger.")
                 .fullDescription("A longer description.")
                 .version(3)
                 .build();
 
-        Item taken = onGround.takenBy(new PlayerId("plr1"));
+        Item taken = onGround.takenBy(PlayerId.of("plr1"));
 
         // Copy-on-write: a new instance, held by the player, same identity, version carried for the guarded write.
-        assertThat(taken.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
-        assertThat(taken.getId()).isEqualTo(new ItemId("itm1"));
+        assertThat(taken.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
+        assertThat(taken.getId()).isEqualTo(ItemId.of("itm1"));
         assertThat(taken.getVersion()).isEqualTo(3);
-        assertThat(onGround.getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn1")));   // original untouched
+        assertThat(onGround.getLocation()).isEqualTo(new Location.OnGround(SceneId.of("scn1")));   // original untouched
     }
 
     @Test
@@ -82,20 +82,20 @@ class ItemTest {
     @Test
     void droppedAt_puts_the_item_back_on_the_ground_preserving_id_and_version() {
         Item held = Item.builder()
-                .id(new ItemId("itm1"))
-                .location(new Location.HeldBy(new PlayerId("plr1")))
+                .id(ItemId.of("itm1"))
+                .location(new Location.HeldBy(PlayerId.of("plr1")))
                 .shortDescription("A rusty dagger.")
                 .fullDescription("A longer description.")
                 .version(3)
                 .build();
 
-        Item dropped = held.droppedAt(new SceneId("scn2"));
+        Item dropped = held.droppedAt(SceneId.of("scn2"));
 
         // Copy-on-write mirror of takenBy: on the ground where the player stands, same identity, version carried.
-        assertThat(dropped.getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn2")));
-        assertThat(dropped.getId()).isEqualTo(new ItemId("itm1"));
+        assertThat(dropped.getLocation()).isEqualTo(new Location.OnGround(SceneId.of("scn2")));
+        assertThat(dropped.getId()).isEqualTo(ItemId.of("itm1"));
         assertThat(dropped.getVersion()).isEqualTo(3);
-        assertThat(held.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));   // original untouched
+        assertThat(held.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));   // original untouched
     }
 
     @Test
@@ -107,8 +107,8 @@ class ItemTest {
     @Test
     void rejects_a_negative_version() {
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Item.builder()
-                .id(new ItemId("itm1"))
-                .location(new Location.OnGround(new SceneId("scn1")))
+                .id(ItemId.of("itm1"))
+                .location(new Location.OnGround(SceneId.of("scn1")))
                 .shortDescription("A rusty dagger.")
                 .fullDescription("A longer description.")
                 .version(-1)
@@ -118,7 +118,7 @@ class ItemTest {
     @Test
     void equality_is_by_id_ignoring_location_and_version() {
         Item onGround = item("A rusty dagger.");
-        Item held = onGround.takenBy(new PlayerId("plr1"));   // same id, different location
+        Item held = onGround.takenBy(PlayerId.of("plr1"));   // same id, different location
         assertThat(held).isEqualTo(onGround);
     }
 }

@@ -61,7 +61,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
   `Terminal`, `Player`, `Time`). Sub-packages:
-  `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
+  `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`), `infrastructure/mapping/` (layer-neutral MapStruct support — `ScalarConverter`, the shared VO-ID↔`String` `default` converters every DB-entity mapper `extends`; a sibling of `persistence` because id↔`String` is generic scalar mapping, reusable by any future mapper family, #77), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving `AnimateNpcs`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
@@ -189,7 +189,7 @@ named exit into the target scene, then sees it):
   designation (design-notes §4).
 - **Conversational state** — `AffordanceContext` (`infrastructure/terminal/`, a session-lifetime resource
   declared in `TerminalConfig`): remembers the offered candidate **id tokens** in display order. It trades in
-  **raw `String` tokens, not the `ItemId` model VO** — the driven presenter does the `getId().getValue()` flatten
+  **raw `String` tokens, not the `ItemId` model VO** — the driven presenter does the `getId().asString()` flatten
   when it arms it; the primary console adapter stays model-free per "primitives inward" (§6) (design-notes §4).
   Surface is `offer` / `currentOffer` / `clear` — a dumb store that resolves nothing and presents nothing. The
   **presenter** arms it as it renders the menu; the **controller** (`ConsoleSession`) only detects the selection

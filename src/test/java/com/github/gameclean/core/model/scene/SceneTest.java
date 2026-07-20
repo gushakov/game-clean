@@ -13,17 +13,17 @@ class SceneTest {
 
     private static Scene.SceneBuilder validScene() {
         return Scene.builder()
-                .id(new SceneId("scn1"))
+                .id(SceneId.of("scn1"))
                 .name("Mossy Clearing")
                 .shortDescription("A quiet clearing.")
                 .fullDescription("A quiet clearing ringed by ancient, moss-draped oaks.")
-                .exits(List.of(new Exit("east", new SceneId("scn2"))));
+                .exits(List.of(new Exit("east", SceneId.of("scn2"))));
     }
 
     @Test
     void builds_a_valid_scene() {
         Scene scene = validScene().build();
-        assertThat(scene.getId()).isEqualTo(new SceneId("scn1"));
+        assertThat(scene.getId()).isEqualTo(SceneId.of("scn1"));
         assertThat(scene.getExits()).hasSize(1);
     }
 
@@ -60,26 +60,26 @@ class SceneTest {
     @Test
     void rejects_duplicate_exit_names_within_the_scene() {
         List<Exit> exits = List.of(
-                new Exit("east", new SceneId("scn2")),
-                new Exit("east", new SceneId("scn3")));
+                new Exit("east", SceneId.of("scn2")),
+                new Exit("east", SceneId.of("scn3")));
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> validScene().exits(exits).build());
     }
 
     @Test
     void defensively_copies_the_exits_and_exposes_them_immutably() {
-        List<Exit> source = new ArrayList<>(List.of(new Exit("east", new SceneId("scn2"))));
+        List<Exit> source = new ArrayList<>(List.of(new Exit("east", SceneId.of("scn2"))));
         Scene scene = validScene().exits(source).build();
 
         source.clear();
         assertThat(scene.getExits()).hasSize(1);
-        assertThatThrownBy(() -> scene.getExits().add(new Exit("west", new SceneId("scn3"))))
+        assertThatThrownBy(() -> scene.getExits().add(new Exit("west", SceneId.of("scn3"))))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
     void finds_an_exit_by_name() {
         Scene scene = validScene().build();
-        assertThat(scene.exitNamed("east")).map(Exit::getTarget).contains(new SceneId("scn2"));
+        assertThat(scene.exitNamed("east")).map(Exit::getTarget).contains(SceneId.of("scn2"));
     }
 
     @Test
@@ -98,11 +98,11 @@ class SceneTest {
     @Test
     void reports_exits_whose_target_is_not_among_the_known_scenes() {
         Scene scene = validScene().exits(List.of(
-                new Exit("east", new SceneId("scn2")),
-                new Exit("north", new SceneId("scn9")))).build();
+                new Exit("east", SceneId.of("scn2")),
+                new Exit("north", SceneId.of("scn9")))).build();
 
         // scn2 resolves, scn9 does not.
-        List<Exit> dangling = scene.exitsWithTargetNotIn(Set.of(new SceneId("scn1"), new SceneId("scn2")));
+        List<Exit> dangling = scene.exitsWithTargetNotIn(Set.of(SceneId.of("scn1"), SceneId.of("scn2")));
 
         assertThat(dangling).extracting(Exit::getName).containsExactly("north");
     }
@@ -110,7 +110,7 @@ class SceneTest {
     @Test
     void reports_no_dangling_exits_when_every_target_resolves() {
         Scene scene = validScene().build(); // single east -> scn2
-        assertThat(scene.exitsWithTargetNotIn(Set.of(new SceneId("scn2")))).isEmpty();
+        assertThat(scene.exitsWithTargetNotIn(Set.of(SceneId.of("scn2")))).isEmpty();
     }
 
     @Test
@@ -133,7 +133,7 @@ class SceneTest {
     void equals_by_id_only() {
         Scene a = validScene().build();
         Scene sameIdDifferentFields = validScene().name("Renamed").build();
-        Scene differentId = validScene().id(new SceneId("scn99")).build();
+        Scene differentId = validScene().id(SceneId.of("scn99")).build();
 
         assertThat(a).isEqualTo(sameIdDifferentFields);
         assertThat(a).isNotEqualTo(differentId);

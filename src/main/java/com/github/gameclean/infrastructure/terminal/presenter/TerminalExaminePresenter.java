@@ -74,14 +74,14 @@ public class TerminalExaminePresenter
         // Decide the menu order once, here — the visible menu and the remembered offer are produced from it.
         List<Item> ordered = candidates.stream()
                 .sorted(Comparator.comparing(Item::getShortDescription)
-                        .thenComparing(item -> item.getId().getValue()))
+                        .thenComparing(item -> item.getId().asString()))
                 .toList();
         itemRenderer.renderAmbiguousTarget(target, ordered);                                  // the visible face
         // Flatten the identities to raw tokens here, on the driven side where the model legitimately lives, so
         // the buffer (read by the primary console adapter) stays model-free. Tag the offer EXAMINE so a later
         // bare number resumes examining (not taking).
         affordanceContext.offer(SelectionKind.EXAMINE,
-                ordered.stream().map(item -> item.getId().getValue()).toList());                  // the latent face
+                ordered.stream().map(item -> item.getId().asString()).toList());                  // the latent face
     }
 
     @Override

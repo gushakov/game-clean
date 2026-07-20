@@ -29,35 +29,35 @@ public class LoggingInitializeGamePresenter implements InitializeGamePresenterOu
     public void presentGameInitialized(List<Scene> scenes, PlayerId playerId, List<Item> spawnedItems,
                                        List<Npc> spawnedNpcs) {
         log.info("[InitializeGame] Game ready: {} scene(s) {} — player {} placed — {} item(s) spawned — {} npc(s) spawned.",
-                scenes.size(), scenes.stream().map(scene -> scene.getId().getValue()).toList(),
-                playerId.getValue(), spawnedItems.size(), spawnedNpcs.size());
+                scenes.size(), scenes.stream().map(scene -> scene.getId().asString()).toList(),
+                playerId.asString(), spawnedItems.size(), spawnedNpcs.size());
     }
 
     @Override
     public void presentErrorWhenExitTargetUnknown(Map<SceneId, List<Exit>> unresolvedExitsByScene) {
         unresolvedExitsByScene.forEach((sceneId, exits) -> exits.forEach(exit ->
                 log.warn("[InitializeGame] Scene {} has exit '{}' to unknown scene {}",
-                        sceneId.getValue(), exit.getName(), exit.getTarget().getValue())));
+                        sceneId.asString(), exit.getName(), exit.getTarget().asString())));
     }
 
     @Override
     public void presentStartingSceneUnknown(SceneId startingSceneId) {
         log.warn("[InitializeGame] Configured starting scene {} resolves to no authored scene.",
-                startingSceneId.getValue());
+                startingSceneId.asString());
     }
 
     @Override
     public void presentItemSpawnSceneUnknown(Map<String, List<SceneId>> unknownSpawnScenesByItem) {
         unknownSpawnScenesByItem.forEach((itemId, scenes) -> log.warn(
                 "[InitializeGame] Item {} spawns into unknown scene(s) {}",
-                itemId, scenes.stream().map(SceneId::getValue).toList()));
+                itemId, scenes.stream().map(SceneId::asString).toList()));
     }
 
     @Override
     public void presentNpcSpawnSceneUnknown(Map<String, List<SceneId>> unknownSpawnScenesByNpc) {
         unknownSpawnScenesByNpc.forEach((npcId, scenes) -> log.warn(
                 "[InitializeGame] Npc {} spawns into unknown scene(s) {}",
-                npcId, scenes.stream().map(SceneId::getValue).toList()));
+                npcId, scenes.stream().map(SceneId::asString).toList()));
     }
 
     @Override

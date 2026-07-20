@@ -41,8 +41,8 @@ class PlayerRoundTripIT extends AbstractPostgresIT {
     @Test
     void persistsAndReadsBackThePlayerWithItsCurrentScene() {
         Player player = Player.builder()
-                .id(new PlayerId("plr1"))
-                .currentScene(new SceneId("scn1"))
+                .id(PlayerId.of("plr1"))
+                .currentScene(SceneId.of("scn1"))
                 .build();
 
         aggregateTemplate.insert(mapper.toDbEntity(player));
@@ -62,13 +62,13 @@ class PlayerRoundTripIT extends AbstractPostgresIT {
                 new SpringPlayerRepositoryAdapter(repository, aggregateTemplate, mapper);
 
         adapter.savePlayer(Player.builder()
-                .id(new PlayerId("plr1")).currentScene(new SceneId("scn1")).build());
+                .id(PlayerId.of("plr1")).currentScene(SceneId.of("scn1")).build());
         // Same id, new position: the second save must update the existing row, not insert a second one.
         adapter.savePlayer(Player.builder()
-                .id(new PlayerId("plr1")).currentScene(new SceneId("scn2")).build());
+                .id(PlayerId.of("plr1")).currentScene(SceneId.of("scn2")).build());
 
-        Player reloaded = adapter.findPlayer(new PlayerId("plr1")).orElseThrow();
-        assertThat(reloaded.getCurrentScene()).isEqualTo(new SceneId("scn2"));
+        Player reloaded = adapter.findPlayer(PlayerId.of("plr1")).orElseThrow();
+        assertThat(reloaded.getCurrentScene()).isEqualTo(SceneId.of("scn2"));
         assertThat(repository.count()).isEqualTo(1);
     }
 }

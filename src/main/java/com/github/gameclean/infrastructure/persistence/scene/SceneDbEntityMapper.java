@@ -3,7 +3,7 @@ package com.github.gameclean.infrastructure.persistence.scene;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
-import com.github.gameclean.infrastructure.persistence.ScalarConverter;
+import com.github.gameclean.infrastructure.mapping.ScalarConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

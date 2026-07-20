@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 @Import(NpcDbEntityMapperImpl.class)
 class NpcRoundTripIT extends AbstractPostgresIT {
 
-    private static final SceneId HERE = new SceneId("scn1");
+    private static final SceneId HERE = SceneId.of("scn1");
 
     @Autowired
     private NpcSpringDataRepository repository;
@@ -50,11 +50,11 @@ class NpcRoundTripIT extends AbstractPostgresIT {
         adapter.saveNpc(npc("npc1", HERE));
 
         assertThat(adapter.npcsAlreadySpawned()).isTrue();
-        assertThat(adapter.findAllNpcs()).extracting(n -> n.getId().getValue()).containsExactly("npc1");
+        assertThat(adapter.findAllNpcs()).extracting(n -> n.getId().asString()).containsExactly("npc1");
         assertThat(adapter.findNpcsInScene(HERE))
                 .singleElement()
                 .satisfies(npc -> {
-                    assertThat(npc.getId()).isEqualTo(new NpcId("npc1"));
+                    assertThat(npc.getId()).isEqualTo(NpcId.of("npc1"));
                     assertThat(npc.getCurrentScene()).isEqualTo(HERE);
                     // The move-chance and hit-point columns survive the round-trip.
                     assertThat(npc.getMoveChance()).isEqualTo(new Chance(1, 4));
@@ -68,15 +68,15 @@ class NpcRoundTripIT extends AbstractPostgresIT {
         adapter.saveNpc(npc("npc1", HERE));
         Npc here = adapter.findNpcsInScene(HERE).getFirst();   // carries the post-insert version
 
-        adapter.saveNpc(here.moveTo(new SceneId("scn2")));
+        adapter.saveNpc(here.moveTo(SceneId.of("scn2")));
 
         // No longer in the old scene ...
         assertThat(adapter.findNpcsInScene(HERE)).isEmpty();
         // ... but the same row persists, now in the new scene (one row, updated in place).
         assertThat(repository.count()).isEqualTo(1);
-        assertThat(adapter.findNpcsInScene(new SceneId("scn2")))
+        assertThat(adapter.findNpcsInScene(SceneId.of("scn2")))
                 .singleElement()
-                .satisfies(npc -> assertThat(npc.getId()).isEqualTo(new NpcId("npc1")));
+                .satisfies(npc -> assertThat(npc.getId()).isEqualTo(NpcId.of("npc1")));
     }
 
     @Test
@@ -114,12 +114,12 @@ class NpcRoundTripIT extends AbstractPostgresIT {
         // ... so a second write still carrying the original (now stale) version is rejected — the two-actor race
         // between the player's hit and the wandering ticker.
         assertThatExceptionOfType(OptimisticLockingError.class)
-                .isThrownBy(() -> adapter.saveNpc(loaded.moveTo(new SceneId("scn2"))));
+                .isThrownBy(() -> adapter.saveNpc(loaded.moveTo(SceneId.of("scn2"))));
     }
 
     private static Npc npc(String id, SceneId scene) {
         return Npc.builder()
-                .id(new NpcId(id))
+                .id(NpcId.of(id))
                 .currentScene(scene)
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A figure in a travel-worn hooded cloak.")

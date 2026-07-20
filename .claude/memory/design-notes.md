@@ -388,6 +388,57 @@ field ripples into every **derived-query method name** built on that property
 (`findBy…HitPointsGreaterThan`→`findBy…CurrentHitPointsGreaterThan`), since Spring Data parses method names
 against property names.
 
+**IDs expose a semantic projection, not a structural accessor — and the converter becomes the *sole*
+representation-knower.** `[thread #2]` (#77) The two-regimes note above left the wrapper VOs exposing their
+`String` via Lombok's `getValue()`. That getter is a *structural* accessor — it asserts "my internal field **is**
+a `String`, here it is," so every caller binds to the **representation identity**. Replaced by an explicit
+*semantic projection* `asString()`, which asserts only "a canonical text form **can be produced**." The second
+is a strictly weaker, more stable commitment: if `SceneId#value` ever became a composite or a `UUID`,
+`asString()`'s *signature* is untouched and only its body (plus the one converter) adapts, whereas
+`getValue():String` would have to lie or break every call site. Construction is made symmetric — private ctor +
+`of(String)` factory (the runtime-minted ids keep `mint(Dice)`/`fromGeneratedBody` routing through the now-private
+ctor internally) — so representation-*in* is as encapsulated as representation-*out*.
+
+Three deliberate edges. **`asString()` is kept distinct from `toString()`** (left as Lombok's debug form,
+`SceneId(value=scn1)`): collapsing them re-opens the coupling — someone would serialize via `toString()` and a
+later log-formatting tweak silently corrupts a key. **Scope is ID VOs only:** a canonical text form is
+*intrinsic* to what an identifier is; for a non-ID wrapper (`Age` over `int`) an `asString()` would be a smell —
+those want domain operations, not stringification. **The payoff lands on the converter:** `ScalarConverter` is
+now the *one* sanctioned site that knows an id is text (`id.asString()` / `SceneId.of(value)`); every other site
+— presenters, renderers, the `select` well-formed-token gate, even `Designatable.hasIdToken` inside the model —
+calls `asString()` and couples to nothing structural. This is why the interface earned a hoist out of
+`infrastructure.persistence` into a **layer-neutral `infrastructure.mapping`** (sibling of `persistence`): an
+id↔`String` conversion is generic scalar mapping, not a persistence concern, so any mapper family (persistence
+DB-entity mappers today, view-model/UI mappers tomorrow) reuses it — and non-mapper infra (logs, terminal
+writes) needs it *not at all*, calling `asString()` on the VO directly. One MapStruct consequence, benign:
+hiding the getter means MapStruct can no longer auto-select `SceneId ↔ String` by bean convention, but the
+`ScalarConverter` `default` methods are *explicit* converters calling `asString()`/`of()`, so the "no converter,
+let MapStruct infer it" style (which this project never used) is the only thing ruled out. (Promotion candidate,
+flagged: *for identifier VOs, expose `asString()` (a capability) not a representation getter, keep it distinct
+from `toString()`, construct via `of()`; the id↔text converter is the sole representation-knower and belongs in a
+layer-neutral mapping package.*)
+
+**The surviving `x.getId().asString()` chains are left as Demeter trains — a considered stance, not an
+oversight.** `[thread #2]` The `asString()` rename left presenters calling `item.getId().asString()`: a two-hop
+method chain that strict Law of Demeter would wrap in a forwarder (`item.getIdAsString()`). Rejected as the
+default for three reasons. **(a) The VO carve-out.** LoD is about not coupling to a collaborator's *navigation
+structure*; an id returned by `getId()` is a *value*, not a behavioral object whose graph you're reaching
+through, and asking a value for its own text form couples you to nothing navigable. **(b) Middle-Man
+counter-smell.** A per-projection forwarder set (`getIdAsString`, then `getCurrentSceneAsString`,
+`getTargetAsString`, … = field × format) is exactly Fowler's *Middle Man* — it bloats the aggregate's surface
+with representation plumbing and drifts it toward a DTO, a worse smell than the chain it removes. **(c)
+Presenters are the right place to reach.** They are infra adapters whose job is to render domain objects (§8
+sanctions handing them the objects), so navigation is inherent and localized — and the project already answers
+LoD at a *coarser* grain by handing whole VOs to renderers (`ItemRenderer`), leaving only comparison keys, log
+lines, and the `AffordanceContext` token list as raw-token sites where a forwarder would merely relocate one dot.
+
+Where the LoD line *is* drawn here is §10: the **domain and use case must not reach across aggregates or for I/O
+through getter chains** — that is the Demeter violation that bites (`customer.buy(product)` groping for
+`LocalDate.now()`). A presenter formatting an id is not that. The meta-lesson kept alongside the technical one:
+surface the Demeter option as *considered-and-declined* rather than silently defaulting to the carve-out side —
+the same flag-it-even-if-rejected discipline applied to Boot-4 quirks. (Not a promotion candidate on its own —
+it is the presenter-boundary corollary of §10's LoD rule.)
+
 ## 4. Use cases as first-class interactions
 
 **Interaction shape (the world-construction phase).** The actor is the *system at startup*.

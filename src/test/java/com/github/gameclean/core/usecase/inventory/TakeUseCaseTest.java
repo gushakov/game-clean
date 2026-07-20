@@ -49,7 +49,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TakeUseCaseTest {
 
-    private static final SceneId HERE = new SceneId("scn1");
+    private static final SceneId HERE = SceneId.of("scn1");
 
     @Mock
     private TakePresenterOutputPort presenter;
@@ -76,8 +76,8 @@ class TakeUseCaseTest {
 
         // The item is saved into the player's keeping (location moved, identity and version preserved)...
         Item saved = capturedSavedItem();
-        assertThat(saved.getId()).isEqualTo(new ItemId("itm1"));
-        assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
+        assertThat(saved.getId()).isEqualTo(ItemId.of("itm1"));
+        assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
         // ...and the taken item is presented only after the write commits.
         verify(presenter).presentItemTaken(saved);
         verify(presenter, never()).presentItemGotAway(any());
@@ -94,7 +94,7 @@ class TakeUseCaseTest {
         useCase.playerTakesChosenCandidate(2, List.of("itm0", "itm1"));
 
         Item saved = capturedSavedItem();
-        assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
+        assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
         verify(presenter).presentItemTaken(saved);
     }
 
@@ -109,7 +109,7 @@ class TakeUseCaseTest {
 
         useCase.playerTakesTarget("dagger");
 
-        verify(presenter).presentItemGotAway(new ItemId("itm1"));
+        verify(presenter).presentItemGotAway(ItemId.of("itm1"));
         verify(presenter, never()).presentItemTaken(any());
         verify(presenter, never()).presentError(any());
     }
@@ -149,7 +149,7 @@ class TakeUseCaseTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     private void orientedAtScn1() {
-        Player player = Player.builder().id(new PlayerId("plr1")).currentScene(HERE).build();
+        Player player = Player.builder().id(PlayerId.of("plr1")).currentScene(HERE).build();
         when(orientPlayerSubcase.playerGetsBearings()).thenReturn(new OrientPlayerResult(player, scn1()));
     }
 
@@ -161,7 +161,7 @@ class TakeUseCaseTest {
 
     private static Item groundItem(String id, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
+                .id(ItemId.of(id))
                 .location(new Location.OnGround(HERE))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")

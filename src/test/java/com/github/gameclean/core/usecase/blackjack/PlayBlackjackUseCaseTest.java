@@ -261,12 +261,12 @@ class PlayBlackjackUseCaseTest {
     }
 
     private static Player player() {
-        return Player.builder().id(new PlayerId("plr1")).currentScene(new SceneId("scn3")).build();
+        return Player.builder().id(PlayerId.of("plr1")).currentScene(SceneId.of("scn3")).build();
     }
 
     private static Scene scene(Set<MiniGame> miniGames) {
         return Scene.builder()
-                .id(new SceneId("scn3"))
+                .id(SceneId.of("scn3"))
                 .name("Armoury")
                 .shortDescription("A plundered armoury.")
                 .fullDescription("Empty weapon racks line the walls; a dealer waits at an upturned crate.")

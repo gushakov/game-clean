@@ -50,22 +50,22 @@ public class SpringItemRepositoryAdapter implements ItemRepositoryOperationsOutp
     @Override
     public List<Item> findItemsInScene(SceneId sceneId) {
         try {
-            return repository.findByLocationKindAndLocationRef(ItemLocationKind.GROUND, sceneId.getValue())
+            return repository.findByLocationKindAndLocationRef(ItemLocationKind.GROUND, sceneId.asString())
                     .stream().map(mapper::toDomain).toList();
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
-                    "Cannot load items in scene %s (unreadable or corrupt)".formatted(sceneId.getValue()), e);
+                    "Cannot load items in scene %s (unreadable or corrupt)".formatted(sceneId.asString()), e);
         }
     }
 
     @Override
     public List<Item> findItemsHeldBy(PlayerId holder) {
         try {
-            return repository.findByLocationKindAndLocationRef(ItemLocationKind.HELD, holder.getValue())
+            return repository.findByLocationKindAndLocationRef(ItemLocationKind.HELD, holder.asString())
                     .stream().map(mapper::toDomain).toList();
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
-                    "Cannot load items held by %s (unreadable or corrupt)".formatted(holder.getValue()), e);
+                    "Cannot load items held by %s (unreadable or corrupt)".formatted(holder.asString()), e);
         }
     }
 
@@ -76,9 +76,9 @@ public class SpringItemRepositoryAdapter implements ItemRepositoryOperationsOutp
             log.debug("[Persistence] Saved item {} (version {})", saved.getId(), saved.getVersion());
         } catch (OptimisticLockingFailureException e) {
             throw new OptimisticLockingError(
-                    "Item %s was modified concurrently (stale version)".formatted(item.getId().getValue()), e);
+                    "Item %s was modified concurrently (stale version)".formatted(item.getId().asString()), e);
         } catch (DataAccessException e) {
-            throw new PersistenceOperationsError("Cannot save item %s".formatted(item.getId().getValue()), e);
+            throw new PersistenceOperationsError("Cannot save item %s".formatted(item.getId().asString()), e);
         }
     }
 
