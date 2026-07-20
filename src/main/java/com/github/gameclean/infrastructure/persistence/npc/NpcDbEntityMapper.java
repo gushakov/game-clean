@@ -3,7 +3,7 @@ package com.github.gameclean.infrastructure.persistence.npc;
 import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.npc.Npc;
-import com.github.gameclean.infrastructure.persistence.ScalarConverter;
+import com.github.gameclean.infrastructure.mapping.ScalarConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

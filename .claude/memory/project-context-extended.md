@@ -323,6 +323,13 @@ Flyway migration results — never to read or mutate business data.
   (`@EqualsAndHashCode(onlyExplicitlyIncluded = true)` + `@Include` on the id), by value for VOs. `@Builder` on
   the validating constructor, never on the class; copy-on-write via `@With` (routes through the same
   constructor), as on `Item`.
+- **ID VOs (`SceneId`/`PlayerId`/`ItemId`/`NpcId`) expose a semantic projection, not a representation
+  getter.** The wrapped `String` getter is suppressed (`@Getter(AccessLevel.NONE)`); callers ask for a text
+  form via `asString()` (kept distinct from Lombok's debug `toString()`), and construct via the `of(String)`
+  static factory (ctor private; runtime-minted ids keep `mint(Dice)`/`fromGeneratedBody`). `ScalarConverter`
+  (`infrastructure/mapping/`) is the **sole** representation-knower — `id.asString()` / `XId.of(v)` — so no
+  other site couples to "the wrapped field is a `String`". Surviving `x.getId().asString()` chains in presenters
+  are a deliberate LoD stance, not an oversight (#77; rationale + the Demeter line in design-notes §3, cf. §10).
 - **No explicit `private final` on fields — Lombok sets the modifiers.** Every class elides the redundant
   modifiers: VOs via `@Value` (which implies them), and every other class (aggregates, adapters, renderers,
   use cases, presenters, `ConsoleSession`, `CommandParser`, config) via a class-level

@@ -53,7 +53,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class HitUseCaseTest {
 
-    private static final SceneId HERE = new SceneId("scn1");
+    private static final SceneId HERE = SceneId.of("scn1");
 
     @Mock
     private HitPresenterOutputPort presenter;
@@ -83,7 +83,7 @@ class HitUseCaseTest {
 
         // The NPC is saved with its hit points lowered (identity and version preserved) ...
         Npc saved = capturedSavedNpc();
-        assertThat(saved.getId()).isEqualTo(new NpcId("npc1"));
+        assertThat(saved.getId()).isEqualTo(NpcId.of("npc1"));
         assertThat(saved.getHitPoints()).isEqualTo(new HitPoints(16, 20));
         // ... and the struck outcome (with the damage dealt) is presented only after the write commits.
         verify(presenter).presentNpcStruck(saved, 4);
@@ -135,7 +135,7 @@ class HitUseCaseTest {
 
         useCase.playerHitsTarget("hooded");
 
-        verify(presenter).presentNpcGotAway(new NpcId("npc1"));
+        verify(presenter).presentNpcGotAway(NpcId.of("npc1"));
         verify(presenter, never()).presentNpcStruck(any(), anyInt());
         verify(presenter, never()).presentNpcSlain(any());
         verify(presenter, never()).presentError(any());
@@ -176,7 +176,7 @@ class HitUseCaseTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     private void orientedAtScn1() {
-        Player player = Player.builder().id(new PlayerId("plr1")).currentScene(HERE).build();
+        Player player = Player.builder().id(PlayerId.of("plr1")).currentScene(HERE).build();
         when(orientPlayerSubcase.playerGetsBearings()).thenReturn(new OrientPlayerResult(player, scn1()));
     }
 
@@ -188,7 +188,7 @@ class HitUseCaseTest {
 
     private static Npc npc(String id, int maxHitPoints) {
         return Npc.builder()
-                .id(new NpcId(id))
+                .id(NpcId.of(id))
                 .currentScene(HERE)
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")

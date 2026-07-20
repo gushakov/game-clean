@@ -18,24 +18,24 @@ class LocationTest {
 
     @Test
     void onGround_carries_the_scene_and_compares_by_value() {
-        Location.OnGround here = new Location.OnGround(new SceneId("scn1"));
+        Location.OnGround here = new Location.OnGround(SceneId.of("scn1"));
 
-        assertThat(here.getScene()).isEqualTo(new SceneId("scn1"));
-        assertThat(here).isEqualTo(new Location.OnGround(new SceneId("scn1")));
+        assertThat(here.getScene()).isEqualTo(SceneId.of("scn1"));
+        assertThat(here).isEqualTo(new Location.OnGround(SceneId.of("scn1")));
     }
 
     @Test
     void heldBy_carries_the_holder_and_compares_by_value() {
-        Location.HeldBy held = new Location.HeldBy(new PlayerId("plr1"));
+        Location.HeldBy held = new Location.HeldBy(PlayerId.of("plr1"));
 
-        assertThat(held.getHolder()).isEqualTo(new PlayerId("plr1"));
-        assertThat(held).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
+        assertThat(held.getHolder()).isEqualTo(PlayerId.of("plr1"));
+        assertThat(held).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
     }
 
     @Test
     void the_two_cases_are_never_equal() {
-        assertThat((Location) new Location.OnGround(new SceneId("scn1")))
-                .isNotEqualTo(new Location.HeldBy(new PlayerId("plr1")));
+        assertThat((Location) new Location.OnGround(SceneId.of("scn1")))
+                .isNotEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
     }
 
     @Test

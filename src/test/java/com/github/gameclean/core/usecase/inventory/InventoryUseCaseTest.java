@@ -37,7 +37,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class InventoryUseCaseTest {
 
-    private static final PlayerId SELF = new PlayerId("plr1");
+    private static final PlayerId SELF = PlayerId.of("plr1");
 
     @Mock
     private InventoryPresenterOutputPort presenter;
@@ -76,7 +76,7 @@ class InventoryUseCaseTest {
 
     @Test
     void presentsPlayerNotFoundWhenTheAmbientPlayerDoesNotResolve() {
-        when(playerOps.currentPlayerId()).thenReturn(SELF.getValue());
+        when(playerOps.currentPlayerId()).thenReturn(SELF.asString());
         when(playerRepositoryOps.findPlayer(SELF)).thenReturn(Optional.empty());
 
         useCase.playerReviewsBelongings();
@@ -114,8 +114,8 @@ class InventoryUseCaseTest {
     // --- fixtures and captors -------------------------------------------------------------------------
 
     private void ambientPlayerResolves() {
-        when(playerOps.currentPlayerId()).thenReturn(SELF.getValue());
-        Player player = Player.builder().id(SELF).currentScene(new SceneId("scn1")).build();
+        when(playerOps.currentPlayerId()).thenReturn(SELF.asString());
+        Player player = Player.builder().id(SELF).currentScene(SceneId.of("scn1")).build();
         when(playerRepositoryOps.findPlayer(SELF)).thenReturn(Optional.of(player));
     }
 
@@ -138,7 +138,7 @@ class InventoryUseCaseTest {
 
     private static Item heldItem(String id, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
+                .id(ItemId.of(id))
                 .location(new Location.HeldBy(SELF))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")

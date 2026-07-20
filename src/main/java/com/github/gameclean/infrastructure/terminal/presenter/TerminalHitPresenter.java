@@ -70,12 +70,12 @@ public class TerminalHitPresenter
         // Decide the menu order once, here — the visible menu and the remembered offer are produced from it.
         List<Npc> ordered = candidates.stream()
                 .sorted(Comparator.comparing(Npc::getShortDescription)
-                        .thenComparing(npc -> npc.getId().getValue()))
+                        .thenComparing(npc -> npc.getId().asString()))
                 .toList();
         npcRenderer.renderAmbiguousTarget(target, ordered);
         // Flatten identities to tokens on this driven side; tag the offer HIT so a later bare number strikes.
         affordanceContext.offer(SelectionKind.HIT,
-                ordered.stream().map(npc -> npc.getId().getValue()).toList());
+                ordered.stream().map(npc -> npc.getId().asString()).toList());
     }
 
     @Override

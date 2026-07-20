@@ -47,19 +47,19 @@ class SceneRoundTripIT extends AbstractPostgresIT {
     void persistsAndReadsBackScenesWithExitsThatReferenceEachOther() {
         // given two scenes whose exits point at one another by id
         Scene tavern = Scene.builder()
-                .id(new SceneId("scn1"))
+                .id(SceneId.of("scn1"))
                 .name("The Prancing Pony")
                 .shortDescription("A cosy roadside tavern.")
                 .fullDescription("A warm, low-beamed common room, thick with pipe-smoke and chatter.")
-                .exits(List.of(new Exit("east", new SceneId("scn2"))))
+                .exits(List.of(new Exit("east", SceneId.of("scn2"))))
                 .miniGames(Set.of(MiniGame.BLACKJACK))
                 .build();
         Scene square = Scene.builder()
-                .id(new SceneId("scn2"))
+                .id(SceneId.of("scn2"))
                 .name("Market Square")
                 .shortDescription("A bustling market square.")
                 .fullDescription("Stalls crowd the cobbles; the tavern door stands open to the west.")
-                .exits(List.of(new Exit("west", new SceneId("scn1"))))
+                .exits(List.of(new Exit("west", SceneId.of("scn1"))))
                 .build();
 
         // when persisted as aggregates (inserts) ...

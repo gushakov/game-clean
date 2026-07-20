@@ -90,7 +90,7 @@ public class Item implements Designatable {
 
     /**
      * Tells whether the given raw id token identifies this item — a pure comparison against this item's own
-     * id flatten ({@code id.getValue()}), the {@link Designatable} re-confirmation fact. No reconstitution
+     * id flatten ({@code id.asString()}), the {@link Designatable} re-confirmation fact. No reconstitution
      * happens here: the token's shape gate is the select concrete's, fired before any candidate is asked.
      *
      * <p>A null token is a <em>caller programming error</em> (the select subcase gates the token before
@@ -98,7 +98,7 @@ public class Item implements Designatable {
      */
     @Override
     public boolean hasIdToken(String idToken) {
-        return id.getValue().equals(Objects.requireNonNull(idToken, "id token must not be null"));
+        return id.asString().equals(Objects.requireNonNull(idToken, "id token must not be null"));
     }
 
     /**

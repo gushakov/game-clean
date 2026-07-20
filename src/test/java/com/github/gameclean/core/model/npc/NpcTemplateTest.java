@@ -28,13 +28,13 @@ class NpcTemplateTest {
 
     private static NpcTemplate template(int numerator, int denominator, int maxTries, String... candidateScenes) {
         SpawnRule rule = new SpawnRule(new Chance(numerator, denominator), maxTries,
-                Arrays.stream(candidateScenes).map(SceneId::new).toList());
+                Arrays.stream(candidateScenes).map(SceneId::of).toList());
         return new NpcTemplate(SHORT, FULL, rule, MOVE, MAX_HP);
     }
 
     @Test
     void rejects_a_blank_short_description() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> new NpcTemplate("  ", FULL, rule, MOVE, MAX_HP));
     }
@@ -47,14 +47,14 @@ class NpcTemplateTest {
 
     @Test
     void rejects_a_null_move_chance() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, null, MAX_HP));
     }
 
     @Test
     void rejects_a_non_positive_max_hit_points() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, MOVE, 0));
     }
@@ -70,8 +70,8 @@ class NpcTemplateTest {
                 .willPick(0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
         List<Npc> spawned = template.spawnInto(dice);
 
-        assertThat(spawned).extracting(npc -> npc.getId().getValue()).containsExactly("npc00000000", "npc11111111");
-        assertThat(spawned).extracting(npc -> npc.getCurrentScene().getValue()).containsExactly("scn1", "scn2");
+        assertThat(spawned).extracting(npc -> npc.getId().asString()).containsExactly("npc00000000", "npc11111111");
+        assertThat(spawned).extracting(npc -> npc.getCurrentScene().asString()).containsExactly("scn1", "scn2");
         assertThat(spawned).allSatisfy(npc -> {
             assertThat(npc.getShortDescription()).isEqualTo(SHORT);
             assertThat(npc.getFullDescription()).isEqualTo(FULL);

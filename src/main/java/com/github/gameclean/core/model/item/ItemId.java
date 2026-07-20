@@ -4,6 +4,8 @@ import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.id.Ids;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.Value;
 
 /**
@@ -17,12 +19,15 @@ import lombok.Value;
  * ({@code itm1}) the seed and tests use. Equality is by value (the wrapped string).
  *
  * <p>{@code ItemId} is the first aggregate id <em>generated at runtime</em> rather than authored or
- * configured, so it carries two entry points. The plain constructor is for <em>reconstitution</em> (the
- * persistence adapter wraps a stored full id), exactly as {@code SceneId}/{@code PlayerId} are only ever
+ * configured, so it carries two entry points. The {@link #of(String)} factory is for <em>reconstitution</em>
+ * (the persistence adapter wraps a stored full id), exactly as {@code SceneId}/{@code PlayerId} are only ever
  * used. {@link #mint(Dice)} is for <em>fresh generation</em>: the model rolls its own dice for the body (via
  * {@link Ids#randomBody(Dice)}) — no infrastructure id port — and this type owns the one thing the domain
  * owns about a generated id, the {@code itm} prefix and how it composes with the body, then runs the same
  * always-valid gate. Prefix here, encoding in {@code Ids}: one knower each, so the two cannot drift.
+ *
+ * <p>The wrapped representation is not exposed as a structural getter — a text form is asked for explicitly
+ * via {@link #asString()} (distinct from {@link #toString()}), and all construction goes through the factories.
  */
 @Value
 public class ItemId {
@@ -30,9 +35,20 @@ public class ItemId {
     /** Three-letter aggregate prefix for items. */
     public static final String PREFIX = "itm";
 
+    @Getter(AccessLevel.NONE)
     String value;
 
-    public ItemId(String value) {
+    /** Reconstitutes an item id from its stored text form, running the always-valid gate. */
+    public static ItemId of(String value) {
+        return new ItemId(value);
+    }
+
+    /** The canonical text form of this id — for logs, UI, keys, and persistence. */
+    public String asString() {
+        return value;
+    }
+
+    private ItemId(String value) {
         String trimmed = DomainValidation.requireNonNull(value, "item id must not be null").strip();
         if (trimmed.isEmpty()) {
             throw new InvalidDomainObjectError("item id must not be blank");

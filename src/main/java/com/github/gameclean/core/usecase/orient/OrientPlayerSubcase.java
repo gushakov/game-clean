@@ -47,7 +47,7 @@ public class OrientPlayerSubcase implements OrientPlayerSubcaseInputPort {
 
         // Initiating actor: the player — ambient, resolved here rather than passed in. Constructing the id
         // value object is the validity gate; a malformed id throws and propagates to the parent.
-        PlayerId id = new PlayerId(playerOps.currentPlayerId());
+        PlayerId id = PlayerId.of(playerOps.currentPlayerId());
 
         // Read the player and resolve where they stand. Reads run outside any transaction.
         Optional<Player> player = playerRepositoryOps.findPlayer(id);

@@ -31,7 +31,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SelectInventoryItemSubcaseTest {
 
-    private static final PlayerId SELF = new PlayerId("plr1");
+    private static final PlayerId SELF = PlayerId.of("plr1");
 
     @Mock
     private SelectTargetPresenterOutputPort<Item> presenter;
@@ -137,7 +137,7 @@ class SelectInventoryItemSubcaseTest {
 
     private static Item heldItem(String id, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
+                .id(ItemId.of(id))
                 .location(new Location.HeldBy(SELF))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")

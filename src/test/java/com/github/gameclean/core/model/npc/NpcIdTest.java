@@ -20,13 +20,13 @@ class NpcIdTest {
     void mints_the_exact_id_the_dice_rolls() {
         // Body glyphs all at alphabet index 0 ('0'), prefixed with "npc".
         ScriptedDice dice = new ScriptedDice().willPick(0, 0, 0, 0, 0, 0, 0, 0);
-        assertThat(NpcId.mint(dice).getValue()).isEqualTo("npc00000000");
+        assertThat(NpcId.mint(dice).asString()).isEqualTo("npc00000000");
     }
 
     @Test
     void mints_a_structurally_valid_id_from_any_dice() {
         NpcId id = NpcId.mint(new SeededDice(7));
-        assertThat(id.getValue())
+        assertThat(id.asString())
                 .startsWith(NpcId.PREFIX)
                 .hasSize(NpcId.PREFIX.length() + Ids.BODY_LENGTH)
                 .doesNotContainAnyWhitespaces();
@@ -39,16 +39,16 @@ class NpcIdTest {
 
     @Test
     void rejects_a_body_without_the_prefix() {
-        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new NpcId("bogus"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> NpcId.of("bogus"));
     }
 
     @Test
     void rejects_a_bare_prefix_with_no_body() {
-        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new NpcId("npc"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> NpcId.of("npc"));
     }
 
     @Test
     void accepts_a_short_authored_id() {
-        assertThat(new NpcId("npc1").getValue()).isEqualTo("npc1");
+        assertThat(NpcId.of("npc1").asString()).isEqualTo("npc1");
     }
 }

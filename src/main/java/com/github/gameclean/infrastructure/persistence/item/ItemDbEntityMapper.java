@@ -4,7 +4,7 @@ import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
-import com.github.gameclean.infrastructure.persistence.ScalarConverter;
+import com.github.gameclean.infrastructure.mapping.ScalarConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -41,16 +41,16 @@ public interface ItemDbEntityMapper extends ScalarConverter {
     /** The raw id this location references — a scene id on the ground, a holder id when held. */
     default String locationRef(Location location) {
         return switch (location) {
-            case Location.OnGround onGround -> onGround.getScene().getValue();
-            case Location.HeldBy heldBy -> heldBy.getHolder().getValue();
+            case Location.OnGround onGround -> onGround.getScene().asString();
+            case Location.HeldBy heldBy -> heldBy.getHolder().asString();
         };
     }
 
     /** Rebuilds the sealed {@code Location} from the stored kind + ref, re-running id validation. */
     default Location toLocation(ItemLocationKind kind, String ref) {
         return switch (kind) {
-            case GROUND -> new Location.OnGround(new SceneId(ref));
-            case HELD -> new Location.HeldBy(new PlayerId(ref));
+            case GROUND -> new Location.OnGround(SceneId.of(ref));
+            case HELD -> new Location.HeldBy(PlayerId.of(ref));
         };
     }
 }

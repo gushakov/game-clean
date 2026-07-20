@@ -2,6 +2,8 @@ package com.github.gameclean.core.model.scene;
 
 import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.Value;
 
 /**
@@ -13,6 +15,12 @@ import lombok.Value;
  * id-encoding alphabet is an artifact of the id-generation scheme, owned solely by the
  * generator adapter, so there is no shared pattern for the model to keep in sync. Equality
  * is by value (the wrapped string).
+ *
+ * <p>The wrapped representation is not exposed as a structural getter. Callers that need a text form
+ * ask for one explicitly via {@link #asString()} — a semantic projection, deliberately distinct from
+ * {@link #toString()} (developer-facing / debug-only) — and construct via the {@link #of(String)} factory.
+ * Binding to a capability rather than to "the field is a {@code String}" keeps call sites stable if the
+ * wrapped type ever changes.
  */
 @Value
 public class SceneId {
@@ -20,9 +28,20 @@ public class SceneId {
     /** Three-letter aggregate prefix for scenes. */
     public static final String PREFIX = "scn";
 
+    @Getter(AccessLevel.NONE)
     String value;
 
-    public SceneId(String value) {
+    /** Reconstitutes a scene id from its stored/authored text form, running the always-valid gate. */
+    public static SceneId of(String value) {
+        return new SceneId(value);
+    }
+
+    /** The canonical text form of this id — for logs, UI, keys, and persistence. */
+    public String asString() {
+        return value;
+    }
+
+    private SceneId(String value) {
         String trimmed = DomainValidation.requireNonNull(value, "scene id must not be null").strip();
         if (trimmed.isEmpty()) {
             throw new InvalidDomainObjectError("scene id must not be blank");

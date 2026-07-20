@@ -48,10 +48,10 @@ public class SpringPlayerRepositoryAdapter implements PlayerRepositoryOperations
     @Override
     public Optional<Player> findPlayer(PlayerId id) {
         try {
-            return repository.findById(id.getValue()).map(mapper::toDomain);
+            return repository.findById(id.asString()).map(mapper::toDomain);
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
-                    "Cannot load player %s (unreadable or corrupt)".formatted(id.getValue()), e);
+                    "Cannot load player %s (unreadable or corrupt)".formatted(id.asString()), e);
         }
     }
 
@@ -61,14 +61,14 @@ public class SpringPlayerRepositoryAdapter implements PlayerRepositoryOperations
             PlayerDbEntity entity = mapper.toDbEntity(player);
             if (repository.existsById(entity.getId())) {
                 aggregateTemplate.update(entity);
-                log.debug("[Persistence] Updated player {}", player.getId().getValue());
+                log.debug("[Persistence] Updated player {}", player.getId().asString());
             } else {
                 aggregateTemplate.insert(entity);
-                log.debug("[Persistence] Inserted player {}", player.getId().getValue());
+                log.debug("[Persistence] Inserted player {}", player.getId().asString());
             }
         } catch (DataAccessException e) {
             throw new PersistenceOperationsError(
-                    "Cannot save player %s".formatted(player.getId().getValue()), e);
+                    "Cannot save player %s".formatted(player.getId().asString()), e);
         }
     }
 }

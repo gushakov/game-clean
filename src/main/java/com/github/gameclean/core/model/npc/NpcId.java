@@ -4,6 +4,8 @@ import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.id.Ids;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.Value;
 
 /**
@@ -17,12 +19,15 @@ import lombok.Value;
  * ids ({@code npc1}) the tests use. Equality is by value (the wrapped string).
  *
  * <p>Like {@code ItemId}, an {@code NpcId} is <em>generated at runtime</em> rather than authored, so it
- * carries two entry points. The plain constructor is for <em>reconstitution</em> (the persistence adapter
- * wraps a stored full id). {@link #mint(Dice)} is for <em>fresh generation</em>: the model rolls its own dice
- * for the body (via {@link Ids#randomBody(Dice)}) — no infrastructure id port — and this type owns the one
- * thing the domain owns about a generated id, the {@code npc} prefix and how it composes with the body, then
- * runs the same always-valid gate. Prefix here, encoding in {@code Ids}: one knower each, so the two cannot
- * drift.
+ * carries two entry points. The {@link #of(String)} factory is for <em>reconstitution</em> (the persistence
+ * adapter wraps a stored full id). {@link #mint(Dice)} is for <em>fresh generation</em>: the model rolls its
+ * own dice for the body (via {@link Ids#randomBody(Dice)}) — no infrastructure id port — and this type owns the
+ * one thing the domain owns about a generated id, the {@code npc} prefix and how it composes with the body,
+ * then runs the same always-valid gate. Prefix here, encoding in {@code Ids}: one knower each, so the two
+ * cannot drift.
+ *
+ * <p>The wrapped representation is not exposed as a structural getter — a text form is asked for explicitly
+ * via {@link #asString()} (distinct from {@link #toString()}), and all construction goes through the factories.
  */
 @Value
 public class NpcId {
@@ -30,9 +35,20 @@ public class NpcId {
     /** Three-letter aggregate prefix for NPCs. */
     public static final String PREFIX = "npc";
 
+    @Getter(AccessLevel.NONE)
     String value;
 
-    public NpcId(String value) {
+    /** Reconstitutes an npc id from its stored text form, running the always-valid gate. */
+    public static NpcId of(String value) {
+        return new NpcId(value);
+    }
+
+    /** The canonical text form of this id — for logs, UI, keys, and persistence. */
+    public String asString() {
+        return value;
+    }
+
+    private NpcId(String value) {
         String trimmed = DomainValidation.requireNonNull(value, "npc id must not be null").strip();
         if (trimmed.isEmpty()) {
             throw new InvalidDomainObjectError("npc id must not be blank");
