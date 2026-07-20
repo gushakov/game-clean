@@ -49,7 +49,7 @@ public class NpcDbEntity {
     private int moveChanceDen;
 
     @Column("hit_points")
-    private int hitPoints;
+    private int currentHitPoints;
 
     @Column("max_hit_points")
     private int maxHitPoints;

@@ -362,6 +362,32 @@ data is never a presented outcome to test against). The labeling fidelity that r
 line** of union catch instead (§2). (Promotion candidate, flagged: *provenance, not hexagon side, decides the
 boundary currency; the carrier type and the failure currency are one decision*.)
 
+**How the currency is spent: MapStruct's VO↔scalar mapping has two regimes, and only one earns an
+`expression`.** `[thread #2]` (#69) On the valid-by-provenance side above, "reconstitute the model" is
+MapStruct's job — and the *mechanism* splits by the **shape of the value object**, not by direction:
+- **Single-field wrapper VOs** (`SceneId`/`PlayerId`/`NpcId`/`ItemId`, each wrapping one `String`) are true 1:1
+  type conversions. MapStruct selects the converter by *source + target type* automatically — no `@Mapping`, no
+  `expression`. All four wrapping `String` is safe because the **target** type disambiguates each use site. These
+  live in one shared `ScalarConverter` interface of `default` methods that every mapper `extends`, so the
+  converter is written once, not copy-pasted per mapper.
+- **Composite VOs that flatten one VO into several columns** (`HitPoints`→`(hit_points, max_hit_points)`,
+  `Chance`→`(num, den)`) are *not* scalar↔scalar, so they can't live in `ScalarConverter`, and they split by
+  direction. **Forward (VO→columns):** *dot-path sources* — `@Mapping(target = "currentHitPoints", source =
+  "hitPoints.current")` — compile-checked and null-aware, strictly better than a Java snippet. **Reverse
+  (columns→immutable VO):** `expression` legitimately stays — two sibling scalars building one constructor-built
+  immutable VO has no clean type-based entry (multi-source maps *parameters* not sibling properties;
+  constructor/`@ObjectFactory` name-matching fails).
+
+So `expression` is *not* the default for "VO↔scalar" — it is the escape hatch earned by exactly one case: the
+immutable-VO **reconstitution** from sibling columns. Everything else has an idiomatic, compile-checked form.
+A sealed-VO fan-out (`Item.Location`→`(kind, ref)`) is a *third* shape again — an exhaustive `switch`, so its
+`expression` helpers also legitimately stay, kept in their own mapper (they demand a compile-time exhaustive
+match no type-based selection offers). A Spring-Data-JDBC gotcha rode along: the forward dot-path reads cleaner
+when the entity field is named for its column meaning (`hitPoints`→`currentHitPoints`), but renaming a DB-entity
+field ripples into every **derived-query method name** built on that property
+(`findBy…HitPointsGreaterThan`→`findBy…CurrentHitPointsGreaterThan`), since Spring Data parses method names
+against property names.
+
 ## 4. Use cases as first-class interactions
 
 **Interaction shape (the world-construction phase).** The actor is the *system at startup*.
