@@ -51,7 +51,7 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
     @Override
     public List<Npc> findAllNpcs() {
         try {
-            return repository.findByHitPointsGreaterThan(0)
+            return repository.findByCurrentHitPointsGreaterThan(0)
                     .stream().map(mapper::toDomain).toList();
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError("Cannot load NPCs (unreadable or corrupt)", e);
@@ -61,7 +61,7 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
     @Override
     public List<Npc> findNpcsInScene(SceneId sceneId) {
         try {
-            return repository.findByCurrentSceneIdAndHitPointsGreaterThan(sceneId.getValue(), 0)
+            return repository.findByCurrentSceneIdAndCurrentHitPointsGreaterThan(sceneId.getValue(), 0)
                     .stream().map(mapper::toDomain).toList();
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(

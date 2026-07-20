@@ -1,10 +1,10 @@
 package com.github.gameclean.infrastructure.persistence.item;
 
 import com.github.gameclean.core.model.item.Item;
-import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.infrastructure.persistence.ScalarConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -17,10 +17,11 @@ import org.mapstruct.Mapping;
  * {@code switch} over the sealed {@code Location}, so adding a location case is a compile error here until the
  * mapping grows with it. Reconstituting the ref re-runs {@link SceneId}/{@link PlayerId} validation, so a
  * malformed stored id surfaces as a domain error rather than slipping through. The {@code version} maps
- * straight through (by name) in both directions; the {@link ItemId} unwraps to / re-wraps from its raw string.
+ * straight through (by name) in both directions; the item-id unwraps to / re-wraps from its raw string via the
+ * shared {@link ScalarConverter} this mapper extends.
  */
 @Mapper(componentModel = "spring")
-public interface ItemDbEntityMapper {
+public interface ItemDbEntityMapper extends ScalarConverter {
 
     @Mapping(target = "locationKind", expression = "java(locationKind(item.getLocation()))")
     @Mapping(target = "locationRef", expression = "java(locationRef(item.getLocation()))")
@@ -28,14 +29,6 @@ public interface ItemDbEntityMapper {
 
     @Mapping(target = "location", expression = "java(toLocation(entity.getLocationKind(), entity.getLocationRef()))")
     Item toDomain(ItemDbEntity entity);
-
-    default String itemIdToString(ItemId id) {
-        return id == null ? null : id.getValue();
-    }
-
-    default ItemId stringToItemId(String value) {
-        return value == null ? null : new ItemId(value);
-    }
 
     /** Which storage kind tags this location — exhaustive over the sealed {@code Location} cases. */
     default ItemLocationKind locationKind(Location location) {
