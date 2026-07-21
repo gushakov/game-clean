@@ -61,7 +61,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
   `Terminal`, `Player`, `Time`). Sub-packages:
-  `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`), `infrastructure/mapping/` (layer-neutral MapStruct support — `ScalarConverter`, the shared VO-ID↔`String` `default` converters every DB-entity mapper `extends`; a sibling of `persistence` because id↔`String` is generic scalar mapping, reusable by any future mapper family, #77), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
+  `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`, plus the shared `common/` — the embeddable shapes `HitPointsDbEntity`/`LocationDbEntity` + `ItemLocationKind` + `CompositeDbConverter`, the persistence-family MapStruct `default` pairs for `@Embedded` composites, #83), `infrastructure/mapping/` (layer-neutral MapStruct support — `ScalarConverter`, the shared single-scalar `default` converters (VO-ID↔`String` #77, `Chance`↔its `num/den` text #83) every DB-entity mapper `extends`; a sibling of `persistence` because VO↔`String` is generic scalar mapping, reusable by any future mapper family), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving `AnimateNpcs`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
@@ -381,9 +381,11 @@ project's first contested-resource write and first multi-conversation terminal d
   branch becomes a throwing precondition guard (the dispatcher resumes only an armed conversation, so an empty
   offer reaching the subcase is a wiring fault, not a player outcome).
 - **Persistence** — Flyway `V6__item_mobile_location_and_version.sql`: `scene_id → (location_kind, location_ref)`,
-  backfill existing rows `GROUND`/version 1, add `version`. `ItemLocationKind` enum (infra), MapStruct
-  `Location ↔ (kind, ref)` converter (exhaustive `switch`), repo `findByLocationKindAndLocationRef`, adapter
-  version-driven save.
+  backfill existing rows `GROUND`/version 1, add `version`. The pair now backs the embedded `LocationDbEntity`
+  (`persistence/common/`, with `ItemLocationKind`); the `Location ↔ (kind, ref)` exhaustive-`switch` conversion
+  lives in `CompositeDbConverter` (#83), leaving `ItemDbEntityMapper` annotation-free. Repo
+  `findByLocationKindAndLocationRef` (name unchanged — now resolves via the embedded `location.kind`/`location.ref`
+  path), adapter version-driven save.
 - **Terminal — conversation dispatcher** (`take` is conversation #2, so it forces kind-routing — corrects the
   issue's "drop forces it"): `AffordanceKind{EXAMINE,TAKE}` enum; `AffordanceContext` now carries `(kind, tokens)`;
   `infrastructure/terminal/conversation/` holds `Conversation{kind(); resume(Command, offer)}` +
@@ -458,9 +460,11 @@ autonomously wandering; the first realization of the `[thread #3]` "Player and N
   spawn-if-none guard, folded into the one transaction and `presentGameInitialized(scenes, playerId, items, npcs)`);
   new `presentNpcSpawnSceneUnknown` stripe.
 - **Ports / persistence** — `NpcRepositoryOperationsOutputPort` (`findAllNpcs`/`findNpcsInScene`/`saveNpc`/
-  `npcsAlreadySpawned`); Flyway `V7__create_npc.sql` (no FK, no version), `NpcDbEntity`, MapStruct mapper
-  (`Chance ↔ (num,den)`), `findByCurrentSceneId` repo, `SpringNpcRepositoryAdapter` (version-less `existsById`
-  upsert, mirroring the player adapter).
+  `npcsAlreadySpawned`); Flyway `V7__create_npc.sql` (no FK; since evolved: V8 adds `(hit_points,
+  max_hit_points)` + `version`, V10 collapses the move chance to one `move_chance` varchar), `NpcDbEntity`
+  (`move_chance` as `num/den` text via `ScalarConverter`, hit points as embedded `HitPointsDbEntity` via
+  `CompositeDbConverter`, #83), living-only derived queries (`findBy…HitPointsCurrentGreaterThan`),
+  `SpringNpcRepositoryAdapter` (version-driven `save` since V8, mirroring the item adapter).
 - **Room-listing ripple** — `presentScene(Scene, items, npcs)`; `look`/`move` fetch `findNpcsInScene` for the
   presented scene (current / target); `CurrentSceneRenderer` "Also here:" block.
 - **Ticker / infra** — `NpcActivityTicker` (`infrastructure/npc/`, blind `SchedulingConfigurer`, second async
@@ -529,7 +533,7 @@ deliberately never persisted (abandonment = forfeit; the dealer sweeps the cards
   `SystemDice`) + singleton `blackjackConversation`; new `BlackjackSubdomainArchitectureTest` (a
   *positive* dependency rule, so it analyzes production classes only via `ImportOption.DoNotIncludeTests`).
 
-Tests: 441 unit (Surefire, DB-free) + 24 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Tests: 447 unit (Surefire, DB-free) + 24 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), NPCs *reacting* to the player and

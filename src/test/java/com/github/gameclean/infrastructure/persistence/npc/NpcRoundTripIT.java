@@ -18,9 +18,9 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * Persistence round-trip for the {@code Npc} aggregate against the real, running Dockerized Postgres
- * ({@code @AutoConfigureTestDatabase(replace = NONE)}). Flyway migrates the schema at context startup (through
- * V8, which gives npc its {@code (hit_points, max_hit_points)} pair and {@code @Version} column); the
- * {@code @DataJdbcTest} slice rolls each test back.
+ * ({@code @AutoConfigureTestDatabase(replace = NONE)}). Flyway migrates the schema at context startup (V8 gives
+ * npc its {@code (hit_points, max_hit_points)} pair and {@code @Version} column; V10 collapses the move chance
+ * into a single {@code num/den} text column); the {@code @DataJdbcTest} slice rolls each test back.
  *
  * <p>It exercises what spawning, autonomous movement, and {@code hit} need end to end: an NPC inserts and is
  * found by its scene and among all NPCs (its move-chance and hit-point columns surviving the round-trip);

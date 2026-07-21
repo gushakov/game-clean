@@ -1,9 +1,11 @@
 package com.github.gameclean.infrastructure.persistence.npc;
 
+import com.github.gameclean.infrastructure.persistence.common.HitPointsDbEntity;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -13,8 +15,12 @@ import org.springframework.data.relational.core.mapping.Table;
  *
  * <p>The current scene is stored as its raw id string, deliberately <em>not</em> a foreign key (cross-aggregate
  * references are resolved as a use-case rule, not by the database), mirroring {@code player.current_scene_id}.
- * The move chance is flattened to a {@code (move_chance_num, move_chance_den)} column pair; the hit points to a
- * {@code (hit_points, max_hit_points)} pair (current out of max).
+ * The move chance is stored as its canonical {@code num/den} text in a single {@code move_chance} column
+ * (chance arithmetic never happens in SQL, and the fraction reads directly in query results); the hit points
+ * embed as the shared {@link HitPointsDbEntity} over the same {@code (hit_points, max_hit_points)} column pair
+ * (current out of max) — two int columns of this very table, kept because current/max are plausibly
+ * SQL-comparable (queryability decides column shape), reachable in derived queries through the embedded
+ * property path ({@code hitPoints.current}).
  *
  * <p>The {@link #version} carries Spring Data JDBC's {@link Version optimistic-locking} token, exactly like
  * {@code ItemDbEntity}: a {@code 0} version marks a new (insertable) row, and each write checks-and-increments
@@ -42,15 +48,9 @@ public class NpcDbEntity {
     @Column("full_description")
     private String fullDescription;
 
-    @Column("move_chance_num")
-    private int moveChanceNum;
+    @Column("move_chance")
+    private String moveChance;
 
-    @Column("move_chance_den")
-    private int moveChanceDen;
-
-    @Column("hit_points")
-    private int currentHitPoints;
-
-    @Column("max_hit_points")
-    private int maxHitPoints;
+    @Embedded.Nullable
+    private HitPointsDbEntity hitPoints;
 }

@@ -26,16 +26,21 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
 - **Repository** — `*SpringDataRepository extends CrudRepository<*DbEntity, String>`. Infra
   plumbing, *not* a domain port; the use case depends on the `*OutputPort` whose adapter (added
   with the use case) delegates here.
-- **Mapper** — `*DbEntityMapper` (MapStruct, `componentModel = "spring"`). Domain ↔ DbEntity.
-  Value-object id wrappers convert via `default` methods (`SceneId ↔ String`); re-wrapping runs
-  the VO's own validation. Builds the domain aggregate through its Lombok builder — requires
-  `lombok-mapstruct-binding` in the annotation-processor path (order: lombok → binding →
-  mapstruct).
+- **Mapper** — `*DbEntityMapper` (MapStruct, `componentModel = "spring"`). Domain ↔ DbEntity. Every VO
+  conversion rides one of two shared `default`-method interfaces the mapper `extends`, selected by MapStruct
+  on source + target type (no `@Mapping` unless names mismatch, **zero `expression`s** anywhere, #83):
+  `ScalarConverter` (`infrastructure/mapping/`, layer-neutral) for single-scalar text forms (id VOs,
+  `Chance` as `num/den`), and `CompositeDbConverter` (`infrastructure/persistence/common/`) for `@Embedded`
+  composites (`HitPointsDbEntity`; `LocationDbEntity`, the sealed VO's `(kind, ref)` encoding with the
+  exhaustive `switch` inside the converter). Re-wrapping runs the VO's own validation. Builds the domain
+  aggregate through its Lombok builder — requires `lombok-mapstruct-binding` in the annotation-processor
+  path (order: lombok → binding → mapstruct). Gotcha: restructuring a DB-entity property ripples into
+  derived-query method names (embedded fields are reached by path, e.g. `…HitPointsCurrent…`).
 - **Writes vs reads** — two write paths by whether the aggregate carries a Spring Data `@Version`.
   *Version-less* aggregates (`Scene`, `Player`, `GameClock`) write via `JdbcAggregateTemplate.insert`
-  (assigned String ids would otherwise be treated as updates). *Versioned* aggregates (`DayPhaseLog`, `Item`)
-  write via plain `repository.save`, which decides insert-vs-update from the version (0 → insert; >0 →
-  update-with-optimistic-check) and so needs neither `existsById` nor `JdbcAggregateTemplate`. Reads via the
+  (assigned String ids would otherwise be treated as updates). *Versioned* aggregates (`DayPhaseLog`, `Item`,
+  `Npc` since V8) write via plain `repository.save`, which decides insert-vs-update from the version (0 →
+  insert; >0 → update-with-optimistic-check) and so needs neither `existsById` nor `JdbcAggregateTemplate`. Reads via the
   repository. (Spring Data JDBC increments the version on insert, so a freshly saved versioned row is at 1 —
   design-notes §5.)
 - **Exception translation** — each adapter method wraps Spring's `DataAccessException` into
@@ -47,8 +52,10 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   `PersistenceOperationsError` — never a domain-input invalidity (design-notes §2/§3).
 - **Schema (Flyway)** — migrations in `src/main/resources/db/migration/`: `V1` scene + exit, `V2` player,
   `V3` item, `V4` game_clock, `V5` day_phase_log (with a `version` column), `V6` item mobile location
-  (`scene_id` → `(location_kind, location_ref)`) + `version`, `V7` npc (`current_scene_id` + a
-  `move_chance_num`/`move_chance_den` pair; no FK, **no version** — single-writer). A composite PK on an owned child
+  (`scene_id` → `(location_kind, location_ref)`) + `version`, `V7` npc (`current_scene_id` + a move-chance
+  pair; no FK), `V8` npc hit points (`(hit_points, max_hit_points)`) + `version`, `V9` scene mini-game child
+  table, `V10` npc move chance collapsed to one `move_chance` varchar (`num/den` text + shape CHECK, backfilled
+  from the V7 pair). A composite PK on an owned child
   `(scene_id, name)` enforces a domain uniqueness invariant at the DB level. A merged migration is immutable
   (fix forward with a new `Vxx`); `V6` is the first to *alter* an existing table. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
   carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.
@@ -57,13 +64,16 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   `PlayerDbEntityMapper` (`PlayerId`/`SceneId` ↔ String converters), `PlayerSpringDataRepository`,
   `SpringPlayerRepositoryAdapter` implementing `PlayerRepositoryOperationsOutputPort` (`findPlayer` via
   `findById().map(toDomain)`, `savePlayer` via `aggregateTemplate.insert`).
-- **Npc family** (`infrastructure/persistence/npc/`) — mirrors the player family: `NpcDbEntity`
-  (`@Table("npc")`, `current_scene_id` + a `move_chance_num`/`move_chance_den` pair, **no `@Version`**),
-  `NpcDbEntityMapper` (`NpcId`/`SceneId` ↔ String, `Chance` ↔ the num/den pair via a `toChance` default),
-  `NpcSpringDataRepository` (`findByCurrentSceneId`, plus `findAll`/`count` from `CrudRepository`),
-  `SpringNpcRepositoryAdapter` implementing `NpcRepositoryOperationsOutputPort` — the **version-less
-  `existsById ? update : insert` upsert** (single-writer, so the version-driven item save is not used); reads
-  catch `DataAccessException | InvalidDomainObjectError` (a corrupt row is an integrity fault).
+- **Npc family** (`infrastructure/persistence/npc/`) — `NpcDbEntity` (`@Table("npc")`, `current_scene_id`,
+  a single `move_chance` varchar holding the `num/den` text, an `@Embedded.Nullable HitPointsDbEntity` over
+  `(hit_points, max_hit_points)`, and `@Version` since V8), `NpcDbEntityMapper` (extends `ScalarConverter` +
+  `CompositeDbConverter`; only the `currentScene ↔ currentSceneId` name mismatch is declared),
+  `NpcSpringDataRepository` (living-only derived queries traversing the embedded path —
+  `findByCurrentSceneIdAndHitPointsCurrentGreaterThan` / `findByHitPointsCurrentGreaterThan`; `count` from
+  `CrudRepository`), `SpringNpcRepositoryAdapter` implementing `NpcRepositoryOperationsOutputPort` — the
+  **version-driven `save`** (mirrors the item adapter; wraps `OptimisticLockingFailureException →
+  OptimisticLockingError`); reads catch `DataAccessException | InvalidDomainObjectError` (a corrupt row is an
+  integrity fault).
 
 ### Test layering — Surefire (unit) vs Failsafe (integration)
 
@@ -332,6 +342,8 @@ Flyway migration results — never to read or mutate business data.
   (`infrastructure/mapping/`) is the **sole** representation-knower — `id.asString()` / `XId.of(v)` — so no
   other site couples to "the wrapped field is a `String`". Surviving `x.getId().asString()` chains in presenters
   are a deliberate LoD stance, not an oversight (#77; rationale + the Demeter line in design-notes §3, cf. §10).
+  `Chance` joins the `asString()`/`of(String)` pattern with its canonical `num/den` text (#83) but *keeps* its
+  getters — numerator/denominator are domain values, not a hidden representation.
 - **No explicit `private final` on fields — Lombok sets the modifiers.** Every class elides the redundant
   modifiers: VOs via `@Value` (which implies them), and every other class (aggregates, adapters, renderers,
   use cases, presenters, `ConsoleSession`, `CommandParser`, config) via a class-level

@@ -1,56 +1,26 @@
 package com.github.gameclean.infrastructure.persistence.item;
 
 import com.github.gameclean.core.model.item.Item;
-import com.github.gameclean.core.model.item.Location;
-import com.github.gameclean.core.model.player.PlayerId;
-import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.infrastructure.mapping.ScalarConverter;
+import com.github.gameclean.infrastructure.persistence.common.CompositeDbConverter;
 import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
 
 /**
  * MapStruct mapper between the domain {@code Item} aggregate and its persistence shape
  * ({@link ItemDbEntity}) — the shock-absorber layer that lets schema and model evolve at different speeds.
  *
- * <p>The item's mobile {@link Location} is flattened to the {@code (location_kind, location_ref)} column pair
- * and rebuilt from it by the helper methods below. The case↔kind correspondence is an exhaustive
- * {@code switch} over the sealed {@code Location}, so adding a location case is a compile error here until the
- * mapping grows with it. Reconstituting the ref re-runs {@link SceneId}/{@link PlayerId} validation, so a
- * malformed stored id surfaces as a domain error rather than slipping through. The {@code version} maps
- * straight through (by name) in both directions; the item-id unwraps to / re-wraps from its raw string via the
- * shared {@link ScalarConverter} this mapper extends.
+ * <p>Every value object converts through a shared inherited pair, selected by MapStruct on source + target
+ * type: the item-id to / from its raw string via {@link ScalarConverter}; the sealed mobile location to / from
+ * its embedded {@code LocationDbEntity} encoding via {@link CompositeDbConverter}, whose exhaustive
+ * {@code switch} keeps the compile-error-on-new-case guarantee and whose reconstitution re-runs id validation,
+ * so a malformed stored ref surfaces as a domain error rather than slipping through. Every property matches by
+ * name ({@code location ↔ location}, {@code version} straight through), so the mapper declares no
+ * {@code @Mapping} at all.
  */
 @Mapper(componentModel = "spring")
-public interface ItemDbEntityMapper extends ScalarConverter {
+public interface ItemDbEntityMapper extends ScalarConverter, CompositeDbConverter {
 
-    @Mapping(target = "locationKind", expression = "java(locationKind(item.getLocation()))")
-    @Mapping(target = "locationRef", expression = "java(locationRef(item.getLocation()))")
     ItemDbEntity toDbEntity(Item item);
 
-    @Mapping(target = "location", expression = "java(toLocation(entity.getLocationKind(), entity.getLocationRef()))")
     Item toDomain(ItemDbEntity entity);
-
-    /** Which storage kind tags this location — exhaustive over the sealed {@code Location} cases. */
-    default ItemLocationKind locationKind(Location location) {
-        return switch (location) {
-            case Location.OnGround ignored -> ItemLocationKind.GROUND;
-            case Location.HeldBy ignored -> ItemLocationKind.HELD;
-        };
-    }
-
-    /** The raw id this location references — a scene id on the ground, a holder id when held. */
-    default String locationRef(Location location) {
-        return switch (location) {
-            case Location.OnGround onGround -> onGround.getScene().asString();
-            case Location.HeldBy heldBy -> heldBy.getHolder().asString();
-        };
-    }
-
-    /** Rebuilds the sealed {@code Location} from the stored kind + ref, re-running id validation. */
-    default Location toLocation(ItemLocationKind kind, String ref) {
-        return switch (kind) {
-            case GROUND -> new Location.OnGround(SceneId.of(ref));
-            case HELD -> new Location.HeldBy(PlayerId.of(ref));
-        };
-    }
 }

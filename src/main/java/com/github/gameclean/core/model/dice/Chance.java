@@ -1,5 +1,6 @@
 package com.github.gameclean.core.model.dice;
 
+import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import lombok.Value;
 
@@ -13,12 +14,32 @@ import lombok.Value;
  * against: the dice draw, and this VO interprets the draw. Keeping the odds and the entropy as separate model
  * collaborators is why a {@link SeededDice} makes spawning deterministic under test while {@code Chance} stays
  * a pure, independently-tested rule.
+ *
+ * <p>The fraction has a canonical text form, {@code num/den} — the same rendering the authored world files
+ * use — produced by {@link #asString()} and parsed back by {@link #of(String)}, which re-runs the always-valid
+ * gate. Like the id value objects' {@code asString()}/{@code of()} pair, this is a semantic projection
+ * (deliberately distinct from {@link #toString()}, the developer-facing debug form), so persistence can store
+ * a chance as one readable scalar without coupling to its fields.
  */
 @Value
 public class Chance {
 
     int numerator;
     int denominator;
+
+    /** Reconstitutes a chance from its canonical {@code num/den} text form, running the always-valid gate. */
+    public static Chance of(String value) {
+        String trimmed = DomainValidation.requireNonNull(value, "chance text must not be null").strip();
+        String[] parts = trimmed.split("/", -1);
+        if (parts.length != 2) {
+            throw new InvalidDomainObjectError("chance text must have the form num/den, got '%s'".formatted(trimmed));
+        }
+        try {
+            return new Chance(Integer.parseInt(parts[0].strip()), Integer.parseInt(parts[1].strip()));
+        } catch (NumberFormatException e) {
+            throw new InvalidDomainObjectError("chance text must have the form num/den, got '%s'".formatted(trimmed));
+        }
+    }
 
     public Chance(int numerator, int denominator) {
         if (denominator <= 0) {
@@ -45,5 +66,10 @@ public class Chance {
      */
     public boolean isHitBy(double draw) {
         return draw < (double) numerator / denominator;
+    }
+
+    /** The canonical text form of these odds — e.g. {@code 12/50} — for persistence, authoring, and display. */
+    public String asString() {
+        return numerator + "/" + denominator;
     }
 }

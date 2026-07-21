@@ -362,34 +362,63 @@ data is never a presented outcome to test against). The labeling fidelity that r
 line** of union catch instead (§2). (Promotion candidate, flagged: *provenance, not hexagon side, decides the
 boundary currency; the carrier type and the failure currency are one decision*.)
 
-**How the currency is spent: MapStruct's VO↔scalar mapping has two regimes, and only one earns an
-`expression`.** `[thread #2]` (#69) On the valid-by-provenance side above, "reconstitute the model" is
-MapStruct's job — and the *mechanism* splits by the **shape of the value object**, not by direction:
-- **Single-field wrapper VOs** (`SceneId`/`PlayerId`/`NpcId`/`ItemId`, each wrapping one `String`) are true 1:1
-  type conversions. MapStruct selects the converter by *source + target type* automatically — no `@Mapping`, no
-  `expression`. All four wrapping `String` is safe because the **target** type disambiguates each use site. These
-  live in one shared `ScalarConverter` interface of `default` methods that every mapper `extends`, so the
-  converter is written once, not copy-pasted per mapper.
-- **Composite VOs that flatten one VO into several columns** (`HitPoints`→`(hit_points, max_hit_points)`,
-  `Chance`→`(num, den)`) are *not* scalar↔scalar, so they can't live in `ScalarConverter`, and they split by
-  direction. **Forward (VO→columns):** *dot-path sources* — `@Mapping(target = "currentHitPoints", source =
-  "hitPoints.current")` — compile-checked and null-aware, strictly better than a Java snippet. **Reverse
-  (columns→immutable VO):** `expression` legitimately stays — two sibling scalars building one constructor-built
-  immutable VO has no clean type-based entry (multi-source maps *parameters* not sibling properties;
-  constructor/`@ObjectFactory` name-matching fails).
+**How the currency is spent: every VO↔column conversion rides a shared converter interface selected by
+source + target type — the `expression` escape hatch was earned, then dissolved.** `[thread #2]` (#69, #83)
+On the valid-by-provenance side above, "reconstitute the model" is MapStruct's job. The first analysis (#69)
+found *two regimes*: single-field wrapper VOs converted 1:1 by type selection, while composite VOs flattening
+into several sibling columns had no type-based entry and so *earned* `expression` helpers (multi-source maps
+*parameters* not sibling properties; constructor/`@ObjectFactory` name-matching fails). #83 dissolved that
+second regime — not by finding a better mechanism, but by removing the *shape* that demanded it, once per
+composite, in opposite directions:
+- **`Chance` stopped being two columns.** Its `num/den` fraction has a canonical one-scalar text form (the very
+  rendering the authored YAML uses), so it gained the id VOs' `asString()`/`of(String)` pair and now persists as
+  a single varchar — a true scalar↔scalar conversion that joins the wrapper VOs in `ScalarConverter`. The
+  discriminator for whether a composite may collapse this way: **queryability decides column shape** — chance
+  arithmetic never happens in SQL, while hit-point comparisons plausibly do, so `HitPoints` kept its two int
+  columns.
+- **`HitPoints` kept its columns but gained a type.** `HitPointsDbEntity` (`@Embedded` — several columns of the
+  owner's *own* table, the methodology's audit-metadata precedent) is exactly the target type MapStruct's
+  selection needed; the pair of explicit `default` converters lives in **`CompositeDbConverter`**
+  (`infrastructure.persistence.common`), and the mapper maps the pool by name. The interface is deliberately
+  *not* beside `ScalarConverter` in the layer-neutral `infrastructure.mapping`: that package is neutral because
+  `String` is neutral, whereas an embeddable is a Spring-Data persistence shape no view-model mapper would
+  target — hoisting it there would quietly break #77's rationale.
+- **Sum-shapes embed by their encoding.** A sealed VO (`Item.Location`) cannot embed *structurally*, but its
+  flattened `(kind, ref)` encoding is a plain product, and `LocationDbEntity` embeds it. The exhaustive
+  `switch` — the reason the fan-out was once "kept in its own mapper" — keeps its compile-error-on-new-case
+  guarantee *inside the converter*; what the old reasoning conflated was the switch (non-negotiable, survives)
+  with the missing selection type (which the embeddable supplies). The forward direction got *safer*: kind and
+  ref are one atomic switch instead of two separate switches that had to silently agree.
 
-So `expression` is *not* the default for "VO↔scalar" — it is the escape hatch earned by exactly one case: the
-immutable-VO **reconstitution** from sibling columns. Everything else has an idiomatic, compile-checked form.
-A sealed-VO fan-out (`Item.Location`→`(kind, ref)`) is a *third* shape again — an exhaustive `switch`, so its
-`expression` helpers also legitimately stay, kept in their own mapper (they demand a compile-time exhaustive
-match no type-based selection offers). A Spring-Data-JDBC gotcha rode along: the forward dot-path reads cleaner
-when the entity field is named for its column meaning (`hitPoints`→`currentHitPoints`), but renaming a DB-entity
-field ripples into every **derived-query method name** built on that property
-(`findBy…HitPointsGreaterThan`→`findBy…CurrentHitPointsGreaterThan`), since Spring Data parses method names
-against property names.
+Two boundaries hold the design honest. **Explicit pairs, never MapStruct's implicit nested-bean mapping:** the
+reconstitution must visibly run the VO's validating constructor/factory, so a corrupt stored pair or malformed
+ref fails as a domain error for the reading adapter to wrap as an integrity fault (§2). **MapStruct, never
+Spring Data JDBC custom converters** (`@ReadingConverter`/`@WritingConverter` were examined for `Chance` and
+rejected): registering conversions with the framework would create a second conversion regime beside the
+MapStruct one and move reconstitution failures inside the framework's row mapping, away from the adapter catch
+that owns the integrity-fault wrapping. The derived-query gotcha from #69 generalizes: restructuring a DB-entity
+property ripples into **derived-query method names**, now through embedded property *paths*
+(`findBy…CurrentHitPointsGreaterThan`→`findBy…HitPointsCurrentGreaterThan`), though a name can survive by
+spelling coincidence — `findByLocationKindAndLocationRef` parses identically against the flat properties it was
+written for and the embedded `location.kind`/`location.ref` path it now resolves through. (Promotion candidate,
+flagged not promoted: *an `@Embedded` DB shape gives a composite VO the target type MapStruct's source+target
+selection needs, dissolving `expression` reconstitution; products embed directly, sealed sums embed via their
+flattened encoding with the exhaustive switch intact inside the shared converter; scalar-text forms collapse to
+one column instead when the columns are never queried individually.*)
+
+**Deferred by emergence — the generalized gauge shape.** A `PointsDbEntity` reused via `@Embedded(prefix =
+"hit_")` for every capped-pool stat the game will grow (luck, armor, …) was designed and *deliberately not
+built*: it has exactly one consumer today, costs a column rename (`max_hit_points → hit_max_points`, since the
+prefix prepends to every column), and per-VO converter pairs are needed regardless — the shared shape would save
+one three-line class per pool while betting that the pools' structural coincidence holds. The domain side is the
+sharper reason to wait: future pools will individuate on *behavior* (luck is spent, armor absorbs) as distinct
+VOs whose *structure* merely coincides, and persistence may generalize on structure only when that coincidence
+is evidenced, not guessed. Trigger to revisit: the second gauge-like VO actually arriving. (There is no
+canonical mathematical name for the *(current, max)* pair — the clamped arithmetic is *saturation arithmetic*,
+clamp-at-zero subtraction is *truncated subtraction / monus* on ℕ; the game-design term is **gauge**.)
 
 **IDs expose a semantic projection, not a structural accessor — and the converter becomes the *sole*
-representation-knower.** `[thread #2]` (#77) The two-regimes note above left the wrapper VOs exposing their
+representation-knower.** `[thread #2]` (#77) The converter-regimes note above left the wrapper VOs exposing their
 `String` via Lombok's `getValue()`. That getter is a *structural* accessor — it asserts "my internal field **is**
 a `String`, here it is," so every caller binds to the **representation identity**. Replaced by an explicit
 *semantic projection* `asString()`, which asserts only "a canonical text form **can be produced**." The second
