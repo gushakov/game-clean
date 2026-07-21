@@ -8,7 +8,7 @@ import com.github.gameclean.core.usecase.inventory.TakePresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -29,7 +29,7 @@ import java.util.List;
  *
  * <p>It differs from the examine presenter on exactly two axes: its terminal outcomes are <em>take</em>
  * outcomes ({@link #presentItemTaken}, {@link #presentItemGotAway}) rather than the item description, and it
- * arms the {@link AffordanceContext} with {@link SelectionKind#TAKE} so a subsequent bare number resumes
+ * arms the {@link AffordanceContext} with {@link AffordanceKind#TAKE} so a subsequent bare number resumes
  * <em>taking</em>. The disambiguation menu is ordered here once (stable by short description, then id) and the
  * same order is both displayed and remembered, so the visible menu and the latent offer cannot drift — exactly
  * as examine does it (see {@link TerminalExaminePresenter} for the full rationale).
@@ -69,7 +69,7 @@ public class TerminalTakePresenter
                 .toList();
         itemRenderer.renderAmbiguousTarget(target, ordered);
         // Flatten identities to tokens on this driven side; tag the offer TAKE so a later bare number takes.
-        affordanceContext.offer(SelectionKind.TAKE,
+        affordanceContext.offer(AffordanceKind.TAKE,
                 ordered.stream().map(item -> item.getId().asString()).toList());
     }
 

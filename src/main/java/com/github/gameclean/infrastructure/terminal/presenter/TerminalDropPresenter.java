@@ -7,7 +7,7 @@ import com.github.gameclean.core.usecase.inventory.DropPresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -27,7 +27,7 @@ import java.util.List;
  * rather than extending a base presenter.
  *
  * <p>It differs from the take presenter on three axes: its terminal outcome is the drop confirmation
- * ({@link #presentItemDropped}); it arms the {@link AffordanceContext} with {@link SelectionKind#DROP} so a
+ * ({@link #presentItemDropped}); it arms the {@link AffordanceContext} with {@link AffordanceKind#DROP} so a
  * subsequent bare number resumes <em>dropping</em>; and it renders the provenance-neutral select outcomes in
  * their <b>carry-flavored</b> English ("you are not carrying anything like that", "you are no longer carrying
  * that") — the same port methods the ground-sourced consumers render with "here" phrasing. The disambiguation
@@ -65,7 +65,7 @@ public class TerminalDropPresenter
                 .toList();
         itemRenderer.renderAmbiguousTarget(target, ordered);
         // Flatten identities to tokens on this driven side; tag the offer DROP so a later bare number drops.
-        affordanceContext.offer(SelectionKind.DROP,
+        affordanceContext.offer(AffordanceKind.DROP,
                 ordered.stream().map(item -> item.getId().asString()).toList());
     }
 

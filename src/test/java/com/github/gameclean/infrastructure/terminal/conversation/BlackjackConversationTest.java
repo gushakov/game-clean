@@ -7,8 +7,8 @@ import com.github.gameclean.core.model.blackjack.Hand;
 import com.github.gameclean.core.model.blackjack.Rank;
 import com.github.gameclean.core.model.blackjack.Suit;
 import com.github.gameclean.core.usecase.blackjack.PlayBlackjackInputPort;
-import com.github.gameclean.infrastructure.terminal.Affordance;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
+import com.github.gameclean.infrastructure.terminal.EphemeralAffordance;
 import com.github.gameclean.infrastructure.terminal.command.GameStandingCommand;
 import com.github.gameclean.infrastructure.terminal.command.HitCardCommand;
 import com.github.gameclean.infrastructure.terminal.command.HitCommand;
@@ -45,7 +45,7 @@ class BlackjackConversationTest {
 
     @Test
     void owns_the_blackjack_kind() {
-        assertThat(new BlackjackConversation(applicationContext).kind()).isEqualTo(SelectionKind.BLACKJACK);
+        assertThat(new BlackjackConversation(applicationContext).kind()).isEqualTo(AffordanceKind.BLACKJACK);
     }
 
     @Test
@@ -69,7 +69,7 @@ class BlackjackConversationTest {
         when(applicationContext.getBean(PlayBlackjackInputPort.class)).thenReturn(playBlackjackUseCase);
         BlackjackConversation conversation = new BlackjackConversation(applicationContext);
         BlackjackRound round = liveRound();
-        Affordance armed = new Affordance(SelectionKind.BLACKJACK, List.of(), round);
+        EphemeralAffordance armed = new EphemeralAffordance(AffordanceKind.BLACKJACK, round);
 
         conversation.resume(new HitCardCommand(), armed);
         verify(playBlackjackUseCase).playerAsksDealerForHitCard(round);
@@ -87,7 +87,7 @@ class BlackjackConversationTest {
         BlackjackConversation conversation = new BlackjackConversation(applicationContext);
         BlackjackRound round = liveRound();
 
-        conversation.resume(new PlayCommand(), new Affordance(SelectionKind.BLACKJACK, List.of(), round));
+        conversation.resume(new PlayCommand(), new EphemeralAffordance(AffordanceKind.BLACKJACK, round));
 
         verify(playBlackjackUseCase).playerExaminesGame(round);
     }

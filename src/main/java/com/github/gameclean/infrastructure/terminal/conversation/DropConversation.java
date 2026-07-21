@@ -1,7 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.conversation;
 
 import com.github.gameclean.core.usecase.inventory.DropInputPort;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import org.springframework.context.ApplicationContext;
 
 import java.util.List;
@@ -19,8 +19,8 @@ public class DropConversation extends AbstractSelectionConversation {
     }
 
     @Override
-    public SelectionKind kind() {
-        return SelectionKind.DROP;
+    public AffordanceKind kind() {
+        return AffordanceKind.DROP;
     }
 
     @Override

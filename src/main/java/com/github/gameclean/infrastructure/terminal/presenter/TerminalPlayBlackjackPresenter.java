@@ -10,7 +10,7 @@ import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.blackjack.PlayBlackjackPresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.render.BlackjackRenderer;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -27,7 +27,7 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p><b>It owns the conversation's whole arming transcription, fixed per method.</b> The live-hand outcomes
  * ({@code presentInitialDeal}, {@code presentCardDealt}, {@code presentGameStanding}) render the visible face
- * and arm the {@link AffordanceContext} (kind {@link SelectionKind#BLACKJACK}) with the round as the opaque
+ * and arm the {@link AffordanceContext} (kind {@link AffordanceKind#BLACKJACK}) with the round as the opaque
  * envelope — the latent face; the terminal outcomes (natural, busted, the settlements) render everything face
  * up and <em>disarm</em> — the completion-disarm, distinct from the dispatcher's abandonment-clear. One present
  * method, one deterministic arming effect: this presenter transcribes what the use case decided, it never
@@ -59,13 +59,13 @@ public class TerminalPlayBlackjackPresenter
     @Override
     public void presentInitialDeal(Hand playerHand, Card upcard, BlackjackRound round) {
         blackjackRenderer.renderInitialDeal(playerHand, upcard);
-        affordanceContext.arm(SelectionKind.BLACKJACK, round);
+        affordanceContext.arm(AffordanceKind.BLACKJACK, round);
     }
 
     @Override
     public void presentCardDealt(Hand playerHand, Card upcard, BlackjackRound round) {
         blackjackRenderer.renderCardDealt(playerHand, upcard);
-        affordanceContext.arm(SelectionKind.BLACKJACK, round);
+        affordanceContext.arm(AffordanceKind.BLACKJACK, round);
     }
 
     @Override
@@ -101,7 +101,7 @@ public class TerminalPlayBlackjackPresenter
     @Override
     public void presentGameStanding(Hand playerHand, Card upcard, BlackjackRound round) {
         blackjackRenderer.renderGameStanding(playerHand, upcard);
-        affordanceContext.arm(SelectionKind.BLACKJACK, round);
+        affordanceContext.arm(AffordanceKind.BLACKJACK, round);
     }
 
     @Override

@@ -54,7 +54,7 @@ import java.util.Set;
  *
  * <p>It also holds the one piece of conversational state the design admits: the armed {@link Affordance} in
  * the shared {@link AffordanceContext} resource — a disambiguation offer's tokens, or an ephemeral
- * conversation's opaque state envelope (a blackjack round) — tagged with the {@link SelectionKind} of the
+ * conversation's opaque state envelope (a blackjack round) — tagged with the {@link AffordanceKind} of the
  * conversation that armed it. Routing is generic over dialogues: while an affordance is armed, the matching
  * {@code Conversation} (the injected handlers are the resumer map) gets <em>first crack</em> at each parsed
  * line through its own {@code continuedBy} predicate — a bare number continues a selection, the table-talk
@@ -90,18 +90,18 @@ public class ConsoleSession {
     List<Conversation> conversations;
 
     /**
-     * Wiring-time completeness check: every {@link SelectionKind} must have a {@link Conversation} handler, so
+     * Wiring-time completeness check: every {@link AffordanceKind} must have a {@link Conversation} handler, so
      * an armed offer can always be resumed. Spring collects the {@code Conversation} beans into
      * {@link #conversations}; if a kind has no handler the application fails fast at startup rather than silently
      * dropping the player's pick at runtime.
      */
     @PostConstruct
     void assertEveryKindHasAConversation() {
-        Set<SelectionKind> handled = EnumSet.noneOf(SelectionKind.class);
+        Set<AffordanceKind> handled = EnumSet.noneOf(AffordanceKind.class);
         for (Conversation conversation : conversations) {
             handled.add(conversation.kind());
         }
-        Set<SelectionKind> missing = EnumSet.allOf(SelectionKind.class);
+        Set<AffordanceKind> missing = EnumSet.allOf(AffordanceKind.class);
         missing.removeAll(handled);
         if (!missing.isEmpty()) {
             throw new IllegalStateException("No Conversation handler wired for selection kinds: " + missing);
@@ -247,12 +247,12 @@ public class ConsoleSession {
      * wiring-time completeness check guarantees an armed kind always finds its handler.
      */
     private Conversation conversationForArmedKind() {
-        SelectionKind armed = affordanceContext.kind();
+        Affordance armed = affordanceContext.current();
         if (armed == null) {
             return null;
         }
         return conversations.stream()
-                .filter(conversation -> conversation.kind() == armed)
+                .filter(conversation -> conversation.kind() == armed.getKind())
                 .findFirst()
                 .orElse(null);
     }
