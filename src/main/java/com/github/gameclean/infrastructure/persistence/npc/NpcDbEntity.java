@@ -13,8 +13,10 @@ import org.springframework.data.relational.core.mapping.Table;
  *
  * <p>The current scene is stored as its raw id string, deliberately <em>not</em> a foreign key (cross-aggregate
  * references are resolved as a use-case rule, not by the database), mirroring {@code player.current_scene_id}.
- * The move chance is flattened to a {@code (move_chance_num, move_chance_den)} column pair; the hit points to a
- * {@code (hit_points, max_hit_points)} pair (current out of max).
+ * The move chance is stored as its canonical {@code num/den} text in a single {@code move_chance} column
+ * (chance arithmetic never happens in SQL, and the fraction reads directly in query results); the hit points
+ * flatten to a {@code (hit_points, max_hit_points)} pair (current out of max), which stays two int columns
+ * because current/max are plausibly SQL-comparable — queryability decides column shape.
  *
  * <p>The {@link #version} carries Spring Data JDBC's {@link Version optimistic-locking} token, exactly like
  * {@code ItemDbEntity}: a {@code 0} version marks a new (insertable) row, and each write checks-and-increments
@@ -42,11 +44,8 @@ public class NpcDbEntity {
     @Column("full_description")
     private String fullDescription;
 
-    @Column("move_chance_num")
-    private int moveChanceNum;
-
-    @Column("move_chance_den")
-    private int moveChanceDen;
+    @Column("move_chance")
+    private String moveChance;
 
     @Column("hit_points")
     private int currentHitPoints;
