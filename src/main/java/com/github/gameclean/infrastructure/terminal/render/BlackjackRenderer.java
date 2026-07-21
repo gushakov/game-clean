@@ -148,8 +148,8 @@ public class BlackjackRenderer {
     private static AttributedStringBuilder settlementOpening(BlackjackRound round) {
         AttributedStringBuilder sb = new AttributedStringBuilder();
         sb.style(TABLE).append("The dealer turns the hole card and plays out.").style(AttributedStyle.DEFAULT);
-        appendDealerHandLine(sb, round.getDealerHand());
         appendHandLine(sb, round.getPlayerHand());
+        appendDealerHandLine(sb, round.getDealerHand());
         return sb;
     }
 
