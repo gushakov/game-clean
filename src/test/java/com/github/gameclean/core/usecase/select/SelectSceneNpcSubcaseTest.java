@@ -35,7 +35,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SelectSceneNpcSubcaseTest {
 
-    private static final SceneId HERE = new SceneId("scn1");
+    private static final SceneId HERE = SceneId.of("scn1");
 
     @Mock
     private SelectTargetPresenterOutputPort<Npc> presenter;
@@ -138,7 +138,7 @@ class SelectSceneNpcSubcaseTest {
 
     private static Npc npc(String id, String shortDescription) {
         return Npc.builder()
-                .id(new NpcId(id))
+                .id(NpcId.of(id))
                 .currentScene(HERE)
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the NPC.")

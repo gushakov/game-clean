@@ -81,7 +81,7 @@ class AnimateNpcsUseCaseTest {
     @Test
     void aMissMovesNothingAndPresentsNothingHappenedWithNoTransaction() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gate()));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
         dice.willRoll(false);   // rolls but misses; no pick, no move
 
         useCase.systemAdvancesNpcs();
@@ -96,8 +96,8 @@ class AnimateNpcsUseCaseTest {
     @Test
     void narratesADepartureWhenTheNpcLeavesThePlayersScene() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard()));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn1");   // player watches from the source scene
         dice.willRoll(true).willPick(0);   // hit, take the only exit (north -> scn2)
         runTransactionAndFireAfterCommit(txOps);
@@ -107,7 +107,7 @@ class AnimateNpcsUseCaseTest {
         // The NPC is saved at its new scene ...
         ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
         verify(npcOps).saveNpc(saved.capture());
-        assertThat(saved.getValue().getCurrentScene()).isEqualTo(new SceneId("scn2"));
+        assertThat(saved.getValue().getCurrentScene()).isEqualTo(SceneId.of("scn2"));
         // ... and the player, standing where it left, sees a departure by the exit name.
         assertSinglePerceived(MovementKind.DEPARTED, "npc1", "north");
     }
@@ -115,8 +115,8 @@ class AnimateNpcsUseCaseTest {
     @Test
     void narratesAnArrivalWhenTheNpcEntersThePlayersScene() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard()));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn2");   // player watches from the target scene
         dice.willRoll(true).willPick(0);
         runTransactionAndFireAfterCommit(txOps);
@@ -131,8 +131,8 @@ class AnimateNpcsUseCaseTest {
     @Test
     void savesAnOffstageMoveButPresentsNothingHappened() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard()));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn3");   // player is elsewhere: the move touches neither their scene
         dice.willRoll(true).willPick(0);
         runTransactionAndFireAfterCommit(txOps);
@@ -149,10 +149,10 @@ class AnimateNpcsUseCaseTest {
     @Test
     void savesTheMoveButNarratesNothingWhenNoPlayerCanBeResolved() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard()));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1"))).thenReturn(Optional.empty());
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         dice.willRoll(true).willPick(0);
         runTransactionAndFireAfterCommit(txOps);
 
@@ -166,7 +166,7 @@ class AnimateNpcsUseCaseTest {
     @Test
     void skipsADeadEndNpcSilentlyWithoutRollingAndPresentsNothingHappened() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn3")));
-        when(sceneOps.findScene(new SceneId("scn3"))).thenReturn(Optional.of(armoury()));   // no exits
+        when(sceneOps.findScene(SceneId.of("scn3"))).thenReturn(Optional.of(armoury()));   // no exits
         // No roll is scripted: the dead-end is skipped before the dice are touched, and an unscripted roll
         // would throw — pinning that a dead-end NPC never rolls.
 
@@ -180,7 +180,7 @@ class AnimateNpcsUseCaseTest {
     @Test
     void skipsAnNpcWhoseCurrentSceneCannotBeResolved() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scnX")));
-        when(sceneOps.findScene(new SceneId("scnX"))).thenReturn(Optional.empty());
+        when(sceneOps.findScene(SceneId.of("scnX"))).thenReturn(Optional.empty());
 
         useCase.systemAdvancesNpcs();
 
@@ -191,13 +191,13 @@ class AnimateNpcsUseCaseTest {
     @Test
     void skipsAMoveIntoADanglingExitTargetSilently() {
         Scene gateToNowhere = Scene.builder()
-                .id(new SceneId("scn1")).name("Old Gate")
+                .id(SceneId.of("scn1")).name("Old Gate")
                 .shortDescription("A weathered archway.").fullDescription("A gate.")
-                .exits(List.of(new Exit("north", new SceneId("scn9"))))   // target never resolves
+                .exits(List.of(new Exit("north", SceneId.of("scn9"))))   // target never resolves
                 .build();
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gateToNowhere));
-        when(sceneOps.findScene(new SceneId("scn9"))).thenReturn(Optional.empty());
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gateToNowhere));
+        when(sceneOps.findScene(SceneId.of("scn9"))).thenReturn(Optional.empty());
         dice.willRoll(true).willPick(0);   // hit and pick, but the target dangles
 
         useCase.systemAdvancesNpcs();
@@ -210,10 +210,10 @@ class AnimateNpcsUseCaseTest {
     @Test
     void narratesOnlyThePerceptibleOfSeveralMovesButSavesThemAll() {
         when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1"), npc("npc2", "scn3")));
-        when(sceneOps.findScene(new SceneId("scn1"))).thenReturn(Optional.of(gate()));            // npc1: scn1 -> scn2
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard()));
-        when(sceneOps.findScene(new SceneId("scn3"))).thenReturn(Optional.of(armouryWithExit())); // npc2: scn3 -> scn4
-        when(sceneOps.findScene(new SceneId("scn4"))).thenReturn(Optional.of(watchtower()));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));            // npc1: scn1 -> scn2
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
+        when(sceneOps.findScene(SceneId.of("scn3"))).thenReturn(Optional.of(armouryWithExit())); // npc2: scn3 -> scn4
+        when(sceneOps.findScene(SceneId.of("scn4"))).thenReturn(Optional.of(watchtower()));
         playerInScene("scn1");   // sees npc1 depart; npc2's scn3->scn4 is off-stage
         dice.willRoll(true).willPick(0)   // npc1 hits, takes its only exit
                 .willRoll(true).willPick(0);   // npc2 hits, takes its only exit
@@ -243,9 +243,9 @@ class AnimateNpcsUseCaseTest {
 
     private void playerInScene(String sceneId) {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(new PlayerId("plr1")))
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1")))
                 .thenReturn(Optional.of(Player.builder()
-                        .id(new PlayerId("plr1")).currentScene(new SceneId(sceneId)).build()));
+                        .id(PlayerId.of("plr1")).currentScene(SceneId.of(sceneId)).build()));
     }
 
     private void assertSinglePerceived(MovementKind kind, String npcId, String detail) {
@@ -254,7 +254,7 @@ class AnimateNpcsUseCaseTest {
         verify(presenter).presentNpcMovements(captor.capture());
         assertThat(captor.getValue()).singleElement().satisfies(movement -> {
             assertThat(movement.getKind()).isEqualTo(kind);
-            assertThat(movement.getNpc().getId()).isEqualTo(new NpcId(npcId));
+            assertThat(movement.getNpc().getId()).isEqualTo(NpcId.of(npcId));
             assertThat(movement.getDetail()).isEqualTo(detail);
         });
         verify(presenter, never()).presentNothingHappened();
@@ -262,8 +262,8 @@ class AnimateNpcsUseCaseTest {
 
     private static Npc npc(String id, String currentScene) {
         return Npc.builder()
-                .id(new NpcId(id))
-                .currentScene(new SceneId(currentScene))
+                .id(NpcId.of(id))
+                .currentScene(SceneId.of(currentScene))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
@@ -274,24 +274,24 @@ class AnimateNpcsUseCaseTest {
     /** scn1 "Old Gate" with a single exit north -> scn2. */
     private static Scene gate() {
         return Scene.builder()
-                .id(new SceneId("scn1")).name("Old Gate")
+                .id(SceneId.of("scn1")).name("Old Gate")
                 .shortDescription("A weathered archway.").fullDescription("A gate.")
-                .exits(List.of(new Exit("north", new SceneId("scn2"))))
+                .exits(List.of(new Exit("north", SceneId.of("scn2"))))
                 .build();
     }
 
     private static Scene courtyard() {
         return Scene.builder()
-                .id(new SceneId("scn2")).name("Courtyard")
+                .id(SceneId.of("scn2")).name("Courtyard")
                 .shortDescription("A courtyard.").fullDescription("A grassy yard.")
-                .exits(List.of(new Exit("south", new SceneId("scn1"))))
+                .exits(List.of(new Exit("south", SceneId.of("scn1"))))
                 .build();
     }
 
     /** scn3 "Armoury" with no exits — a dead-end. */
     private static Scene armoury() {
         return Scene.builder()
-                .id(new SceneId("scn3")).name("Armoury")
+                .id(SceneId.of("scn3")).name("Armoury")
                 .shortDescription("An armoury.").fullDescription("Empty racks.")
                 .exits(List.of())
                 .build();
@@ -300,17 +300,17 @@ class AnimateNpcsUseCaseTest {
     /** scn3 with a single exit west -> scn4, for the multi-NPC case. */
     private static Scene armouryWithExit() {
         return Scene.builder()
-                .id(new SceneId("scn3")).name("Armoury")
+                .id(SceneId.of("scn3")).name("Armoury")
                 .shortDescription("An armoury.").fullDescription("Empty racks.")
-                .exits(List.of(new Exit("west", new SceneId("scn4"))))
+                .exits(List.of(new Exit("west", SceneId.of("scn4"))))
                 .build();
     }
 
     private static Scene watchtower() {
         return Scene.builder()
-                .id(new SceneId("scn4")).name("Watchtower")
+                .id(SceneId.of("scn4")).name("Watchtower")
                 .shortDescription("A watchtower.").fullDescription("A high parapet.")
-                .exits(List.of(new Exit("down", new SceneId("scn3"))))
+                .exits(List.of(new Exit("down", SceneId.of("scn3"))))
                 .build();
     }
 }

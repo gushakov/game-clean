@@ -49,8 +49,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class DropUseCaseTest {
 
-    private static final SceneId HERE = new SceneId("scn1");
-    private static final PlayerId SELF = new PlayerId("plr1");
+    private static final SceneId HERE = SceneId.of("scn1");
+    private static final PlayerId SELF = PlayerId.of("plr1");
 
     @Mock
     private DropPresenterOutputPort presenter;
@@ -77,7 +77,7 @@ class DropUseCaseTest {
 
         // The item is saved onto the ground of the current scene (location moved, identity and version preserved)...
         Item saved = capturedSavedItem();
-        assertThat(saved.getId()).isEqualTo(new ItemId("itm1"));
+        assertThat(saved.getId()).isEqualTo(ItemId.of("itm1"));
         assertThat(saved.getLocation()).isEqualTo(new Location.OnGround(HERE));
         // ...and the dropped item is presented only after the write commits.
         verify(presenter).presentItemDropped(saved);
@@ -162,7 +162,7 @@ class DropUseCaseTest {
 
     private static Item heldItem(String id, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
+                .id(ItemId.of(id))
                 .location(new Location.HeldBy(SELF))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")

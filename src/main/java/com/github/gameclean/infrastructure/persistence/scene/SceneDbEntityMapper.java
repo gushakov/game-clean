@@ -3,7 +3,7 @@ package com.github.gameclean.infrastructure.persistence.scene;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
-import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.infrastructure.mapping.ScalarConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -13,12 +13,12 @@ import org.mapstruct.Mapping;
  * the domain model can evolve at different speeds, and only this mapper (plus the DB entity) moves
  * when the storage shape changes.
  *
- * <p>The {@link SceneId} value object is unwrapped to / re-wrapped from its raw string by the two
- * converter methods below; re-wrapping runs the value object's own validation, so a malformed id
- * read from the database would surface as a domain error rather than slipping through.
+ * <p>The scene-id value object is unwrapped to / re-wrapped from its raw string by the shared
+ * {@link ScalarConverter} this mapper extends; re-wrapping runs the value object's own validation, so a
+ * malformed id read from the database would surface as a domain error rather than slipping through.
  */
 @Mapper(componentModel = "spring")
-public interface SceneDbEntityMapper {
+public interface SceneDbEntityMapper extends ScalarConverter {
 
     SceneDbEntity toDbEntity(Scene scene);
 
@@ -29,14 +29,6 @@ public interface SceneDbEntityMapper {
 
     @Mapping(target = "target", source = "targetSceneId")
     Exit toDomain(ExitDbEntity entity);
-
-    default String sceneIdToString(SceneId id) {
-        return id == null ? null : id.getValue();
-    }
-
-    default SceneId stringToSceneId(String value) {
-        return value == null ? null : new SceneId(value);
-    }
 
     default MiniGameDbEntity toDbEntity(MiniGame miniGame) {
         MiniGameDbEntity entity = new MiniGameDbEntity();

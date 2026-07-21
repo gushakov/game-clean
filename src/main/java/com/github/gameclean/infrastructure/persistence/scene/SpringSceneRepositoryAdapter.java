@@ -62,20 +62,20 @@ public class SpringSceneRepositoryAdapter implements SceneRepositoryOperationsOu
     public void saveScene(Scene scene) {
         try {
             aggregateTemplate.insert(mapper.toDbEntity(scene));
-            log.debug("[Persistence] Inserted scene {}", scene.getId().getValue());
+            log.debug("[Persistence] Inserted scene {}", scene.getId().asString());
         } catch (DataAccessException e) {
             throw new PersistenceOperationsError(
-                    "Cannot save scene %s".formatted(scene.getId().getValue()), e);
+                    "Cannot save scene %s".formatted(scene.getId().asString()), e);
         }
     }
 
     @Override
     public Optional<Scene> findScene(SceneId id) {
         try {
-            return repository.findById(id.getValue()).map(mapper::toDomain);
+            return repository.findById(id.asString()).map(mapper::toDomain);
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
-                    "Cannot load scene %s (unreadable or corrupt)".formatted(id.getValue()), e);
+                    "Cannot load scene %s (unreadable or corrupt)".formatted(id.asString()), e);
         }
     }
 }

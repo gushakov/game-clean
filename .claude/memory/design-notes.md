@@ -362,6 +362,112 @@ data is never a presented outcome to test against). The labeling fidelity that r
 line** of union catch instead (§2). (Promotion candidate, flagged: *provenance, not hexagon side, decides the
 boundary currency; the carrier type and the failure currency are one decision*.)
 
+**How the currency is spent: every VO↔column conversion rides a shared converter interface selected by
+source + target type — the `expression` escape hatch was earned, then dissolved.** `[thread #2]` (#69, #83)
+On the valid-by-provenance side above, "reconstitute the model" is MapStruct's job. The first analysis (#69)
+found *two regimes*: single-field wrapper VOs converted 1:1 by type selection, while composite VOs flattening
+into several sibling columns had no type-based entry and so *earned* `expression` helpers (multi-source maps
+*parameters* not sibling properties; constructor/`@ObjectFactory` name-matching fails). #83 dissolved that
+second regime — not by finding a better mechanism, but by removing the *shape* that demanded it, once per
+composite, in opposite directions:
+- **`Chance` stopped being two columns.** Its `num/den` fraction has a canonical one-scalar text form (the very
+  rendering the authored YAML uses), so it gained the id VOs' `asString()`/`of(String)` pair and now persists as
+  a single varchar — a true scalar↔scalar conversion that joins the wrapper VOs in `ScalarConverter`. The
+  discriminator for whether a composite may collapse this way: **queryability decides column shape** — chance
+  arithmetic never happens in SQL, while hit-point comparisons plausibly do, so `HitPoints` kept its two int
+  columns.
+- **`HitPoints` kept its columns but gained a type.** `HitPointsDbEntity` (`@Embedded` — several columns of the
+  owner's *own* table, the methodology's audit-metadata precedent) is exactly the target type MapStruct's
+  selection needed; the pair of explicit `default` converters lives in **`CompositeDbConverter`**
+  (`infrastructure.persistence.common`), and the mapper maps the pool by name. The interface is deliberately
+  *not* beside `ScalarConverter` in the layer-neutral `infrastructure.mapping`: that package is neutral because
+  `String` is neutral, whereas an embeddable is a Spring-Data persistence shape no view-model mapper would
+  target — hoisting it there would quietly break #77's rationale.
+- **Sum-shapes embed by their encoding.** A sealed VO (`Item.Location`) cannot embed *structurally*, but its
+  flattened `(kind, ref)` encoding is a plain product, and `LocationDbEntity` embeds it. The exhaustive
+  `switch` — the reason the fan-out was once "kept in its own mapper" — keeps its compile-error-on-new-case
+  guarantee *inside the converter*; what the old reasoning conflated was the switch (non-negotiable, survives)
+  with the missing selection type (which the embeddable supplies). The forward direction got *safer*: kind and
+  ref are one atomic switch instead of two separate switches that had to silently agree.
+
+Two boundaries hold the design honest. **Explicit pairs, never MapStruct's implicit nested-bean mapping:** the
+reconstitution must visibly run the VO's validating constructor/factory, so a corrupt stored pair or malformed
+ref fails as a domain error for the reading adapter to wrap as an integrity fault (§2). **MapStruct, never
+Spring Data JDBC custom converters** (`@ReadingConverter`/`@WritingConverter` were examined for `Chance` and
+rejected): registering conversions with the framework would create a second conversion regime beside the
+MapStruct one and move reconstitution failures inside the framework's row mapping, away from the adapter catch
+that owns the integrity-fault wrapping. The derived-query gotcha from #69 generalizes: restructuring a DB-entity
+property ripples into **derived-query method names**, now through embedded property *paths*
+(`findBy…CurrentHitPointsGreaterThan`→`findBy…HitPointsCurrentGreaterThan`), though a name can survive by
+spelling coincidence — `findByLocationKindAndLocationRef` parses identically against the flat properties it was
+written for and the embedded `location.kind`/`location.ref` path it now resolves through. (Promotion candidate,
+flagged not promoted: *an `@Embedded` DB shape gives a composite VO the target type MapStruct's source+target
+selection needs, dissolving `expression` reconstitution; products embed directly, sealed sums embed via their
+flattened encoding with the exhaustive switch intact inside the shared converter; scalar-text forms collapse to
+one column instead when the columns are never queried individually.*)
+
+**Deferred by emergence — the generalized gauge shape.** A `PointsDbEntity` reused via `@Embedded(prefix =
+"hit_")` for every capped-pool stat the game will grow (luck, armor, …) was designed and *deliberately not
+built*: it has exactly one consumer today, costs a column rename (`max_hit_points → hit_max_points`, since the
+prefix prepends to every column), and per-VO converter pairs are needed regardless — the shared shape would save
+one three-line class per pool while betting that the pools' structural coincidence holds. The domain side is the
+sharper reason to wait: future pools will individuate on *behavior* (luck is spent, armor absorbs) as distinct
+VOs whose *structure* merely coincides, and persistence may generalize on structure only when that coincidence
+is evidenced, not guessed. Trigger to revisit: the second gauge-like VO actually arriving. (There is no
+canonical mathematical name for the *(current, max)* pair — the clamped arithmetic is *saturation arithmetic*,
+clamp-at-zero subtraction is *truncated subtraction / monus* on ℕ; the game-design term is **gauge**.)
+
+**IDs expose a semantic projection, not a structural accessor — and the converter becomes the *sole*
+representation-knower.** `[thread #2]` (#77) The converter-regimes note above left the wrapper VOs exposing their
+`String` via Lombok's `getValue()`. That getter is a *structural* accessor — it asserts "my internal field **is**
+a `String`, here it is," so every caller binds to the **representation identity**. Replaced by an explicit
+*semantic projection* `asString()`, which asserts only "a canonical text form **can be produced**." The second
+is a strictly weaker, more stable commitment: if `SceneId#value` ever became a composite or a `UUID`,
+`asString()`'s *signature* is untouched and only its body (plus the one converter) adapts, whereas
+`getValue():String` would have to lie or break every call site. Construction is made symmetric — private ctor +
+`of(String)` factory (the runtime-minted ids keep `mint(Dice)`/`fromGeneratedBody` routing through the now-private
+ctor internally) — so representation-*in* is as encapsulated as representation-*out*.
+
+Three deliberate edges. **`asString()` is kept distinct from `toString()`** (left as Lombok's debug form,
+`SceneId(value=scn1)`): collapsing them re-opens the coupling — someone would serialize via `toString()` and a
+later log-formatting tweak silently corrupts a key. **Scope is ID VOs only:** a canonical text form is
+*intrinsic* to what an identifier is; for a non-ID wrapper (`Age` over `int`) an `asString()` would be a smell —
+those want domain operations, not stringification. **The payoff lands on the converter:** `ScalarConverter` is
+now the *one* sanctioned site that knows an id is text (`id.asString()` / `SceneId.of(value)`); every other site
+— presenters, renderers, the `select` well-formed-token gate, even `Designatable.hasIdToken` inside the model —
+calls `asString()` and couples to nothing structural. This is why the interface earned a hoist out of
+`infrastructure.persistence` into a **layer-neutral `infrastructure.mapping`** (sibling of `persistence`): an
+id↔`String` conversion is generic scalar mapping, not a persistence concern, so any mapper family (persistence
+DB-entity mappers today, view-model/UI mappers tomorrow) reuses it — and non-mapper infra (logs, terminal
+writes) needs it *not at all*, calling `asString()` on the VO directly. One MapStruct consequence, benign:
+hiding the getter means MapStruct can no longer auto-select `SceneId ↔ String` by bean convention, but the
+`ScalarConverter` `default` methods are *explicit* converters calling `asString()`/`of()`, so the "no converter,
+let MapStruct infer it" style (which this project never used) is the only thing ruled out. (Promotion candidate,
+flagged: *for identifier VOs, expose `asString()` (a capability) not a representation getter, keep it distinct
+from `toString()`, construct via `of()`; the id↔text converter is the sole representation-knower and belongs in a
+layer-neutral mapping package.*)
+
+**The surviving `x.getId().asString()` chains are left as Demeter trains — a considered stance, not an
+oversight.** `[thread #2]` The `asString()` rename left presenters calling `item.getId().asString()`: a two-hop
+method chain that strict Law of Demeter would wrap in a forwarder (`item.getIdAsString()`). Rejected as the
+default for three reasons. **(a) The VO carve-out.** LoD is about not coupling to a collaborator's *navigation
+structure*; an id returned by `getId()` is a *value*, not a behavioral object whose graph you're reaching
+through, and asking a value for its own text form couples you to nothing navigable. **(b) Middle-Man
+counter-smell.** A per-projection forwarder set (`getIdAsString`, then `getCurrentSceneAsString`,
+`getTargetAsString`, … = field × format) is exactly Fowler's *Middle Man* — it bloats the aggregate's surface
+with representation plumbing and drifts it toward a DTO, a worse smell than the chain it removes. **(c)
+Presenters are the right place to reach.** They are infra adapters whose job is to render domain objects (§8
+sanctions handing them the objects), so navigation is inherent and localized — and the project already answers
+LoD at a *coarser* grain by handing whole VOs to renderers (`ItemRenderer`), leaving only comparison keys, log
+lines, and the `AffordanceContext` token list as raw-token sites where a forwarder would merely relocate one dot.
+
+Where the LoD line *is* drawn here is §10: the **domain and use case must not reach across aggregates or for I/O
+through getter chains** — that is the Demeter violation that bites (`customer.buy(product)` groping for
+`LocalDate.now()`). A presenter formatting an id is not that. The meta-lesson kept alongside the technical one:
+surface the Demeter option as *considered-and-declined* rather than silently defaulting to the carve-out side —
+the same flag-it-even-if-rejected discipline applied to Boot-4 quirks. (Not a promotion candidate on its own —
+it is the presenter-boundary corollary of §10's LoD rule.)
+
 ## 4. Use cases as first-class interactions
 
 **Interaction shape (the world-construction phase).** The actor is the *system at startup*.
@@ -516,15 +622,18 @@ outside it," and the acid test is that no infrastructure crosses into the model 
 operate *from the acting player's current scene*, reaching their outcomes by **branch-and-present**
 (missing player, dangling current-scene reference) rather than by throwing. That shared grounding —
 not the use case — is what decides presenter sharing, and `move`'s arrival **corrected the first
-guess**. The guess was that only the narrow `presentScene` capability would be shared, each use case
+guess**. The guess was that only the narrow scene-rendering capability would be shared, each use case
 keeping its own not-found outcomes. But because `move` resolves the *same* player-and-current-scene
-prologue, the not-found outcomes are shared too: the cluster is the three outcomes of "describe where
-the acting player stands, or why we can't" — lifted into the shared `OrientPlayerPresenterOutputPort`
-(the `orient` subcase's presenter port — see below). `move`'s
-port extends it with the two outcomes peculiar to moving (no-such-exit, dangling exit target), and
-`look`'s port turns out to *be* the cluster exactly (kept as an empty marker for symmetry). The
-lesson: **outcome-sharing tracks the shared prologue, not the use case** — any later interaction
-grounded in the current scene (`look <target>`, `take`) joins the same cluster.
+prologue, the not-found outcomes are shared too: the cluster is the outcomes of "locate where
+the acting player stands, or say why we can't" — lifted into the shared `OrientPlayerPresenterOutputPort`
+(the `orient` subcase's presenter port — see below), which each consumer's concrete presenter now
+*implements directly* beside the use case's own port (the flat-port rule below; the interface-extension
+chain this cluster was first shared through is retired). The scene rendering itself later proved the part
+that was *never* truly shared: observing where one stands (`look`) and entering a new scene (`move`) are
+two Cockburn stripes — `presentScene` / `presentSceneEntered`, declared on each use case's own port,
+rendered alike today by the one `CurrentSceneRenderer`. The lesson survives both revisions:
+**outcome-sharing tracks the shared prologue, not the use case** — any later interaction
+grounded in the current scene (`examine`, `take`, `hit`) joins the same cluster.
 
 **Items sharpen the prologue's edge: a scene's *contents* track the scene each use case presents, not the
 prologue.** `[thread #2]` `[thread #4]` The obvious move when items arrived was to fold "the items on the
@@ -555,8 +664,10 @@ tracks the shared prologue — and so does *subcase reuse*; an interaction that 
 grounding shares neither the port nor the subcase, only the renderer.
 
 This split sharpens the project's headline finding into **three orthogonal axes of sharing**, each
-resolved by its own mechanism. The *port vocabulary* is shared — by interface extension, with **no
-default methods** (a presenter port stays behaviour-free; how a scene renders is an adapter concern).
+resolved by its own mechanism. The *port vocabulary* is shared — the subcase owns its narrow port and
+every consumer's concrete presenter implements it directly (flat composition, not an extends-chain —
+see *Flat presenter ports everywhere* below), with **no default methods** (a presenter port stays
+behaviour-free; how a scene renders is an adapter concern).
 The *adapter rendering* is shared — a single `CurrentSceneRenderer` collaborator over a `Console`
 facade (§7), injected into two thin per-use-case presenters: **composition**, not a presenter base
 class (which would overclaim "is-a scene presenter") and not a grab-bag port. And the *use-case logic*
@@ -763,7 +874,9 @@ the opening without the ending. The renderer side mirrors the port split (the no
 into a shared `OrientRenderer`, `presentScene` rendering left on `CurrentSceneRenderer`, a new `ItemRenderer`
 for examine), so composition tracks the interface segregation. (Promotion candidate, flagged not promoted:
 *port granularity follows distinguishable outcomes per consumer; a shared prologue is not a reason to share an
-ending.*)
+ending.*) The re-split has since been completed by its own logic: `CurrentScenePresenterOutputPort` is
+**deleted** — the `look`/`move` "shared ending" itself proved a coincidence of *rendering*, not a shared
+outcome (see *Flat presenter ports everywhere* below).
 
 **Why the candidate *ordering* lives in the presenter, not the use case.** `[thread #2]` The disambiguation
 outcome has two faces of one affordance — the visible numbered menu and the latent number→identity mapping —
@@ -832,17 +945,22 @@ superset**: a use case only ever checks the precondition on *the state it actual
 prologue checks player + current scene because `look`/`move` read those; `now`/`bye` check the clock because
 they read that), and *no interaction reads the whole world*, so none can honestly evaluate "is the game
 initialized." A single gate would also collapse distinctions `orient` deliberately keeps (player-not-found ≠
-dangling-current-scene). So readiness lives as **sibling presenter clusters keyed to shared sub-state** —
-`OrientPlayerPresenterOutputPort` for player+scene, a small `ClockReadinessPresenterOutputPort` (one outcome,
-`presentGameNotInitialized`) shared by the two clock use cases — each extending `ErrorHandlingPresenterOutputPort`
-*directly*, by interface extension, exactly as the orient cluster is. No common `GameReadinessPresenterOutputPort`
-super-interface is hoisted above them: the clusters share no *method* (player-not-found is not clock-not-ready),
-so a super would be an empty marker or force the collapse just rejected — it waits for a third cluster that
-genuinely shares an outcome (emergence). And the *check logic* is not subcased: at one line per use case it
+dangling-current-scene). So readiness lives as **sibling outcome clusters keyed to shared sub-state** —
+`OrientPlayerPresenterOutputPort` for player+scene (the `orient` subcase's own port), and
+`presentGameNotInitialized` for the clock. The clock outcome was first factored as a small
+`ClockReadinessPresenterOutputPort` the three clock ports extended; under the flat-port rule (below) that
+interface is **deleted** and each clock use case's port *declares* `presentGameNotInitialized` itself — the
+`inventory` precedent (per-port declaration, only the rendering shared). No artifact ever held a
+readiness-typed reference — unlike the orient port, which the subcase holds and presents through — so the
+interface was pure vocabulary dedup, and its extends-chain the driftable second encoding the flat rule
+retires. No common `GameReadinessPresenterOutputPort`
+super-interface is hoisted above the clusters: they share no *method* (player-not-found is not clock-not-ready),
+so a super would be an empty marker or force the collapse just rejected — it waits for a cluster that
+genuinely shares an owner (emergence). And the *check logic* is not subcased: at one line per use case it
 stays inline (the `orient` subcase earned itself with a multi-step prologue and 2+ consumers; a one-line clock
 load does not). This sharpens thread #2: **output-port granularity tracks *(audience × distinguishable
-outcomes)*** — shared outcomes factor by interface extension keyed to shared sub-state, never a false superset
-and never a grab-bag god-presenter. The same cut explains why the **producer** and **consumer** sides of the
+outcomes)*** — shared outcomes stay keyed to shared sub-state but are declared per consumer port, never a
+false superset and never a grab-bag god-presenter. The same cut explains why the **producer** and **consumer** sides of the
 same invariants stay on separate ports: `InitializeGame` reports authoring/consistency failures (a dangling
 exit target, an unknown starting scene) to an **operator/log** audience at *build* time, while the play use
 cases report readiness gaps to a **player** audience at *play* time — same invariant guarded twice, two
@@ -876,6 +994,40 @@ two selection-gate misses) moved *off* `examine`'s port *onto* the select port; 
 terminal `presentItemDescription`. (Promotion candidate, flagged not promoted: *a shared sub-dialogue
 orthogonal to the shared prologue is composed beside it, not nested under it; presenter ports compose as flat
 narrow interfaces on one concrete presenter, never an inheritance chain that asserts a false is-a.*)
+
+**Flat presenter ports everywhere — the extension mechanism is retired (#81).** `[thread #2]` `[thread #4]`
+The select finding above generalized, and the two styles that briefly coexisted (the pre-select
+`Look/Move → CurrentScene → OrientPlayer` and clock `→ ClockReadiness` extends-chains vs the flat implements
+of `examine`/`take`/`drop`/`hit`/`playBlackjack`) collapsed to one rule: **a presenter port declares exactly
+the outcomes its owning artifact presents and extends nothing — except `ErrorHandlingPresenterOutputPort`
+when the owner holds an outermost catch. Subcase ports extend nothing at all.** Two arguments decided it, and
+neither is "inheritance is bad." First, **ownership as structure, not discipline**: the extension chain types
+the port to the *interaction* — `move`'s presenter field could statically call `presentPlayerNotFound`, an
+outcome only the `orient` subcase may present — while flat ports type each field to the *presenting artifact*,
+so the compiler enforces the very outcome-ownership the guarded-prologue contract prescribes. This is §2's
+"remove the affordance, don't forbid the misuse," applied to presenter ports. Second, **one encoding of
+composition**: which subcases a use case composes is already declared by its fields; the extends-chain was a
+second, silently-driftable copy of that fact (drop the subcase, the port still demands its methods). Under the
+flat rule the concrete presenter's implements-clause mirrors the use case's subcase fields 1:1 — the same
+composition stated once per hexagon side, and the composition root's per-role constructor parameters
+type-check that the one presenter instance covers the union. The retirement cost *zero* implementation:
+interface extension never shared method bodies, so the per-presenter delegation methods (the visible
+"duplication") exist identically under both styles — the price of subcase reuse with terminal presentation,
+already paid. Three consequences landed together. (a) `CurrentScenePresenterOutputPort` deleted with
+grammar-honest replacements — `look.presentScene` vs `move.presentSceneEntered` — because a port method whose
+javadoc must gloss per caller ("the current scene for look, the scene entered for move") is two stripes under
+one signature; anticipated divergence (an entry line, an abbreviated re-description) now lands in a presenter
+body with no port surgery, and `look`'s port stops being an empty marker. (b) The clock trio declares
+`presentGameNotInitialized` per port; `ClockReadinessPresenterOutputPort` deleted (the `inventory` precedent).
+(c) `OrientPlayerPresenterOutputPort` dropped its `ErrorHandling` base — the subcase never presents the
+catch-all (faults propagate to the parent's outermost checkpoint), so the base handed it an affordance outside
+its surface; `SelectTargetPresenterOutputPort` already extended nothing. The `ErrorHandling` exception to
+"extends nothing" is principled, not residual: `presentError` *is* the use case's own outcome (its outermost
+catch), so extending the base is still declaring-own-outcomes, merely via a shared spelling of the one
+universal outcome. (Promotion candidate, flagged not promoted — supersedes the methodology's
+`subcases.md` §Presenter port inheritance: *a presenter port declares exactly what its owner presents;
+parent ports never extend subcase ports — the concrete presenter implements them flat, mirroring the use
+case's composition; subcase ports extend nothing, not even the catch-all base.*)
 
 **Values between procedures; suppliers only into the model — the direction the "can of worms" hides.**
 `[thread #4]` The provisioning question first reached for a `Function<…, List<Item>>` handed into the subcase —
@@ -1697,7 +1849,7 @@ same for `take`/`drop`), the §4 split decides the wiring: the use case is the c
 its semantic steps are the converging interaction methods (`playerExaminesChosenCandidate`) — while the
 **modality** (the affordance buffer, the continuation predicate, the resume routing) is a delivery-mechanism
 concern kept in infra. So we **"dress up" each use case as a conversation** with a thin *infra* handler
-(`Conversation { SelectionKind kind(); void resume(Command, List<String>); }`) declared in the composition
+(`Conversation { AffordanceKind kind(); void resume(Command, Affordance); }`) declared in the composition
 root (the §6 ad-hoc-`new` convention, *named* — not anonymous-in-`@Bean` — so it is testable, grows a state
 machine for >2 steps, and can share a base), and we let the **DI container be the resumer map**:
 `ConsoleSession` injects `List<Conversation>` and matches the armed `kind()`, instead of a hand-maintained
@@ -1742,7 +1894,7 @@ both at `take`: `SelectTargetPresenterOutputPort` lost `presentNoPendingSelectio
 container-as-resumer-map the console resumes a selection *only when one is armed*, so an empty offer can no
 longer reach the subcase as a player action; it becomes a **precondition throw** (a wiring fault routed to the
 catch-all), *not* a deleted case (deleting it would let an empty offer mislabel as `presentNoSuchOption`). And
-the wiring grew a **startup completeness assertion** — every `SelectionKind` must have a `Conversation` bean —
+the wiring grew a **startup completeness assertion** — every `AffordanceKind` must have a `Conversation` bean —
 so a kind with no handler fails fast at boot rather than silently dropping a pick at runtime. (Promotion
 candidate, flagged not promoted: *"emerge at the second instance" is per-axis — one feature can be the second
 instance of one abstraction and merely the first reuse of another; count per abstraction, not per feature.*)
@@ -1772,7 +1924,7 @@ interactions is the `Result<T>` anti-pattern reborn; a core dialogue-state type 
 driven port *before routing* is controller-as-orchestrator ("chaining use cases from controllers"), and "which
 interaction next" is exactly the routing vocabulary the core excludes (the argument that killed the core
 `Conversation`, above). The load-bearing precedent is HATEOAS: presenter-armed mode = server-embedded links,
-`SelectionKind` = link relation, opaque tokens = opaque URIs, re-validation = answering a stale link with 410
+`AffordanceKind` = link relation, opaque tokens = opaque URIs, re-validation = answering a stale link with 410
 Gone — and *conditional links* (an option offered only when domain state permits) are computed server-side and
 shipped outward; a client computing link availability itself is the anti-pattern the style exists to forbid.
 (Ink/Yarn dialogue engines are the game-native twin: conditional choices are evaluated by the engine against
@@ -1943,7 +2095,7 @@ governs *player-authored* input, which is untrusted and must pass the constructi
 **system-authored, valid by provenance** (§3's provenance rule applied to the arming channel), never touched
 by the player's fingers, so no gate applies on the way back in. The §9 payload tests all pass *precisely
 because* the shell never opens it: the router shape-matches command types and kind only; the one narrowing
-cast lives in the conversation handler (`(BlackjackRound) affordance.payload()` — the `SelectCommand` cast's
+cast lives in the conversation handler (`(BlackjackRound) ((EphemeralAffordance) affordance).getPayload()` — the `SelectCommand` cast's
 twin); a shell that *read* the round to route would fail transcription-not-computation on the spot. This
 *scopes* rather than repeals the earlier "a payload field wanting domain semantics is the signal to mint the
 aggregate and degrade the token" — that guidance presumed a domain source of truth to correlate against. The
@@ -1969,6 +2121,31 @@ source of truth exists — a correlation token when it does, an opaque state env
 deliberately domain-ephemeral; opacity to the shell, not payload minimality, is the load-bearing discipline,
 and the presenter's completion-disarm joins arming as a fixed transcription, distinct from the dispatcher's
 abandonment-clear.*)
+
+**The two disciplines became *structural* — a sealed `Affordance`, and the buffer slimmed to a holder.**
+`[thread #4]` The token-vs-envelope split above was first carried by a *single* `Affordance(kind, tokens,
+payload)` record with exactly one of `tokens`/`payload` populated per family and the other empty — a
+co-existing-nullable-fields shape enforced only by convention. That is precisely the anti-pattern §2 rejected
+for `Item.location` (a nullable `holder` beside a `SceneId`, an XOR the constructor must police), and the fix
+is the same lesson at its second instance: `Affordance` is now a **sealed interface** —
+`SelectionAffordance(kind, List<String> tokens)` | `EphemeralAffordance(kind, Object payload)` — so the XOR is
+*structural* (one carrier or the other, never both, never neither), each family's field stays compile-time
+typed (the selection handler reads `List<String>` with **no unchecked cast**; only the ephemeral handler
+narrows — `(BlackjackRound) ((EphemeralAffordance) a).getPayload()`, the `SelectCommand` cast's twin), and a
+future third family is an unforgettable new `permits` entry rather than a fourth nullable slot. Two
+consequences fall out. `AffordanceKind` — **renamed from `SelectionKind`**, which *lied* (`BLACKJACK` was never
+a selection but the ephemeral family) — is **freed to be a pure routing key**: it no longer implicitly signals
+*which field is live* (the subtype now does), so the discriminator the affordance carries and the payload
+discipline are orthogonal, and the rename also de-overloads the `select*` vocabulary (`SelectCommand`,
+`SelectionAffordance` stay genuinely about selection). And `AffordanceContext` collapses to a **pure
+single-slot holder** (`offer`/`arm`/`current`/`clear`): its old projection accessors `kind()` / `currentOffer()`
+merely mirrored the value's fields and were redundant once `current()` returned the affordance whole and the
+handler received it as a value (`currentOffer()` was in fact production-dead). The §9 "two payload disciplines"
+finding is unchanged in substance — it is now *enforced by the type system* rather than narrated over a
+half-empty record. (Promotion candidate, flagged not promoted: *when a carrier serves two families with
+disjoint fields keyed by a discriminator, seal it into one subtype per family rather than a single record with
+per-family-empty fields — the §2 sealed-over-nullable ruling applies to delivery-mechanism carriers too; the
+discriminator is then freed to be a pure routing key.*)
 
 **Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
 lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the

@@ -66,4 +66,40 @@ class ChanceTest {
         assertThat(new Chance(12, 50)).isEqualTo(new Chance(12, 50));
         assertThat(new Chance(12, 50)).isNotEqualTo(new Chance(13, 50));
     }
+
+    @Test
+    void projects_the_canonical_num_den_text_form() {
+        assertThat(new Chance(12, 50).asString()).isEqualTo("12/50");
+    }
+
+    @Test
+    void reconstitutes_from_the_canonical_text_form() {
+        assertThat(Chance.of("12/50")).isEqualTo(new Chance(12, 50));
+        assertThat(Chance.of(" 1 / 40 ")).isEqualTo(new Chance(1, 40));
+    }
+
+    @Test
+    void round_trips_through_the_text_form() {
+        Chance chance = new Chance(3, 7);
+        assertThat(Chance.of(chance.asString())).isEqualTo(chance);
+    }
+
+    @Test
+    void rejects_a_null_text_form() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Chance.of(null));
+    }
+
+    @Test
+    void rejects_a_malformed_text_form() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Chance.of("12"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Chance.of("12/50/2"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Chance.of("a/b"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Chance.of("12/"));
+    }
+
+    @Test
+    void text_reconstitution_reruns_the_validity_gate() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Chance.of("1/0"));
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Chance.of("3/2"));
+    }
 }

@@ -61,13 +61,14 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
   `Terminal`, `Player`, `Time`). Sub-packages:
-  `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
+  `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`, plus the shared `common/` — the embeddable shapes `HitPointsDbEntity`/`LocationDbEntity` + `ItemLocationKind` + `CompositeDbConverter`, the persistence-family MapStruct `default` pairs for `@Embedded` composites, #83), `infrastructure/mapping/` (layer-neutral MapStruct support — `ScalarConverter`, the shared single-scalar `default` converters (VO-ID↔`String` #77, `Chance`↔its `num/den` text #83) every DB-entity mapper `extends`; a sibling of `persistence` because VO↔`String` is generic scalar mapping, reusable by any future mapper family), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving `AnimateNpcs`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
-  (session-lifetime conversational buffer holding one armed `Affordance` — kind + selection tokens *or* an
-  opaque state envelope, #72) + the `Affordance` value + the `SelectionKind` enum;
+  (session-lifetime conversational buffer holding one armed `Affordance`, #72/#79) + the **sealed** `Affordance`
+  value (`SelectionAffordance` = kind + selection tokens; `EphemeralAffordance` = kind + opaque state envelope)
+  + the `AffordanceKind` enum;
   `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation`
   with its per-dialogue `continuedBy(Command)` predicate + `AbstractSelectionConversation` Template-Method base +
   `Examine`/`Take`/`Drop`/`Hit`/`BlackjackConversation`); `presenter/` the driven
@@ -157,11 +158,13 @@ named exit into the target scene, then sees it):
   `MoveUseCase`, co-located `MovePresenterOutputPort`. Reads + validity checks outside a tx; one
   `doInTransaction` holds only the `savePlayer` write; the entered scene is presented in `doAfterCommit`.
   Branch-and-present for missing player / dangling current scene / no such exit / dangling exit target.
-- **Shared presenter capability** — the current-scene **outcome cluster** (`presentScene` +
-  `presentPlayerNotFound` + `presentCurrentSceneNotFound`) lives on `OrientPlayerPresenterOutputPort` (the
-  `orient` subcase's port — see below; introduced here as `CurrentScenePresenterOutputPort`, since
-  renamed/moved); `LookPresenterOutputPort` is an empty marker extending it, `MovePresenterOutputPort`
-  extends it + `presentNoSuchExit`/`presentTargetSceneNotFound` (design-notes §4: three axes of sharing).
+- **Shared presenter capability** — the two not-found outcomes (`presentPlayerNotFound` +
+  `presentCurrentSceneNotFound`) live on `OrientPlayerPresenterOutputPort` (the `orient` subcase's port — see
+  below; introduced here as `CurrentScenePresenterOutputPort`, since renamed/moved), which the concrete
+  presenters implement **flat** beside each use case's own port (#81); `LookPresenterOutputPort` declares
+  `presentScene`, `MovePresenterOutputPort` declares `presentSceneEntered` (distinct stripes, one shared
+  `CurrentSceneRenderer`) + `presentNoSuchExit`/`presentTargetSceneNotFound` (design-notes §4: three axes of
+  sharing + flat presenter ports).
 - **Terminal** — `Console` styled-writer resource (§7 facade, declared in `TerminalConfig`) + shared
   `CurrentSceneRenderer`; two thin presenter beans `TerminalLookPresenter` / `TerminalMovePresenter`
   (replacing `TerminalScenePresenter`). `MoveCommand` + `move`/`go` verbs in `CommandParser`; `ConsoleSession`
@@ -189,7 +192,7 @@ named exit into the target scene, then sees it):
   designation (design-notes §4).
 - **Conversational state** — `AffordanceContext` (`infrastructure/terminal/`, a session-lifetime resource
   declared in `TerminalConfig`): remembers the offered candidate **id tokens** in display order. It trades in
-  **raw `String` tokens, not the `ItemId` model VO** — the driven presenter does the `getId().getValue()` flatten
+  **raw `String` tokens, not the `ItemId` model VO** — the driven presenter does the `getId().asString()` flatten
   when it arms it; the primary console adapter stays model-free per "primitives inward" (§6) (design-notes §4).
   Surface is `offer` / `currentOffer` / `clear` — a dumb store that resolves nothing and presents nothing. The
   **presenter** arms it as it renders the menu; the **controller** (`ConsoleSession`) only detects the selection
@@ -197,9 +200,10 @@ named exit into the target scene, then sees it):
   command. The use case owns the conversation — it resolves the pick and presents all outcomes; the controller
   decides and renders nothing (design-notes §4).
 - **Presenter port re-split (ISP)** — `OrientPlayerPresenterOutputPort` shrank to the two not-found outcomes the
-  subcase presents; `presentScene` moved down into a new `CurrentScenePresenterOutputPort` (look/move); `Examine`
-  extends the slim orient port + adds its four outcomes. Renderers mirror it: `OrientRenderer` (not-founds, shared
-  by all three), `CurrentSceneRenderer` (scene only), `ItemRenderer` (examine outcomes) (design-notes §4).
+  subcase presents; `presentScene` moved down into a `CurrentScenePresenterOutputPort` (look/move) — since
+  **deleted** under the flat-port rule (#81): each port declares its own scene outcome. Renderers mirror the
+  split: `OrientRenderer` (not-founds, shared), `CurrentSceneRenderer` (scene only), `ItemRenderer` (examine
+  outcomes) (design-notes §4).
 - **Parsing** — `CommandParser` generalized to one factory per verb (returns command-or-null); `look`/`examine`/`x`
   take the line remainder as a multi-word target; a bare positive integer → `SelectCommand`. New `ExamineCommand`
   / `SelectCommand` in the sealed `Command` set.
@@ -303,7 +307,8 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   optimistic-locking `version` carried **on the model** (opaque, excluded from value equality, carried through
   `announceThrough`; design-notes §5).
 - **Use case** — `AnnounceTimeOfDay` (`core/usecase/clock/`): system-actor input port `systemObservesTimeOfDay()`,
-  presenter extends `ClockReadinessPresenterOutputPort` (`presentDayPhaseBegan` + `presentNothingToAnnounce`).
+  presenter port declares `presentDayPhaseBegan` + `presentNothingToAnnounce` + `presentGameNotInitialized`
+  (per-port readiness declaration since the flat-port rule deleted `ClockReadinessPresenterOutputPort`, #81).
   Derives "now" like `AskForTime`; reads the log once (capturing its version) + random message pick **outside**
   the tx; one `doInTransaction(action, onLockDetected)` holds the single **version-checked** save (no inside-tx
   re-read), presents after commit. A concurrent loss surfaces as `OptimisticLockingError` → the tx-port
@@ -376,16 +381,18 @@ project's first contested-resource write and first multi-conversation terminal d
   branch becomes a throwing precondition guard (the dispatcher resumes only an armed conversation, so an empty
   offer reaching the subcase is a wiring fault, not a player outcome).
 - **Persistence** — Flyway `V6__item_mobile_location_and_version.sql`: `scene_id → (location_kind, location_ref)`,
-  backfill existing rows `GROUND`/version 1, add `version`. `ItemLocationKind` enum (infra), MapStruct
-  `Location ↔ (kind, ref)` converter (exhaustive `switch`), repo `findByLocationKindAndLocationRef`, adapter
-  version-driven save.
+  backfill existing rows `GROUND`/version 1, add `version`. The pair now backs the embedded `LocationDbEntity`
+  (`persistence/common/`, with `ItemLocationKind`); the `Location ↔ (kind, ref)` exhaustive-`switch` conversion
+  lives in `CompositeDbConverter` (#83), leaving `ItemDbEntityMapper` annotation-free. Repo
+  `findByLocationKindAndLocationRef` (name unchanged — now resolves via the embedded `location.kind`/`location.ref`
+  path), adapter version-driven save.
 - **Terminal — conversation dispatcher** (`take` is conversation #2, so it forces kind-routing — corrects the
-  issue's "drop forces it"): `SelectionKind{EXAMINE,TAKE}` enum; `AffordanceContext` now carries `(kind, tokens)`;
+  issue's "drop forces it"): `AffordanceKind{EXAMINE,TAKE}` enum; `AffordanceContext` now carries `(kind, tokens)`;
   `infrastructure/terminal/conversation/` holds `Conversation{kind(); resume(Command, offer)}` +
   `AbstractSelectionConversation` (Template Method, factors the `SelectCommand→ordinal` cast) +
   `ExamineConversation`/`TakeConversation`. `ConsoleSession` injects `List<Conversation>` (the container *is* the
   resumer map — no hand-maintained `kind→useCase` table), routes a `SelectCommand` to the conversation matching
-  the armed kind (else folds into `guide`), and asserts at startup (`@PostConstruct`) that every `SelectionKind`
+  the armed kind (else folds into `guide`), and asserts at startup (`@PostConstruct`) that every `AffordanceKind`
   has a handler. New `TakeCommand` + `take`/`get` verbs; `TerminalTakePresenter` (arms kind `TAKE`); `ItemRenderer`
   gains `renderItemTaken`/`renderItemGotAway`. (design-notes §4/§9.)
 - **Composition root** — `takeUseCase` prototype (shared presenter, as examine); singleton
@@ -413,7 +420,7 @@ second inventory goal, and the second `select` provisioner that extracted the Te
 - **Ports / persistence** — `findItemsHeldBy(PlayerId)` on the item port; the adapter reuses the existing
   `findByLocationKindAndLocationRef` derived query with kind `HELD`. **No Flyway migration** (V6 already carries
   location + version).
-- **Terminal** — `DropCommand` + `drop`/`put` verbs (remainder-as-target); `SelectionKind.DROP`;
+- **Terminal** — `DropCommand` + `drop`/`put` verbs (remainder-as-target); `AffordanceKind.DROP`;
   `TerminalDropPresenter` (arms DROP; carry-flavored English via new `ItemRenderer` variants);
   `DropConversation` — conversation #3, which *confirms* the kind-routed dispatcher (dispatcher and startup
   completeness assertion untouched). Composition root: `dropUseCase` prototype + `dropConversation` singleton.
@@ -453,9 +460,11 @@ autonomously wandering; the first realization of the `[thread #3]` "Player and N
   spawn-if-none guard, folded into the one transaction and `presentGameInitialized(scenes, playerId, items, npcs)`);
   new `presentNpcSpawnSceneUnknown` stripe.
 - **Ports / persistence** — `NpcRepositoryOperationsOutputPort` (`findAllNpcs`/`findNpcsInScene`/`saveNpc`/
-  `npcsAlreadySpawned`); Flyway `V7__create_npc.sql` (no FK, no version), `NpcDbEntity`, MapStruct mapper
-  (`Chance ↔ (num,den)`), `findByCurrentSceneId` repo, `SpringNpcRepositoryAdapter` (version-less `existsById`
-  upsert, mirroring the player adapter).
+  `npcsAlreadySpawned`); Flyway `V7__create_npc.sql` (no FK; since evolved: V8 adds `(hit_points,
+  max_hit_points)` + `version`, V10 collapses the move chance to one `move_chance` varchar), `NpcDbEntity`
+  (`move_chance` as `num/den` text via `ScalarConverter`, hit points as embedded `HitPointsDbEntity` via
+  `CompositeDbConverter`, #83), living-only derived queries (`findBy…HitPointsCurrentGreaterThan`),
+  `SpringNpcRepositoryAdapter` (version-driven `save` since V8, mirroring the item adapter).
 - **Room-listing ripple** — `presentScene(Scene, items, npcs)`; `look`/`move` fetch `findNpcsInScene` for the
   presented scene (current / target); `CurrentSceneRenderer` "Also here:" block.
 - **Ticker / infra** — `NpcActivityTicker` (`infrastructure/npc/`, blind `SchedulingConfigurer`, second async
@@ -505,8 +514,9 @@ deliberately never persisted (abandonment = forfeit; the dealer sweeps the cards
 - **Terminal** — new commands: `PlayCommand` (`play`), `HitCardCommand` (bare `hit` and `hit me` — the
   parser splits the `hit` verb by token shape; `hit <target>` stays combat), `StandCommand`
   (`stand`/`stay`), `GameStandingCommand` (`game`/`table`). `AffordanceContext` holds one armed
-  `Affordance` `(kind, tokens, payload)` — the payload an **opaque envelope** the shell never reads;
-  `arm(kind, payload)`/`current()` join `offer`/`kind`/`currentOffer`/`clear`. `Conversation` gained
+  `Affordance` — an **opaque envelope** (`EphemeralAffordance`) the shell never reads, or a token offer
+  (`SelectionAffordance`); the buffer is a pure holder `offer`/`arm`/`current`/`clear` (sealed split + slim,
+  #79). `Conversation` gained
   `default continuedBy(Command)` (bare-number default) and `resume(Command, Affordance)`; the dispatcher
   gives the armed conversation **first crack** at each parsed line, else clears (abandonment — the forfeit
   for an ephemeral dialogue) and dispatches; stray table-talk verbs fold to guidance.
@@ -523,7 +533,7 @@ deliberately never persisted (abandonment = forfeit; the dealer sweeps the cards
   `SystemDice`) + singleton `blackjackConversation`; new `BlackjackSubdomainArchitectureTest` (a
   *positive* dependency rule, so it analyzes production classes only via `ImportOption.DoNotIncludeTests`).
 
-Tests: 441 unit (Surefire, DB-free) + 24 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Tests: 447 unit (Surefire, DB-free) + 24 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), NPCs *reacting* to the player and

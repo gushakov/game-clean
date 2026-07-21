@@ -59,8 +59,8 @@ class LookUseCaseTest {
         List<Npc> npcsPresent = List.of(npc("npc1", "scn1"));
         when(orientPlayerSubcase.playerGetsBearings())
                 .thenReturn(new OrientPlayerResult(player("plr1", "scn1"), oldGate));
-        when(itemOps.findItemsInScene(new SceneId("scn1"))).thenReturn(itemsOnGround);
-        when(npcOps.findNpcsInScene(new SceneId("scn1"))).thenReturn(npcsPresent);
+        when(itemOps.findItemsInScene(SceneId.of("scn1"))).thenReturn(itemsOnGround);
+        when(npcOps.findNpcsInScene(SceneId.of("scn1"))).thenReturn(npcsPresent);
 
         useCase.playerLooksAround();
 
@@ -91,12 +91,12 @@ class LookUseCaseTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
     }
 
     private static Scene scene(String id) {
         return Scene.builder()
-                .id(new SceneId(id))
+                .id(SceneId.of(id))
                 .name("Old Gate")
                 .shortDescription("A weathered archway.")
                 .fullDescription("The gate's iron hinges have long since rusted shut.")
@@ -106,8 +106,8 @@ class LookUseCaseTest {
 
     private static Item item(String id, String scene, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
-                .location(new Location.OnGround(new SceneId(scene)))
+                .id(ItemId.of(id))
+                .location(new Location.OnGround(SceneId.of(scene)))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .build();
@@ -115,8 +115,8 @@ class LookUseCaseTest {
 
     private static Npc npc(String id, String scene) {
         return Npc.builder()
-                .id(new NpcId(id))
-                .currentScene(new SceneId(scene))
+                .id(NpcId.of(id))
+                .currentScene(SceneId.of(scene))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))

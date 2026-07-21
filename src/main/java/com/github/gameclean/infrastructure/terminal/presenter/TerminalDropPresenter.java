@@ -7,7 +7,7 @@ import com.github.gameclean.core.usecase.inventory.DropPresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -22,12 +22,12 @@ import java.util.List;
 /**
  * Secondary (driven) adapter rendering the {@code Drop} use case's outcomes to the shared JLine console. Like
  * its {@code examine}/{@code take} siblings it composes the shared renderers — {@link OrientRenderer} for the
- * inherited orient not-founds, {@link ItemRenderer} for the item outcomes — and implements the three flat
+ * orient not-founds, {@link ItemRenderer} for the item outcomes — and implements the three flat
  * presenter ports the use case's collaborators drive ({@code orient}, {@code select}, and {@code drop}'s own),
  * rather than extending a base presenter.
  *
  * <p>It differs from the take presenter on three axes: its terminal outcome is the drop confirmation
- * ({@link #presentItemDropped}); it arms the {@link AffordanceContext} with {@link SelectionKind#DROP} so a
+ * ({@link #presentItemDropped}); it arms the {@link AffordanceContext} with {@link AffordanceKind#DROP} so a
  * subsequent bare number resumes <em>dropping</em>; and it renders the provenance-neutral select outcomes in
  * their <b>carry-flavored</b> English ("you are not carrying anything like that", "you are no longer carrying
  * that") — the same port methods the ground-sourced consumers render with "here" phrasing. The disambiguation
@@ -61,12 +61,12 @@ public class TerminalDropPresenter
         // Decide the menu order once, here — the visible menu and the remembered offer are produced from it.
         List<Item> ordered = candidates.stream()
                 .sorted(Comparator.comparing(Item::getShortDescription)
-                        .thenComparing(item -> item.getId().getValue()))
+                        .thenComparing(item -> item.getId().asString()))
                 .toList();
         itemRenderer.renderAmbiguousTarget(target, ordered);
         // Flatten identities to tokens on this driven side; tag the offer DROP so a later bare number drops.
-        affordanceContext.offer(SelectionKind.DROP,
-                ordered.stream().map(item -> item.getId().getValue()).toList());
+        affordanceContext.offer(AffordanceKind.DROP,
+                ordered.stream().map(item -> item.getId().asString()).toList());
     }
 
     @Override

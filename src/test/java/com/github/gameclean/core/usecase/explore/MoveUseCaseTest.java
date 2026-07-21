@@ -80,9 +80,9 @@ class MoveUseCaseTest {
         List<Item> itemsInCourtyard = List.of(item("itm1", "scn2", "A rusty dagger."));
         List<Npc> npcsInCourtyard = List.of(npc("npc1", "scn2"));
         orientedAt("plr1", gateTo("scn2"));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(courtyard));
-        when(itemOps.findItemsInScene(new SceneId("scn2"))).thenReturn(itemsInCourtyard);
-        when(npcOps.findNpcsInScene(new SceneId("scn2"))).thenReturn(npcsInCourtyard);
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard));
+        when(itemOps.findItemsInScene(SceneId.of("scn2"))).thenReturn(itemsInCourtyard);
+        when(npcOps.findNpcsInScene(SceneId.of("scn2"))).thenReturn(npcsInCourtyard);
         runTransactionAndFireAfterCommit(txOps);
 
         useCase.playerMovesThrough("east");
@@ -90,23 +90,23 @@ class MoveUseCaseTest {
         // The player is saved at the target scene...
         ArgumentCaptor<Player> saved = ArgumentCaptor.forClass(Player.class);
         verify(playerRepositoryOps).savePlayer(saved.capture());
-        assertThat(saved.getValue().getId()).isEqualTo(new PlayerId("plr1"));
-        assertThat(saved.getValue().getCurrentScene()).isEqualTo(new SceneId("scn2"));
+        assertThat(saved.getValue().getId()).isEqualTo(PlayerId.of("plr1"));
+        assertThat(saved.getValue().getCurrentScene()).isEqualTo(SceneId.of("scn2"));
         // ...and the entered scene is presented after the move commits, with the items and NPCs in it.
-        verify(presenter).presentScene(courtyard, itemsInCourtyard, npcsInCourtyard);
+        verify(presenter).presentSceneEntered(courtyard, itemsInCourtyard, npcsInCourtyard);
         verifyNoMoreInteractions(presenter);
     }
 
     @Test
     void matchesTheExitCaseInsensitively() {
         orientedAt("plr1", gateTo("scn2"));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
         runTransactionAndFireAfterCommit(txOps);
 
         useCase.playerMovesThrough("EAST");
 
         verify(playerRepositoryOps).savePlayer(any(Player.class));
-        verify(presenter).presentScene(any(Scene.class), anyList(), anyList());
+        verify(presenter).presentSceneEntered(any(Scene.class), anyList(), anyList());
     }
 
     @Test
@@ -133,11 +133,11 @@ class MoveUseCaseTest {
     @Test
     void presentsTargetSceneNotFoundWhenTheExitLeadsNowhere() {
         orientedAt("plr1", gateTo("scn2"));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.empty());
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.empty());
 
         useCase.playerMovesThrough("east");
 
-        verify(presenter).presentTargetSceneNotFound(new SceneId("scn2"));
+        verify(presenter).presentTargetSceneNotFound(SceneId.of("scn2"));
         verifyNoWriteOrScene();
     }
 
@@ -149,7 +149,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentScene(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any());
         verifyNoWriteOrScene();
     }
 
@@ -157,14 +157,14 @@ class MoveUseCaseTest {
     void routesAPersistenceFailureToTheCatchAll() {
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         orientedAt("plr1", gateTo("scn2"));
-        when(sceneOps.findScene(new SceneId("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
         runTransaction(txOps);
 
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentScene(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any());
     }
 
     // --- fixtures -----------------------------------------------------------------------------------
@@ -173,27 +173,27 @@ class MoveUseCaseTest {
     private void orientedAt(String playerId, Scene currentScene) {
         when(orientPlayerSubcase.playerGetsBearings())
                 .thenReturn(new OrientPlayerResult(
-                        player(playerId, currentScene.getId().getValue()), currentScene));
+                        player(playerId, currentScene.getId().asString()), currentScene));
     }
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(new PlayerId(id)).currentScene(new SceneId(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
     }
 
     /** The player's current scene (scn1), with a single "east" exit to the given target. */
     private static Scene gateTo(String targetId) {
         return Scene.builder()
-                .id(new SceneId("scn1"))
+                .id(SceneId.of("scn1"))
                 .name("Old Gate")
                 .shortDescription("A weathered archway.")
                 .fullDescription("The gate's iron hinges have long since rusted shut.")
-                .exits(List.of(new Exit("east", new SceneId(targetId))))
+                .exits(List.of(new Exit("east", SceneId.of(targetId))))
                 .build();
     }
 
     private static Scene scene(String id, String name) {
         return Scene.builder()
-                .id(new SceneId(id))
+                .id(SceneId.of(id))
                 .name(name)
                 .shortDescription("A place.")
                 .fullDescription("A place worth describing in full.")
@@ -203,14 +203,14 @@ class MoveUseCaseTest {
 
     private void verifyNoWriteOrScene() {
         verify(playerRepositoryOps, never()).savePlayer(any());
-        verify(presenter, never()).presentScene(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any());
         verify(txOps, never()).doInTransaction(anyBoolean(), any());
     }
 
     private static Item item(String id, String scene, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
-                .location(new Location.OnGround(new SceneId(scene)))
+                .id(ItemId.of(id))
+                .location(new Location.OnGround(SceneId.of(scene)))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .build();
@@ -218,8 +218,8 @@ class MoveUseCaseTest {
 
     private static Npc npc(String id, String scene) {
         return Npc.builder()
-                .id(new NpcId(id))
-                .currentScene(new SceneId(scene))
+                .id(NpcId.of(id))
+                .currentScene(SceneId.of(scene))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))

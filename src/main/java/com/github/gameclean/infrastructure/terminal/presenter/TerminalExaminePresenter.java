@@ -7,7 +7,7 @@ import com.github.gameclean.core.usecase.explore.ExaminePresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -21,7 +21,7 @@ import java.util.List;
 
 /**
  * Secondary (driven) adapter rendering the {@code Examine} use case's outcomes to the shared JLine console.
- * The item-specific outcomes delegate to {@link ItemRenderer}; the inherited orient not-found outcomes delegate
+ * The item-specific outcomes delegate to {@link ItemRenderer}; the orient not-found outcomes delegate
  * to {@link OrientRenderer} (the same collaborator {@code look}/{@code move} use). It composes renderers rather
  * than extending a base presenter — the same composition stance the rest of the terminal takes.
  *
@@ -74,14 +74,14 @@ public class TerminalExaminePresenter
         // Decide the menu order once, here — the visible menu and the remembered offer are produced from it.
         List<Item> ordered = candidates.stream()
                 .sorted(Comparator.comparing(Item::getShortDescription)
-                        .thenComparing(item -> item.getId().getValue()))
+                        .thenComparing(item -> item.getId().asString()))
                 .toList();
         itemRenderer.renderAmbiguousTarget(target, ordered);                                  // the visible face
         // Flatten the identities to raw tokens here, on the driven side where the model legitimately lives, so
         // the buffer (read by the primary console adapter) stays model-free. Tag the offer EXAMINE so a later
         // bare number resumes examining (not taking).
-        affordanceContext.offer(SelectionKind.EXAMINE,
-                ordered.stream().map(item -> item.getId().getValue()).toList());                  // the latent face
+        affordanceContext.offer(AffordanceKind.EXAMINE,
+                ordered.stream().map(item -> item.getId().asString()).toList());                  // the latent face
     }
 
     @Override

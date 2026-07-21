@@ -67,18 +67,18 @@ class WorldSeedRoundTripIT extends AbstractPostgresIT {
         assertThat(courtyard.getName()).isEqualTo("Courtyard");
         assertThat(courtyard.getExits())
                 .containsExactlyInAnyOrder(
-                        new Exit("south", new SceneId("scn1")),
-                        new Exit("up", new SceneId("scn4")));
+                        new Exit("south", SceneId.of("scn1")),
+                        new Exit("up", SceneId.of("scn4")));
     }
 
     private static Scene toScene(SceneEntry entry) {
         return Scene.builder()
-                .id(new SceneId(entry.getId()))
+                .id(SceneId.of(entry.getId()))
                 .name(entry.getName())
                 .shortDescription(entry.getShortDescription())
                 .fullDescription(entry.getFullDescription())
                 .exits(entry.getExits().stream()
-                        .map(e -> new Exit(e.getName(), new SceneId(e.getTarget())))
+                        .map(e -> new Exit(e.getName(), SceneId.of(e.getTarget())))
                         .toList())
                 .build();
     }

@@ -8,7 +8,7 @@ import com.github.gameclean.core.usecase.combat.HitPresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.NpcRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -22,14 +22,14 @@ import java.util.List;
 
 /**
  * Secondary (driven) adapter rendering the {@code Hit} use case's outcomes to the shared JLine console. Like
- * {@link TerminalTakePresenter} it composes the shared renderers — {@link OrientRenderer} for the inherited
- * orient not-founds, {@link NpcRenderer} for the combat and NPC-select outcomes — and implements the three flat
+ * {@link TerminalTakePresenter} it composes the shared renderers — {@link OrientRenderer} for the orient
+ * not-founds, {@link NpcRenderer} for the combat and NPC-select outcomes — and implements the three flat
  * presenter ports the use case's collaborators drive ({@code orient}, {@code select} bound to {@link Npc}, and
  * {@code hit}'s own), rather than extending a base presenter.
  *
  * <p>It differs from the take presenter on exactly two axes: its terminal outcomes are <em>combat</em> outcomes
  * ({@link #presentNpcStruck}, {@link #presentNpcSlain}, {@link #presentNpcGotAway}) rather than item ones, and
- * it arms the {@link AffordanceContext} with {@link SelectionKind#HIT} so a subsequent bare number resumes
+ * it arms the {@link AffordanceContext} with {@link AffordanceKind#HIT} so a subsequent bare number resumes
  * <em>striking</em>. The disambiguation menu is ordered here once (stable by short description, then id) and the
  * same order is both displayed and remembered, so the visible menu and the latent offer cannot drift — exactly
  * as take does it.
@@ -70,12 +70,12 @@ public class TerminalHitPresenter
         // Decide the menu order once, here — the visible menu and the remembered offer are produced from it.
         List<Npc> ordered = candidates.stream()
                 .sorted(Comparator.comparing(Npc::getShortDescription)
-                        .thenComparing(npc -> npc.getId().getValue()))
+                        .thenComparing(npc -> npc.getId().asString()))
                 .toList();
         npcRenderer.renderAmbiguousTarget(target, ordered);
         // Flatten identities to tokens on this driven side; tag the offer HIT so a later bare number strikes.
-        affordanceContext.offer(SelectionKind.HIT,
-                ordered.stream().map(npc -> npc.getId().getValue()).toList());
+        affordanceContext.offer(AffordanceKind.HIT,
+                ordered.stream().map(npc -> npc.getId().asString()).toList());
     }
 
     @Override

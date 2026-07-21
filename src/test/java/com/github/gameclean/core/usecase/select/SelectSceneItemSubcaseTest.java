@@ -35,7 +35,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SelectSceneItemSubcaseTest {
 
-    private static final SceneId HERE = new SceneId("scn1");
+    private static final SceneId HERE = SceneId.of("scn1");
 
     @Mock
     private SelectTargetPresenterOutputPort<Item> presenter;
@@ -142,8 +142,8 @@ class SelectSceneItemSubcaseTest {
 
     private static Item item(String id, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
-                .location(new Location.OnGround(new SceneId("scn1")))
+                .id(ItemId.of(id))
+                .location(new Location.OnGround(SceneId.of("scn1")))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
                 .build();

@@ -26,19 +26,19 @@ class ItemTemplateTest {
 
     private static ItemTemplate template(int numerator, int denominator, int maxTries, String... candidateScenes) {
         SpawnRule rule = new SpawnRule(new Chance(numerator, denominator), maxTries,
-                Arrays.stream(candidateScenes).map(SceneId::new).toList());
+                Arrays.stream(candidateScenes).map(SceneId::of).toList());
         return new ItemTemplate(SHORT, FULL, rule);
     }
 
     @Test
     void rejects_a_blank_short_description() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new ItemTemplate("  ", FULL, rule));
     }
 
     @Test
     void rejects_a_blank_full_description() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(new SceneId("scn1")));
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> new ItemTemplate(SHORT, "  ", rule));
     }
 
@@ -58,8 +58,8 @@ class ItemTemplateTest {
                 .willPick(0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
         List<Item> spawned = template.spawnInto(dice);
 
-        assertThat(spawned).extracting(item -> item.getId().getValue()).containsExactly("itm00000000", "itm11111111");
-        assertThat(spawned).extracting(item -> ((Location.OnGround) item.getLocation()).getScene().getValue())
+        assertThat(spawned).extracting(item -> item.getId().asString()).containsExactly("itm00000000", "itm11111111");
+        assertThat(spawned).extracting(item -> ((Location.OnGround) item.getLocation()).getScene().asString())
                 .containsExactly("scn1", "scn2");
         assertThat(spawned).allSatisfy(item -> {
             assertThat(item.getShortDescription()).isEqualTo(SHORT);

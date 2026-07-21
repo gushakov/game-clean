@@ -52,7 +52,7 @@ class SpringSceneRepositoryAdapterTest {
     void findScene_wraps_a_data_access_exception_into_the_port_type() {
         when(repository.findById("scn1")).thenThrow(new DataRetrievalFailureException("connection reset"));
 
-        assertThatThrownBy(() -> adapter.findScene(new SceneId("scn1")))
+        assertThatThrownBy(() -> adapter.findScene(SceneId.of("scn1")))
                 .isInstanceOf(PersistenceOperationsError.class)
                 .hasCauseInstanceOf(DataRetrievalFailureException.class);
     }
@@ -63,7 +63,7 @@ class SpringSceneRepositoryAdapterTest {
         when(repository.findById("scn1")).thenReturn(Optional.of(corrupt));
         when(mapper.toDomain(corrupt)).thenThrow(new InvalidDomainObjectError("scene name must not be blank"));
 
-        assertThatThrownBy(() -> adapter.findScene(new SceneId("scn1")))
+        assertThatThrownBy(() -> adapter.findScene(SceneId.of("scn1")))
                 .isInstanceOf(PersistenceOperationsError.class)
                 .hasCauseInstanceOf(InvalidDomainObjectError.class);
     }
@@ -74,7 +74,7 @@ class SpringSceneRepositoryAdapterTest {
         when(repository.findById("scn1")).thenReturn(Optional.of(entity));
         when(mapper.toDomain(entity)).thenThrow(new IllegalStateException("mapper bug"));
 
-        assertThatThrownBy(() -> adapter.findScene(new SceneId("scn1")))
+        assertThatThrownBy(() -> adapter.findScene(SceneId.of("scn1")))
                 .isInstanceOf(IllegalStateException.class)
                 .isNotInstanceOf(PersistenceOperationsError.class);
     }
@@ -82,7 +82,7 @@ class SpringSceneRepositoryAdapterTest {
     @Test
     void saveScene_wraps_a_data_access_exception_into_the_port_type() {
         Scene scene = Scene.builder()
-                .id(new SceneId("scn1"))
+                .id(SceneId.of("scn1"))
                 .name("Old Gate")
                 .shortDescription("A weathered archway.")
                 .fullDescription("The gate's iron hinges have long since rusted shut.")

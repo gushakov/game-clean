@@ -92,7 +92,7 @@ public class MoveUseCase implements MoveInputPort {
             Scene entered = targetScene.get();
             txOps.doInTransaction(false, () -> {
                 playerRepositoryOps.savePlayer(moved);
-                txOps.doAfterCommit(() -> presenter.presentScene(entered, itemsInEntered, npcsInEntered));
+                txOps.doAfterCommit(() -> presenter.presentSceneEntered(entered, itemsInEntered, npcsInEntered));
             });
             return;
 

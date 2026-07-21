@@ -30,11 +30,11 @@ public class OrientRenderer {
 
     /** The acting player does not exist — a configuration or data fault, surfaced plainly. */
     public void renderPlayerNotFound(PlayerId playerId) {
-        console.printError("There is no player '%s'.".formatted(playerId.getValue()));
+        console.printError("There is no player '%s'.".formatted(playerId.asString()));
     }
 
     /** The player's recorded current scene resolves to nothing. */
     public void renderCurrentSceneNotFound(SceneId sceneId) {
-        console.printError("You seem to be nowhere — scene '%s' does not exist.".formatted(sceneId.getValue()));
+        console.printError("You seem to be nowhere — scene '%s' does not exist.".formatted(sceneId.asString()));
     }
 }

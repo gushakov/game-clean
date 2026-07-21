@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.*;
 
 class ExitTest {
 
-    private static final SceneId TARGET = new SceneId("scn2");
+    private static final SceneId TARGET = SceneId.of("scn2");
 
     @Test
     void constructs_from_a_name_and_a_target() {
@@ -40,6 +40,6 @@ class ExitTest {
     void equals_by_value() {
         assertThat(new Exit("east", TARGET)).isEqualTo(new Exit("east", TARGET));
         assertThat(new Exit("east", TARGET)).isNotEqualTo(new Exit("west", TARGET));
-        assertThat(new Exit("east", TARGET)).isNotEqualTo(new Exit("east", new SceneId("scn9")));
+        assertThat(new Exit("east", TARGET)).isNotEqualTo(new Exit("east", SceneId.of("scn9")));
     }
 }

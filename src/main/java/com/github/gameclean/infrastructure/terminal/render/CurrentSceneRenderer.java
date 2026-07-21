@@ -4,7 +4,6 @@ import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
-import com.github.gameclean.core.usecase.explore.CurrentScenePresenterOutputPort;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -18,9 +17,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Renders the scene-description outcome — the {@link CurrentScenePresenterOutputPort#presentScene} capability —
- * to the shared console. It is the single home of that rendering, injected by the {@code look} and {@code move}
- * presenter beans (the two use cases that render a scene) so a scene is written one way, not copied per use case.
+ * Renders a scene description — {@code look}'s {@code presentScene} and {@code move}'s
+ * {@code presentSceneEntered} outcomes — to the shared console. It is the single home of that rendering,
+ * injected by the {@code look} and {@code move} presenter beans (the two use cases that render a scene) so a
+ * scene is written one way, not copied per use case. The two outcomes stay distinct on their ports (observing
+ * where one stands vs entering a new scene); that they render alike today is this collaborator's choice, free
+ * to diverge without port surgery.
  *
  * <p>This is the form chosen for sharing presentation between use cases: a shared <em>collaborator</em>
  * (composition), not a presenter base class (inheritance) and not a grab-bag presenter port. It is

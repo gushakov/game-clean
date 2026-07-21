@@ -1,12 +1,12 @@
 package com.github.gameclean.infrastructure.terminal.conversation;
 
 import com.github.gameclean.infrastructure.terminal.Affordance;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.command.Command;
 import com.github.gameclean.infrastructure.terminal.command.SelectCommand;
 
 /**
- * A multi-interaction terminal dialogue "dressed up" as an object: it knows which {@link SelectionKind} of
+ * A multi-interaction terminal dialogue "dressed up" as an object: it knows which {@link AffordanceKind} of
  * armed affordance it owns, which parsed lines <em>continue</em> it, and how to <em>resume</em> the dialogue
  * when one does. This is the delivery-mechanism (<em>modal input-routing</em>) half of a conversation — the
  * half that decides which use case a follow-up line invokes given a line-oriented channel. The <em>semantic</em>
@@ -26,7 +26,7 @@ import com.github.gameclean.infrastructure.terminal.command.SelectCommand;
  * never evaluation) — exactly the vocabulary the core excludes, which is why it lives here. The default suits
  * the numbered-menu family: a bare number ({@link SelectCommand}) continues.
  *
- * <p>Why infra and not a core type: the routing vocabulary it speaks ({@code Command}/{@code SelectionKind}) is
+ * <p>Why infra and not a core type: the routing vocabulary it speaks ({@code Command}/{@code AffordanceKind}) is
  * meaningful only to a line-oriented terminal — it would not survive a second adapter (the async ticker drives
  * a use case with no {@code Command} at all). Putting {@code Conversation} in the core, even relocating
  * {@code Command} to satisfy ArchUnit, would pass the dependency check while defeating it (design-notes §1, §9).
@@ -34,7 +34,7 @@ import com.github.gameclean.infrastructure.terminal.command.SelectCommand;
 public interface Conversation {
 
     /** The kind of armed affordance this conversation owns — matched against the armed {@code AffordanceContext}. */
-    SelectionKind kind();
+    AffordanceKind kind();
 
     /**
      * Whether the given parsed line continues this dialogue while it is armed — pure shape-matching over the

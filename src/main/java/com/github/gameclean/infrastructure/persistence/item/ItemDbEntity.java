@@ -1,9 +1,11 @@
 package com.github.gameclean.infrastructure.persistence.item;
 
+import com.github.gameclean.infrastructure.persistence.common.LocationDbEntity;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -12,11 +14,13 @@ import org.springframework.data.relational.core.mapping.Table;
  * {@code Item} is MapStruct's job (see {@link ItemDbEntityMapper}), so the schema can evolve independently
  * of the model.
  *
- * <p>The item's mobile {@code Location} is flattened to a {@code (location_kind, location_ref)} pair: the
- * {@link ItemLocationKind kind} ({@code GROUND}/{@code HELD}) and the raw id of what it references (a scene id
- * when on the ground, a holder id when held). The ref is deliberately <em>not</em> a foreign key — an item
- * references where it is by identity, and whether that id resolves is an inter-aggregate concern, mirroring
- * {@code player.current_scene_id} and {@code exit.target_scene_id}.
+ * <p>The item's mobile {@code Location} embeds as the shared {@link LocationDbEntity} over the same
+ * {@code (location_kind, location_ref)} column pair of this very table — the kind tag ({@code GROUND}/
+ * {@code HELD}) and the raw id of what it references (a scene id when on the ground, a holder id when held),
+ * reachable in derived queries through the embedded property path ({@code location.kind}/{@code location.ref}).
+ * The ref is deliberately <em>not</em> a foreign key — an item references where it is by identity, and whether
+ * that id resolves is an inter-aggregate concern, mirroring {@code player.current_scene_id} and
+ * {@code exit.target_scene_id}.
  *
  * <p>The {@link #version} carries Spring Data JDBC's {@link Version optimistic-locking} token: a {@code 0}
  * version marks a new (insertable) row, and each write checks-and-increments it, so two actors racing to take
@@ -41,9 +45,6 @@ public class ItemDbEntity {
     @Column("full_description")
     private String fullDescription;
 
-    @Column("location_kind")
-    private ItemLocationKind locationKind;
-
-    @Column("location_ref")
-    private String locationRef;
+    @Embedded.Nullable
+    private LocationDbEntity location;
 }

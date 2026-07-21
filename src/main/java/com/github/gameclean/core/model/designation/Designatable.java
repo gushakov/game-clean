@@ -16,7 +16,7 @@ package com.github.gameclean.core.model.designation;
  * second consumer.
  *
  * <p><b>The id token is a raw string on purpose.</b> Tokens are the flatten of a candidate's id
- * ({@code getId().getValue()}) that the driven presenter produces as it arms an offer, so the terminal's
+ * ({@code getId().asString()}) that the driven presenter produces as it arms an offer, so the terminal's
  * conversational buffer stays model-free ("primitives inward"). {@link #hasIdToken} is accordingly a
  * <em>pure comparison</em> against that flatten — no reconstitution, no validity gate. The token's
  * <em>shape</em> gate (a malformed remembered token is an internal fault, never a presented outcome) is the

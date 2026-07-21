@@ -43,7 +43,7 @@ public class InventoryUseCase implements InventoryInputPort {
         try {
             // Initiating actor: the player — ambient, resolved here. Constructing the id value object is
             // the validity gate; a malformed configured id throws and ends at the outermost checkpoint.
-            PlayerId playerId = new PlayerId(playerOps.currentPlayerId());
+            PlayerId playerId = PlayerId.of(playerOps.currentPlayerId());
 
             Optional<Player> player = playerRepositoryOps.findPlayer(playerId);
             if (player.isEmpty()) {

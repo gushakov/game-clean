@@ -128,8 +128,8 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             SceneId startingScene;
             Player player;
             try {
-                playerId = new PlayerId(playerOps.currentPlayerId());
-                startingScene = new SceneId(seed.getStartingSceneId());
+                playerId = PlayerId.of(playerOps.currentPlayerId());
+                startingScene = SceneId.of(seed.getStartingSceneId());
                 player = Player.builder().id(playerId).currentScene(startingScene).build();
             } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
@@ -246,12 +246,12 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         List<Scene> scenes = new ArrayList<>(entries.size());
         for (SceneEntry entry : entries) {
             scenes.add(Scene.builder()
-                    .id(new SceneId(entry.getId()))
+                    .id(SceneId.of(entry.getId()))
                     .name(entry.getName())
                     .shortDescription(entry.getShortDescription())
                     .fullDescription(entry.getFullDescription())
                     .exits(entry.getExits().stream()
-                            .map(exit -> new Exit(exit.getName(), new SceneId(exit.getTarget())))
+                            .map(exit -> new Exit(exit.getName(), SceneId.of(exit.getTarget())))
                             .toList())
                     .miniGames(buildMiniGames(entry.getMiniGames()))
                     .build());
@@ -292,7 +292,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                         "item '%s' has no spawn rule".formatted(entry.getId()));
             }
             Chance chance = new Chance(spawn.getChanceNumerator(), spawn.getChanceDenominator());
-            List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::new).toList();
+            List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::of).toList();
             SpawnRule rule = new SpawnRule(chance, spawn.getMax(), candidateScenes);
             ItemTemplate template = new ItemTemplate(entry.getShortDescription(), entry.getFullDescription(), rule);
             authored.add(new AuthoredItem(entry.getId(), template));
@@ -333,7 +333,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                         "npc '%s' has no spawn rule".formatted(entry.getId()));
             }
             Chance chance = new Chance(spawn.getChanceNumerator(), spawn.getChanceDenominator());
-            List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::new).toList();
+            List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::of).toList();
             SpawnRule rule = new SpawnRule(chance, spawn.getMax(), candidateScenes);
             Chance moveChance = new Chance(entry.getMoveChanceNumerator(), entry.getMoveChanceDenominator());
             NpcTemplate template = new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(),

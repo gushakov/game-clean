@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
+import com.github.gameclean.infrastructure.persistence.common.ItemLocationKind;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
@@ -19,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 /**
  * Persistence round-trip for the {@code Item} aggregate against the real, running Dockerized Postgres
  * ({@code @AutoConfigureTestDatabase(replace = NONE)}). Flyway migrates the schema at context startup (through
- * V6, which gives item its {@code (location_kind, location_ref)} pair and {@code @Version} column); the
- * {@code @DataJdbcTest} slice rolls each test back.
+ * V6, which gives item its {@code (location_kind, location_ref)} pair — now backing the embedded
+ * {@code LocationDbEntity} — and {@code @Version} column); the {@code @DataJdbcTest} slice rolls each test back.
  *
  * <p>It exercises what {@code take} and {@code drop} need end to end: a ground item inserts and is found by
  * its scene; taking it moves it off the ground (a {@code GROUND}→{@code HELD} location change) and updates in
@@ -34,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 @Import(ItemDbEntityMapperImpl.class)
 class ItemRoundTripIT extends AbstractPostgresIT {
 
-    private static final SceneId HERE = new SceneId("scn1");
+    private static final SceneId HERE = SceneId.of("scn1");
 
     @Autowired
     private ItemSpringDataRepository repository;
@@ -51,7 +52,7 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         assertThat(adapter.findItemsInScene(HERE))
                 .singleElement()
                 .satisfies(item -> {
-                    assertThat(item.getId()).isEqualTo(new ItemId("itm1"));
+                    assertThat(item.getId()).isEqualTo(ItemId.of("itm1"));
                     assertThat(item.getLocation()).isEqualTo(new Location.OnGround(HERE));
                 });
     }
@@ -62,15 +63,15 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         adapter.saveItem(groundItem("itm1", "A rusty dagger."));
         Item onGround = adapter.findItemsInScene(HERE).getFirst();   // carries the post-insert version
 
-        adapter.saveItem(onGround.takenBy(new PlayerId("plr1")));
+        adapter.saveItem(onGround.takenBy(PlayerId.of("plr1")));
 
         // No longer on the ground here ...
         assertThat(adapter.findItemsInScene(HERE)).isEmpty();
         // ... but the same row persists, now held by the player (one row, updated in place).
         assertThat(repository.count()).isEqualTo(1);
         ItemDbEntity stored = repository.findById("itm1").orElseThrow();
-        assertThat(stored.getLocationKind()).isEqualTo(ItemLocationKind.HELD);
-        assertThat(stored.getLocationRef()).isEqualTo("plr1");
+        assertThat(stored.getLocation().getKind()).isEqualTo(ItemLocationKind.HELD);
+        assertThat(stored.getLocation().getRef()).isEqualTo("plr1");
     }
 
     @Test
@@ -78,25 +79,25 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
         adapter.saveItem(groundItem("itm1", "A rusty dagger."));
         Item onGround = adapter.findItemsInScene(HERE).getFirst();   // carries the post-insert version
-        adapter.saveItem(onGround.takenBy(new PlayerId("plr1")));
+        adapter.saveItem(onGround.takenBy(PlayerId.of("plr1")));
 
         // Held: found in the holder's keeping, and only theirs ...
-        assertThat(adapter.findItemsHeldBy(new PlayerId("plr1")))
+        assertThat(adapter.findItemsHeldBy(PlayerId.of("plr1")))
                 .singleElement()
                 .satisfies(item -> {
-                    assertThat(item.getId()).isEqualTo(new ItemId("itm1"));
-                    assertThat(item.getLocation()).isEqualTo(new Location.HeldBy(new PlayerId("plr1")));
+                    assertThat(item.getId()).isEqualTo(ItemId.of("itm1"));
+                    assertThat(item.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
                 });
-        assertThat(adapter.findItemsHeldBy(new PlayerId("plr2"))).isEmpty();
+        assertThat(adapter.findItemsHeldBy(PlayerId.of("plr2"))).isEmpty();
 
         // ... and dropping it in another scene moves it back to the ground there, the same row updated in place.
-        Item held = adapter.findItemsHeldBy(new PlayerId("plr1")).getFirst();   // carries the current version
-        adapter.saveItem(held.droppedAt(new SceneId("scn2")));
+        Item held = adapter.findItemsHeldBy(PlayerId.of("plr1")).getFirst();   // carries the current version
+        adapter.saveItem(held.droppedAt(SceneId.of("scn2")));
 
-        assertThat(adapter.findItemsHeldBy(new PlayerId("plr1"))).isEmpty();
-        assertThat(adapter.findItemsInScene(new SceneId("scn2")))
+        assertThat(adapter.findItemsHeldBy(PlayerId.of("plr1"))).isEmpty();
+        assertThat(adapter.findItemsInScene(SceneId.of("scn2")))
                 .singleElement()
-                .satisfies(item -> assertThat(item.getLocation()).isEqualTo(new Location.OnGround(new SceneId("scn2"))));
+                .satisfies(item -> assertThat(item.getLocation()).isEqualTo(new Location.OnGround(SceneId.of("scn2"))));
         assertThat(repository.count()).isEqualTo(1);
     }
 
@@ -107,16 +108,16 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         Item loaded = adapter.findItemsInScene(HERE).getFirst();   // captures the current version
 
         // A first take succeeds and moves the stored version past what `loaded` holds ...
-        adapter.saveItem(loaded.takenBy(new PlayerId("plr1")));
+        adapter.saveItem(loaded.takenBy(PlayerId.of("plr1")));
 
         // ... so a second write still carrying the original (now stale) version is rejected — the two-actor race.
         assertThatExceptionOfType(OptimisticLockingError.class)
-                .isThrownBy(() -> adapter.saveItem(loaded.takenBy(new PlayerId("plr2"))));
+                .isThrownBy(() -> adapter.saveItem(loaded.takenBy(PlayerId.of("plr2"))));
     }
 
     private static Item groundItem(String id, String shortDescription) {
         return Item.builder()
-                .id(new ItemId(id))
+                .id(ItemId.of(id))
                 .location(new Location.OnGround(HERE))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
