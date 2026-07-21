@@ -158,11 +158,13 @@ named exit into the target scene, then sees it):
   `MoveUseCase`, co-located `MovePresenterOutputPort`. Reads + validity checks outside a tx; one
   `doInTransaction` holds only the `savePlayer` write; the entered scene is presented in `doAfterCommit`.
   Branch-and-present for missing player / dangling current scene / no such exit / dangling exit target.
-- **Shared presenter capability** — the current-scene **outcome cluster** (`presentScene` +
-  `presentPlayerNotFound` + `presentCurrentSceneNotFound`) lives on `OrientPlayerPresenterOutputPort` (the
-  `orient` subcase's port — see below; introduced here as `CurrentScenePresenterOutputPort`, since
-  renamed/moved); `LookPresenterOutputPort` is an empty marker extending it, `MovePresenterOutputPort`
-  extends it + `presentNoSuchExit`/`presentTargetSceneNotFound` (design-notes §4: three axes of sharing).
+- **Shared presenter capability** — the two not-found outcomes (`presentPlayerNotFound` +
+  `presentCurrentSceneNotFound`) live on `OrientPlayerPresenterOutputPort` (the `orient` subcase's port — see
+  below; introduced here as `CurrentScenePresenterOutputPort`, since renamed/moved), which the concrete
+  presenters implement **flat** beside each use case's own port (#81); `LookPresenterOutputPort` declares
+  `presentScene`, `MovePresenterOutputPort` declares `presentSceneEntered` (distinct stripes, one shared
+  `CurrentSceneRenderer`) + `presentNoSuchExit`/`presentTargetSceneNotFound` (design-notes §4: three axes of
+  sharing + flat presenter ports).
 - **Terminal** — `Console` styled-writer resource (§7 facade, declared in `TerminalConfig`) + shared
   `CurrentSceneRenderer`; two thin presenter beans `TerminalLookPresenter` / `TerminalMovePresenter`
   (replacing `TerminalScenePresenter`). `MoveCommand` + `move`/`go` verbs in `CommandParser`; `ConsoleSession`
@@ -198,9 +200,10 @@ named exit into the target scene, then sees it):
   command. The use case owns the conversation — it resolves the pick and presents all outcomes; the controller
   decides and renders nothing (design-notes §4).
 - **Presenter port re-split (ISP)** — `OrientPlayerPresenterOutputPort` shrank to the two not-found outcomes the
-  subcase presents; `presentScene` moved down into a new `CurrentScenePresenterOutputPort` (look/move); `Examine`
-  extends the slim orient port + adds its four outcomes. Renderers mirror it: `OrientRenderer` (not-founds, shared
-  by all three), `CurrentSceneRenderer` (scene only), `ItemRenderer` (examine outcomes) (design-notes §4).
+  subcase presents; `presentScene` moved down into a `CurrentScenePresenterOutputPort` (look/move) — since
+  **deleted** under the flat-port rule (#81): each port declares its own scene outcome. Renderers mirror the
+  split: `OrientRenderer` (not-founds, shared), `CurrentSceneRenderer` (scene only), `ItemRenderer` (examine
+  outcomes) (design-notes §4).
 - **Parsing** — `CommandParser` generalized to one factory per verb (returns command-or-null); `look`/`examine`/`x`
   take the line remainder as a multi-word target; a bare positive integer → `SelectCommand`. New `ExamineCommand`
   / `SelectCommand` in the sealed `Command` set.
@@ -304,7 +307,8 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   optimistic-locking `version` carried **on the model** (opaque, excluded from value equality, carried through
   `announceThrough`; design-notes §5).
 - **Use case** — `AnnounceTimeOfDay` (`core/usecase/clock/`): system-actor input port `systemObservesTimeOfDay()`,
-  presenter extends `ClockReadinessPresenterOutputPort` (`presentDayPhaseBegan` + `presentNothingToAnnounce`).
+  presenter port declares `presentDayPhaseBegan` + `presentNothingToAnnounce` + `presentGameNotInitialized`
+  (per-port readiness declaration since the flat-port rule deleted `ClockReadinessPresenterOutputPort`, #81).
   Derives "now" like `AskForTime`; reads the log once (capturing its version) + random message pick **outside**
   the tx; one `doInTransaction(action, onLockDetected)` holds the single **version-checked** save (no inside-tx
   re-read), presents after commit. A concurrent loss surfaces as `OptimisticLockingError` → the tx-port

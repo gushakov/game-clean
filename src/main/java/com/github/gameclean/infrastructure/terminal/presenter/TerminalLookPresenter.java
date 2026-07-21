@@ -18,11 +18,12 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.List;
 
 /**
- * Secondary (driven) adapter rendering the {@code Look} use case's outcomes to the shared JLine console.
- * Its whole surface is the {@link OrientPlayerPresenterOutputPort}
- * cluster, so it delegates every render to the shared {@link CurrentSceneRenderer}; only the
- * {@code presentError} catch-all carries a use-case-specific log tag. {@link TerminalMovePresenter} is its
- * symmetric peer, delegating the same cluster to the same renderer.
+ * Secondary (driven) adapter rendering the {@code Look} use case's outcomes to the shared JLine console. It
+ * implements the two flat presenter ports the interaction's artifacts drive — the
+ * {@link OrientPlayerPresenterOutputPort orient subcase's} not-founds (delegated to the shared
+ * {@link OrientRenderer}) and {@code look}'s own port, whose success delegates to the shared
+ * {@link CurrentSceneRenderer}; only the {@code presentError} catch-all carries a use-case-specific log tag.
+ * {@link TerminalMovePresenter} is its symmetric peer, delegating to the same renderers.
  *
  * <p>It is a distinct bean from the input loop (opposite direction of the hexagon) and from the move
  * presenter; what they share is the {@code Console}/{@code CurrentSceneRenderer} <em>resources</em>, not
@@ -31,7 +32,7 @@ import java.util.List;
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 @RequiredArgsConstructor
 @Slf4j
-public class TerminalLookPresenter implements LookPresenterOutputPort {
+public class TerminalLookPresenter implements OrientPlayerPresenterOutputPort, LookPresenterOutputPort {
 
     OrientRenderer orientRenderer;
     CurrentSceneRenderer sceneRenderer;

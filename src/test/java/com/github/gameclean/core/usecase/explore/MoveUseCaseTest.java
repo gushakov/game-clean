@@ -93,7 +93,7 @@ class MoveUseCaseTest {
         assertThat(saved.getValue().getId()).isEqualTo(PlayerId.of("plr1"));
         assertThat(saved.getValue().getCurrentScene()).isEqualTo(SceneId.of("scn2"));
         // ...and the entered scene is presented after the move commits, with the items and NPCs in it.
-        verify(presenter).presentScene(courtyard, itemsInCourtyard, npcsInCourtyard);
+        verify(presenter).presentSceneEntered(courtyard, itemsInCourtyard, npcsInCourtyard);
         verifyNoMoreInteractions(presenter);
     }
 
@@ -106,7 +106,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("EAST");
 
         verify(playerRepositoryOps).savePlayer(any(Player.class));
-        verify(presenter).presentScene(any(Scene.class), anyList(), anyList());
+        verify(presenter).presentSceneEntered(any(Scene.class), anyList(), anyList());
     }
 
     @Test
@@ -149,7 +149,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentScene(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any());
         verifyNoWriteOrScene();
     }
 
@@ -164,7 +164,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentScene(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any());
     }
 
     // --- fixtures -----------------------------------------------------------------------------------
@@ -203,7 +203,7 @@ class MoveUseCaseTest {
 
     private void verifyNoWriteOrScene() {
         verify(playerRepositoryOps, never()).savePlayer(any());
-        verify(presenter, never()).presentScene(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any());
         verify(txOps, never()).doInTransaction(anyBoolean(), any());
     }
 

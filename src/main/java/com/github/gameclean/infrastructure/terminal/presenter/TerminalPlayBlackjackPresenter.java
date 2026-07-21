@@ -21,8 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Secondary (driven) adapter rendering the {@code PlayBlackjack} use case's outcomes to the shared JLine
- * console. Like its siblings it composes the shared renderers — {@link OrientRenderer} for the inherited
- * orient not-founds, {@link BlackjackRenderer} for the table talk — and implements the two flat presenter
+ * console. Like its siblings it composes the shared renderers — {@link OrientRenderer} for the orient
+ * not-founds, {@link BlackjackRenderer} for the table talk — and implements the two flat presenter
  * ports the use case drives, rather than extending a base presenter.
  *
  * <p><b>It owns the conversation's whole arming transcription, fixed per method.</b> The live-hand outcomes
