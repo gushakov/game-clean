@@ -1,12 +1,13 @@
 package com.github.gameclean.core.usecase.clock;
 
 import com.github.gameclean.core.model.daytime.DayPhase;
+import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
 
 /**
- * Presenter (driven) output port for {@code AnnounceTimeOfDay}, co-located with its use case. Extends
- * {@link ClockReadinessPresenterOutputPort} (and thereby the catch-all {@code presentError}), inheriting the
- * shared {@code presentGameNotInitialized} readiness outcome — this interaction reads the clock, so it joins
- * that readiness cluster, exactly as {@code AskForTime} and {@code SuspendGame} do.
+ * Presenter (driven) output port for {@code AnnounceTimeOfDay}, co-located with its use case. It declares
+ * exactly the outcomes this use case presents: its two own outcomes, the clock-readiness precondition it
+ * checks inline, and the inherited catch-all — the same per-port declaration as {@code AskForTime} and
+ * {@code SuspendGame}, with only the rendering shared in the adapter.
  *
  * <p>Two outcomes of its own, both deliberately present (so "exactly one {@code present*} per run" holds even
  * for a quiet poll — the use case never silently returns without presenting):
@@ -23,7 +24,13 @@ import com.github.gameclean.core.model.daytime.DayPhase;
  * the {@link DayPhase} accompanies it so the renderer can label the announcement with the phase name. Neither
  * the date nor the calendar is passed: the time-of-day boundary is the occasion, not the content.
  */
-public interface AnnounceTimeOfDayPresenterOutputPort extends ClockReadinessPresenterOutputPort {
+public interface AnnounceTimeOfDayPresenterOutputPort extends ErrorHandlingPresenterOutputPort {
+
+    /**
+     * Precondition outcome: the game clock has not been initialized, so the world is not yet in a playable
+     * state. Reached by branch-and-present (then {@code return}) when the clock is absent — not by throwing.
+     */
+    void presentGameNotInitialized();
 
     /**
      * A new day phase has begun: announce the selected flavour line to the player.

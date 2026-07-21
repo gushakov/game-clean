@@ -22,8 +22,8 @@ import java.util.List;
 
 /**
  * Secondary (driven) adapter rendering the {@code Hit} use case's outcomes to the shared JLine console. Like
- * {@link TerminalTakePresenter} it composes the shared renderers — {@link OrientRenderer} for the inherited
- * orient not-founds, {@link NpcRenderer} for the combat and NPC-select outcomes — and implements the three flat
+ * {@link TerminalTakePresenter} it composes the shared renderers — {@link OrientRenderer} for the orient
+ * not-founds, {@link NpcRenderer} for the combat and NPC-select outcomes — and implements the three flat
  * presenter ports the use case's collaborators drive ({@code orient}, {@code select} bound to {@link Npc}, and
  * {@code hit}'s own), rather than extending a base presenter.
  *

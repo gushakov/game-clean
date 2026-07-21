@@ -593,15 +593,18 @@ outside it," and the acid test is that no infrastructure crosses into the model 
 operate *from the acting player's current scene*, reaching their outcomes by **branch-and-present**
 (missing player, dangling current-scene reference) rather than by throwing. That shared grounding —
 not the use case — is what decides presenter sharing, and `move`'s arrival **corrected the first
-guess**. The guess was that only the narrow `presentScene` capability would be shared, each use case
+guess**. The guess was that only the narrow scene-rendering capability would be shared, each use case
 keeping its own not-found outcomes. But because `move` resolves the *same* player-and-current-scene
-prologue, the not-found outcomes are shared too: the cluster is the three outcomes of "describe where
-the acting player stands, or why we can't" — lifted into the shared `OrientPlayerPresenterOutputPort`
-(the `orient` subcase's presenter port — see below). `move`'s
-port extends it with the two outcomes peculiar to moving (no-such-exit, dangling exit target), and
-`look`'s port turns out to *be* the cluster exactly (kept as an empty marker for symmetry). The
-lesson: **outcome-sharing tracks the shared prologue, not the use case** — any later interaction
-grounded in the current scene (`look <target>`, `take`) joins the same cluster.
+prologue, the not-found outcomes are shared too: the cluster is the outcomes of "locate where
+the acting player stands, or say why we can't" — lifted into the shared `OrientPlayerPresenterOutputPort`
+(the `orient` subcase's presenter port — see below), which each consumer's concrete presenter now
+*implements directly* beside the use case's own port (the flat-port rule below; the interface-extension
+chain this cluster was first shared through is retired). The scene rendering itself later proved the part
+that was *never* truly shared: observing where one stands (`look`) and entering a new scene (`move`) are
+two Cockburn stripes — `presentScene` / `presentSceneEntered`, declared on each use case's own port,
+rendered alike today by the one `CurrentSceneRenderer`. The lesson survives both revisions:
+**outcome-sharing tracks the shared prologue, not the use case** — any later interaction
+grounded in the current scene (`examine`, `take`, `hit`) joins the same cluster.
 
 **Items sharpen the prologue's edge: a scene's *contents* track the scene each use case presents, not the
 prologue.** `[thread #2]` `[thread #4]` The obvious move when items arrived was to fold "the items on the
@@ -632,8 +635,10 @@ tracks the shared prologue — and so does *subcase reuse*; an interaction that 
 grounding shares neither the port nor the subcase, only the renderer.
 
 This split sharpens the project's headline finding into **three orthogonal axes of sharing**, each
-resolved by its own mechanism. The *port vocabulary* is shared — by interface extension, with **no
-default methods** (a presenter port stays behaviour-free; how a scene renders is an adapter concern).
+resolved by its own mechanism. The *port vocabulary* is shared — the subcase owns its narrow port and
+every consumer's concrete presenter implements it directly (flat composition, not an extends-chain —
+see *Flat presenter ports everywhere* below), with **no default methods** (a presenter port stays
+behaviour-free; how a scene renders is an adapter concern).
 The *adapter rendering* is shared — a single `CurrentSceneRenderer` collaborator over a `Console`
 facade (§7), injected into two thin per-use-case presenters: **composition**, not a presenter base
 class (which would overclaim "is-a scene presenter") and not a grab-bag port. And the *use-case logic*
@@ -840,7 +845,9 @@ the opening without the ending. The renderer side mirrors the port split (the no
 into a shared `OrientRenderer`, `presentScene` rendering left on `CurrentSceneRenderer`, a new `ItemRenderer`
 for examine), so composition tracks the interface segregation. (Promotion candidate, flagged not promoted:
 *port granularity follows distinguishable outcomes per consumer; a shared prologue is not a reason to share an
-ending.*)
+ending.*) The re-split has since been completed by its own logic: `CurrentScenePresenterOutputPort` is
+**deleted** — the `look`/`move` "shared ending" itself proved a coincidence of *rendering*, not a shared
+outcome (see *Flat presenter ports everywhere* below).
 
 **Why the candidate *ordering* lives in the presenter, not the use case.** `[thread #2]` The disambiguation
 outcome has two faces of one affordance — the visible numbered menu and the latent number→identity mapping —
@@ -909,17 +916,22 @@ superset**: a use case only ever checks the precondition on *the state it actual
 prologue checks player + current scene because `look`/`move` read those; `now`/`bye` check the clock because
 they read that), and *no interaction reads the whole world*, so none can honestly evaluate "is the game
 initialized." A single gate would also collapse distinctions `orient` deliberately keeps (player-not-found ≠
-dangling-current-scene). So readiness lives as **sibling presenter clusters keyed to shared sub-state** —
-`OrientPlayerPresenterOutputPort` for player+scene, a small `ClockReadinessPresenterOutputPort` (one outcome,
-`presentGameNotInitialized`) shared by the two clock use cases — each extending `ErrorHandlingPresenterOutputPort`
-*directly*, by interface extension, exactly as the orient cluster is. No common `GameReadinessPresenterOutputPort`
-super-interface is hoisted above them: the clusters share no *method* (player-not-found is not clock-not-ready),
-so a super would be an empty marker or force the collapse just rejected — it waits for a third cluster that
-genuinely shares an outcome (emergence). And the *check logic* is not subcased: at one line per use case it
+dangling-current-scene). So readiness lives as **sibling outcome clusters keyed to shared sub-state** —
+`OrientPlayerPresenterOutputPort` for player+scene (the `orient` subcase's own port), and
+`presentGameNotInitialized` for the clock. The clock outcome was first factored as a small
+`ClockReadinessPresenterOutputPort` the three clock ports extended; under the flat-port rule (below) that
+interface is **deleted** and each clock use case's port *declares* `presentGameNotInitialized` itself — the
+`inventory` precedent (per-port declaration, only the rendering shared). No artifact ever held a
+readiness-typed reference — unlike the orient port, which the subcase holds and presents through — so the
+interface was pure vocabulary dedup, and its extends-chain the driftable second encoding the flat rule
+retires. No common `GameReadinessPresenterOutputPort`
+super-interface is hoisted above the clusters: they share no *method* (player-not-found is not clock-not-ready),
+so a super would be an empty marker or force the collapse just rejected — it waits for a cluster that
+genuinely shares an owner (emergence). And the *check logic* is not subcased: at one line per use case it
 stays inline (the `orient` subcase earned itself with a multi-step prologue and 2+ consumers; a one-line clock
 load does not). This sharpens thread #2: **output-port granularity tracks *(audience × distinguishable
-outcomes)*** — shared outcomes factor by interface extension keyed to shared sub-state, never a false superset
-and never a grab-bag god-presenter. The same cut explains why the **producer** and **consumer** sides of the
+outcomes)*** — shared outcomes stay keyed to shared sub-state but are declared per consumer port, never a
+false superset and never a grab-bag god-presenter. The same cut explains why the **producer** and **consumer** sides of the
 same invariants stay on separate ports: `InitializeGame` reports authoring/consistency failures (a dangling
 exit target, an unknown starting scene) to an **operator/log** audience at *build* time, while the play use
 cases report readiness gaps to a **player** audience at *play* time — same invariant guarded twice, two
@@ -953,6 +965,40 @@ two selection-gate misses) moved *off* `examine`'s port *onto* the select port; 
 terminal `presentItemDescription`. (Promotion candidate, flagged not promoted: *a shared sub-dialogue
 orthogonal to the shared prologue is composed beside it, not nested under it; presenter ports compose as flat
 narrow interfaces on one concrete presenter, never an inheritance chain that asserts a false is-a.*)
+
+**Flat presenter ports everywhere — the extension mechanism is retired (#81).** `[thread #2]` `[thread #4]`
+The select finding above generalized, and the two styles that briefly coexisted (the pre-select
+`Look/Move → CurrentScene → OrientPlayer` and clock `→ ClockReadiness` extends-chains vs the flat implements
+of `examine`/`take`/`drop`/`hit`/`playBlackjack`) collapsed to one rule: **a presenter port declares exactly
+the outcomes its owning artifact presents and extends nothing — except `ErrorHandlingPresenterOutputPort`
+when the owner holds an outermost catch. Subcase ports extend nothing at all.** Two arguments decided it, and
+neither is "inheritance is bad." First, **ownership as structure, not discipline**: the extension chain types
+the port to the *interaction* — `move`'s presenter field could statically call `presentPlayerNotFound`, an
+outcome only the `orient` subcase may present — while flat ports type each field to the *presenting artifact*,
+so the compiler enforces the very outcome-ownership the guarded-prologue contract prescribes. This is §2's
+"remove the affordance, don't forbid the misuse," applied to presenter ports. Second, **one encoding of
+composition**: which subcases a use case composes is already declared by its fields; the extends-chain was a
+second, silently-driftable copy of that fact (drop the subcase, the port still demands its methods). Under the
+flat rule the concrete presenter's implements-clause mirrors the use case's subcase fields 1:1 — the same
+composition stated once per hexagon side, and the composition root's per-role constructor parameters
+type-check that the one presenter instance covers the union. The retirement cost *zero* implementation:
+interface extension never shared method bodies, so the per-presenter delegation methods (the visible
+"duplication") exist identically under both styles — the price of subcase reuse with terminal presentation,
+already paid. Three consequences landed together. (a) `CurrentScenePresenterOutputPort` deleted with
+grammar-honest replacements — `look.presentScene` vs `move.presentSceneEntered` — because a port method whose
+javadoc must gloss per caller ("the current scene for look, the scene entered for move") is two stripes under
+one signature; anticipated divergence (an entry line, an abbreviated re-description) now lands in a presenter
+body with no port surgery, and `look`'s port stops being an empty marker. (b) The clock trio declares
+`presentGameNotInitialized` per port; `ClockReadinessPresenterOutputPort` deleted (the `inventory` precedent).
+(c) `OrientPlayerPresenterOutputPort` dropped its `ErrorHandling` base — the subcase never presents the
+catch-all (faults propagate to the parent's outermost checkpoint), so the base handed it an affordance outside
+its surface; `SelectTargetPresenterOutputPort` already extended nothing. The `ErrorHandling` exception to
+"extends nothing" is principled, not residual: `presentError` *is* the use case's own outcome (its outermost
+catch), so extending the base is still declaring-own-outcomes, merely via a shared spelling of the one
+universal outcome. (Promotion candidate, flagged not promoted — supersedes the methodology's
+`subcases.md` §Presenter port inheritance: *a presenter port declares exactly what its owner presents;
+parent ports never extend subcase ports — the concrete presenter implements them flat, mirroring the use
+case's composition; subcase ports extend nothing, not even the catch-all base.*)
 
 **Values between procedures; suppliers only into the model — the direction the "can of worms" hides.**
 `[thread #4]` The provisioning question first reached for a `Function<…, List<Item>>` handed into the subcase —

@@ -21,7 +21,7 @@ import java.util.List;
 
 /**
  * Secondary (driven) adapter rendering the {@code Examine} use case's outcomes to the shared JLine console.
- * The item-specific outcomes delegate to {@link ItemRenderer}; the inherited orient not-found outcomes delegate
+ * The item-specific outcomes delegate to {@link ItemRenderer}; the orient not-found outcomes delegate
  * to {@link OrientRenderer} (the same collaborator {@code look}/{@code move} use). It composes renderers rather
  * than extending a base presenter — the same composition stance the rest of the terminal takes.
  *

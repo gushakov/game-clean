@@ -22,8 +22,8 @@ import java.util.List;
 
 /**
  * Secondary (driven) adapter rendering the {@code Take} use case's outcomes to the shared JLine console. Like
- * {@link TerminalExaminePresenter} it composes the shared renderers — {@link OrientRenderer} for the inherited
- * orient not-founds, {@link ItemRenderer} for the item outcomes — and implements the three flat presenter ports
+ * {@link TerminalExaminePresenter} it composes the shared renderers — {@link OrientRenderer} for the orient
+ * not-founds, {@link ItemRenderer} for the item outcomes — and implements the three flat presenter ports
  * the use case's collaborators drive ({@code orient}, {@code select}, and {@code take}'s own), rather than
  * extending a base presenter.
  *

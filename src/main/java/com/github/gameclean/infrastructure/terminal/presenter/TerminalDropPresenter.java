@@ -22,7 +22,7 @@ import java.util.List;
 /**
  * Secondary (driven) adapter rendering the {@code Drop} use case's outcomes to the shared JLine console. Like
  * its {@code examine}/{@code take} siblings it composes the shared renderers — {@link OrientRenderer} for the
- * inherited orient not-founds, {@link ItemRenderer} for the item outcomes — and implements the three flat
+ * orient not-founds, {@link ItemRenderer} for the item outcomes — and implements the three flat
  * presenter ports the use case's collaborators drive ({@code orient}, {@code select}, and {@code drop}'s own),
  * rather than extending a base presenter.
  *
