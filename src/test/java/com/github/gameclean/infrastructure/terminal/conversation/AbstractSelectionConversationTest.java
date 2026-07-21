@@ -1,7 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.conversation;
 
-import com.github.gameclean.infrastructure.terminal.Affordance;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
+import com.github.gameclean.infrastructure.terminal.SelectionAffordance;
 import com.github.gameclean.infrastructure.terminal.command.SelectCommand;
 import com.github.gameclean.infrastructure.terminal.command.UnknownCommand;
 import org.junit.jupiter.api.Test;
@@ -24,7 +24,7 @@ class AbstractSelectionConversationTest {
         RecordingConversation conversation = new RecordingConversation();
         List<String> offer = List.of("itmA", "itmB", "itmC");
 
-        conversation.resume(new SelectCommand(3), new Affordance(SelectionKind.EXAMINE, offer, null));
+        conversation.resume(new SelectCommand(3), new SelectionAffordance(AffordanceKind.EXAMINE, offer));
 
         assertThat(conversation.lastOrdinal).isEqualTo(3);
         assertThat(conversation.lastOffer).isEqualTo(offer);
@@ -49,8 +49,8 @@ class AbstractSelectionConversationTest {
         }
 
         @Override
-        public SelectionKind kind() {
-            return SelectionKind.EXAMINE;
+        public AffordanceKind kind() {
+            return AffordanceKind.EXAMINE;
         }
 
         @Override

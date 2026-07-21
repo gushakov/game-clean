@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.conversation;
 
 import com.github.gameclean.infrastructure.terminal.Affordance;
+import com.github.gameclean.infrastructure.terminal.SelectionAffordance;
 import com.github.gameclean.infrastructure.terminal.command.Command;
 import com.github.gameclean.infrastructure.terminal.command.SelectCommand;
 import lombok.AccessLevel;
@@ -32,7 +33,10 @@ public abstract class AbstractSelectionConversation implements Conversation {
     @Override
     public void resume(Command command, Affordance affordance) {
         int ordinal = ((SelectCommand) command).getOrdinal();
-        resumeWith(ordinal, affordance.getTokens());
+        // A selection conversation is only armed by a SelectionAffordance, so the narrowing is total — a wrong
+        // family here would be a wiring fault, exactly like the SelectCommand cast above.
+        SelectionAffordance selection = (SelectionAffordance) affordance;
+        resumeWith(ordinal, selection.getTokens());
     }
 
     /**

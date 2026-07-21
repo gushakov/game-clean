@@ -8,7 +8,7 @@ import com.github.gameclean.core.usecase.combat.HitPresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.NpcRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -29,7 +29,7 @@ import java.util.List;
  *
  * <p>It differs from the take presenter on exactly two axes: its terminal outcomes are <em>combat</em> outcomes
  * ({@link #presentNpcStruck}, {@link #presentNpcSlain}, {@link #presentNpcGotAway}) rather than item ones, and
- * it arms the {@link AffordanceContext} with {@link SelectionKind#HIT} so a subsequent bare number resumes
+ * it arms the {@link AffordanceContext} with {@link AffordanceKind#HIT} so a subsequent bare number resumes
  * <em>striking</em>. The disambiguation menu is ordered here once (stable by short description, then id) and the
  * same order is both displayed and remembered, so the visible menu and the latent offer cannot drift — exactly
  * as take does it.
@@ -74,7 +74,7 @@ public class TerminalHitPresenter
                 .toList();
         npcRenderer.renderAmbiguousTarget(target, ordered);
         // Flatten identities to tokens on this driven side; tag the offer HIT so a later bare number strikes.
-        affordanceContext.offer(SelectionKind.HIT,
+        affordanceContext.offer(AffordanceKind.HIT,
                 ordered.stream().map(npc -> npc.getId().asString()).toList());
     }
 

@@ -1,7 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.conversation;
 
 import com.github.gameclean.core.usecase.explore.ExamineInputPort;
-import com.github.gameclean.infrastructure.terminal.SelectionKind;
+import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import org.springframework.context.ApplicationContext;
 
 import java.util.List;
@@ -18,8 +18,8 @@ public class ExamineConversation extends AbstractSelectionConversation {
     }
 
     @Override
-    public SelectionKind kind() {
-        return SelectionKind.EXAMINE;
+    public AffordanceKind kind() {
+        return AffordanceKind.EXAMINE;
     }
 
     @Override
