@@ -1774,7 +1774,7 @@ same for `take`/`drop`), the §4 split decides the wiring: the use case is the c
 its semantic steps are the converging interaction methods (`playerExaminesChosenCandidate`) — while the
 **modality** (the affordance buffer, the continuation predicate, the resume routing) is a delivery-mechanism
 concern kept in infra. So we **"dress up" each use case as a conversation** with a thin *infra* handler
-(`Conversation { SelectionKind kind(); void resume(Command, List<String>); }`) declared in the composition
+(`Conversation { AffordanceKind kind(); void resume(Command, Affordance); }`) declared in the composition
 root (the §6 ad-hoc-`new` convention, *named* — not anonymous-in-`@Bean` — so it is testable, grows a state
 machine for >2 steps, and can share a base), and we let the **DI container be the resumer map**:
 `ConsoleSession` injects `List<Conversation>` and matches the armed `kind()`, instead of a hand-maintained
@@ -1819,7 +1819,7 @@ both at `take`: `SelectTargetPresenterOutputPort` lost `presentNoPendingSelectio
 container-as-resumer-map the console resumes a selection *only when one is armed*, so an empty offer can no
 longer reach the subcase as a player action; it becomes a **precondition throw** (a wiring fault routed to the
 catch-all), *not* a deleted case (deleting it would let an empty offer mislabel as `presentNoSuchOption`). And
-the wiring grew a **startup completeness assertion** — every `SelectionKind` must have a `Conversation` bean —
+the wiring grew a **startup completeness assertion** — every `AffordanceKind` must have a `Conversation` bean —
 so a kind with no handler fails fast at boot rather than silently dropping a pick at runtime. (Promotion
 candidate, flagged not promoted: *"emerge at the second instance" is per-axis — one feature can be the second
 instance of one abstraction and merely the first reuse of another; count per abstraction, not per feature.*)
@@ -1849,7 +1849,7 @@ interactions is the `Result<T>` anti-pattern reborn; a core dialogue-state type 
 driven port *before routing* is controller-as-orchestrator ("chaining use cases from controllers"), and "which
 interaction next" is exactly the routing vocabulary the core excludes (the argument that killed the core
 `Conversation`, above). The load-bearing precedent is HATEOAS: presenter-armed mode = server-embedded links,
-`SelectionKind` = link relation, opaque tokens = opaque URIs, re-validation = answering a stale link with 410
+`AffordanceKind` = link relation, opaque tokens = opaque URIs, re-validation = answering a stale link with 410
 Gone — and *conditional links* (an option offered only when domain state permits) are computed server-side and
 shipped outward; a client computing link availability itself is the anti-pattern the style exists to forbid.
 (Ink/Yarn dialogue engines are the game-native twin: conditional choices are evaluated by the engine against
@@ -2020,7 +2020,7 @@ governs *player-authored* input, which is untrusted and must pass the constructi
 **system-authored, valid by provenance** (§3's provenance rule applied to the arming channel), never touched
 by the player's fingers, so no gate applies on the way back in. The §9 payload tests all pass *precisely
 because* the shell never opens it: the router shape-matches command types and kind only; the one narrowing
-cast lives in the conversation handler (`(BlackjackRound) affordance.payload()` — the `SelectCommand` cast's
+cast lives in the conversation handler (`(BlackjackRound) ((EphemeralAffordance) affordance).getPayload()` — the `SelectCommand` cast's
 twin); a shell that *read* the round to route would fail transcription-not-computation on the spot. This
 *scopes* rather than repeals the earlier "a payload field wanting domain semantics is the signal to mint the
 aggregate and degrade the token" — that guidance presumed a domain source of truth to correlate against. The
@@ -2046,6 +2046,31 @@ source of truth exists — a correlation token when it does, an opaque state env
 deliberately domain-ephemeral; opacity to the shell, not payload minimality, is the load-bearing discipline,
 and the presenter's completion-disarm joins arming as a fixed transcription, distinct from the dispatcher's
 abandonment-clear.*)
+
+**The two disciplines became *structural* — a sealed `Affordance`, and the buffer slimmed to a holder.**
+`[thread #4]` The token-vs-envelope split above was first carried by a *single* `Affordance(kind, tokens,
+payload)` record with exactly one of `tokens`/`payload` populated per family and the other empty — a
+co-existing-nullable-fields shape enforced only by convention. That is precisely the anti-pattern §2 rejected
+for `Item.location` (a nullable `holder` beside a `SceneId`, an XOR the constructor must police), and the fix
+is the same lesson at its second instance: `Affordance` is now a **sealed interface** —
+`SelectionAffordance(kind, List<String> tokens)` | `EphemeralAffordance(kind, Object payload)` — so the XOR is
+*structural* (one carrier or the other, never both, never neither), each family's field stays compile-time
+typed (the selection handler reads `List<String>` with **no unchecked cast**; only the ephemeral handler
+narrows — `(BlackjackRound) ((EphemeralAffordance) a).getPayload()`, the `SelectCommand` cast's twin), and a
+future third family is an unforgettable new `permits` entry rather than a fourth nullable slot. Two
+consequences fall out. `AffordanceKind` — **renamed from `SelectionKind`**, which *lied* (`BLACKJACK` was never
+a selection but the ephemeral family) — is **freed to be a pure routing key**: it no longer implicitly signals
+*which field is live* (the subtype now does), so the discriminator the affordance carries and the payload
+discipline are orthogonal, and the rename also de-overloads the `select*` vocabulary (`SelectCommand`,
+`SelectionAffordance` stay genuinely about selection). And `AffordanceContext` collapses to a **pure
+single-slot holder** (`offer`/`arm`/`current`/`clear`): its old projection accessors `kind()` / `currentOffer()`
+merely mirrored the value's fields and were redundant once `current()` returned the affordance whole and the
+handler received it as a value (`currentOffer()` was in fact production-dead). The §9 "two payload disciplines"
+finding is unchanged in substance — it is now *enforced by the type system* rather than narrated over a
+half-empty record. (Promotion candidate, flagged not promoted: *when a carrier serves two families with
+disjoint fields keyed by a discriminator, seal it into one subtype per family rather than a single record with
+per-family-empty fields — the §2 sealed-over-nullable ruling applies to delivery-mechanism carriers too; the
+discriminator is then freed to be a pure routing key.*)
 
 **Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
 lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the

@@ -201,13 +201,15 @@ Established by the JLine entry-point work (issue #6).
   `LookPresenterOutputPort`), so the console no longer touches the presenter. ANTLR deferred — rationale
   in design-notes §9. Adding a command/synonym = one `register(...)` line in `CommandParser`.
 - **Conversation dispatcher** (`infrastructure/terminal/conversation/`, issues #55/#72) — continuing a
-  multi-step dialogue is routed by *kind*, not hardwired. `AffordanceContext` holds one armed `Affordance`
-  `(SelectionKind kind, List<String> tokens, Object payload)`: selection dialogues arm **tokens** via
-  `offer(kind, tokens)`; an ephemeral dialogue (blackjack) arms an **opaque payload envelope** via
-  `arm(kind, payload)` — written by the driven presenter, never read by the shell. A
+  multi-step dialogue is routed by *kind*, not hardwired. `AffordanceContext` holds one armed **sealed**
+  `Affordance` (`AffordanceKind getKind()`), one carrier per family (#79): selection dialogues arm a
+  `SelectionAffordance(kind, List<String> tokens)` via `offer(kind, tokens)`; an ephemeral dialogue (blackjack)
+  arms an `EphemeralAffordance(kind, Object payload)` — an **opaque envelope** written by the driven presenter,
+  never read by the shell — via `arm(kind, payload)`. The XOR is structural (not a half-empty record); `kind` is
+  a pure routing key. A
   `Conversation { kind(); default continuedBy(Command); resume(Command, Affordance) }` handler per dialogue is
   `new`ed in `UseCaseConfig`; `ConsoleSession` injects `List<Conversation>` — the **container is the resumer
-  map** — asserts at startup that every `SelectionKind` has a handler, and gives the armed conversation
+  map** — asserts at startup that every `AffordanceKind` has a handler, and gives the armed conversation
   **first crack** at each parsed line through its `continuedBy` predicate (default: a bare-number
   `SelectCommand`, suiting the selection family on `AbstractSelectionConversation`); a refused line clears the
   affordance (abandonment — the forfeit for an ephemeral dialogue) and dispatches normally. Handlers:

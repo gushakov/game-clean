@@ -66,8 +66,9 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving `AnimateNpcs`),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
-  (session-lifetime conversational buffer holding one armed `Affordance` — kind + selection tokens *or* an
-  opaque state envelope, #72) + the `Affordance` value + the `SelectionKind` enum;
+  (session-lifetime conversational buffer holding one armed `Affordance`, #72/#79) + the **sealed** `Affordance`
+  value (`SelectionAffordance` = kind + selection tokens; `EphemeralAffordance` = kind + opaque state envelope)
+  + the `AffordanceKind` enum;
   `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation`
   with its per-dialogue `continuedBy(Command)` predicate + `AbstractSelectionConversation` Template-Method base +
   `Examine`/`Take`/`Drop`/`Hit`/`BlackjackConversation`); `presenter/` the driven
@@ -380,12 +381,12 @@ project's first contested-resource write and first multi-conversation terminal d
   `Location ↔ (kind, ref)` converter (exhaustive `switch`), repo `findByLocationKindAndLocationRef`, adapter
   version-driven save.
 - **Terminal — conversation dispatcher** (`take` is conversation #2, so it forces kind-routing — corrects the
-  issue's "drop forces it"): `SelectionKind{EXAMINE,TAKE}` enum; `AffordanceContext` now carries `(kind, tokens)`;
+  issue's "drop forces it"): `AffordanceKind{EXAMINE,TAKE}` enum; `AffordanceContext` now carries `(kind, tokens)`;
   `infrastructure/terminal/conversation/` holds `Conversation{kind(); resume(Command, offer)}` +
   `AbstractSelectionConversation` (Template Method, factors the `SelectCommand→ordinal` cast) +
   `ExamineConversation`/`TakeConversation`. `ConsoleSession` injects `List<Conversation>` (the container *is* the
   resumer map — no hand-maintained `kind→useCase` table), routes a `SelectCommand` to the conversation matching
-  the armed kind (else folds into `guide`), and asserts at startup (`@PostConstruct`) that every `SelectionKind`
+  the armed kind (else folds into `guide`), and asserts at startup (`@PostConstruct`) that every `AffordanceKind`
   has a handler. New `TakeCommand` + `take`/`get` verbs; `TerminalTakePresenter` (arms kind `TAKE`); `ItemRenderer`
   gains `renderItemTaken`/`renderItemGotAway`. (design-notes §4/§9.)
 - **Composition root** — `takeUseCase` prototype (shared presenter, as examine); singleton
@@ -413,7 +414,7 @@ second inventory goal, and the second `select` provisioner that extracted the Te
 - **Ports / persistence** — `findItemsHeldBy(PlayerId)` on the item port; the adapter reuses the existing
   `findByLocationKindAndLocationRef` derived query with kind `HELD`. **No Flyway migration** (V6 already carries
   location + version).
-- **Terminal** — `DropCommand` + `drop`/`put` verbs (remainder-as-target); `SelectionKind.DROP`;
+- **Terminal** — `DropCommand` + `drop`/`put` verbs (remainder-as-target); `AffordanceKind.DROP`;
   `TerminalDropPresenter` (arms DROP; carry-flavored English via new `ItemRenderer` variants);
   `DropConversation` — conversation #3, which *confirms* the kind-routed dispatcher (dispatcher and startup
   completeness assertion untouched). Composition root: `dropUseCase` prototype + `dropConversation` singleton.
@@ -505,8 +506,9 @@ deliberately never persisted (abandonment = forfeit; the dealer sweeps the cards
 - **Terminal** — new commands: `PlayCommand` (`play`), `HitCardCommand` (bare `hit` and `hit me` — the
   parser splits the `hit` verb by token shape; `hit <target>` stays combat), `StandCommand`
   (`stand`/`stay`), `GameStandingCommand` (`game`/`table`). `AffordanceContext` holds one armed
-  `Affordance` `(kind, tokens, payload)` — the payload an **opaque envelope** the shell never reads;
-  `arm(kind, payload)`/`current()` join `offer`/`kind`/`currentOffer`/`clear`. `Conversation` gained
+  `Affordance` — an **opaque envelope** (`EphemeralAffordance`) the shell never reads, or a token offer
+  (`SelectionAffordance`); the buffer is a pure holder `offer`/`arm`/`current`/`clear` (sealed split + slim,
+  #79). `Conversation` gained
   `default continuedBy(Command)` (bare-number default) and `resume(Command, Affordance)`; the dispatcher
   gives the armed conversation **first crack** at each parsed line, else clears (abandonment — the forfeit
   for an ephemeral dialogue) and dispatches; stray table-talk verbs fold to guidance.
