@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
+import com.github.gameclean.infrastructure.persistence.common.ItemLocationKind;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;

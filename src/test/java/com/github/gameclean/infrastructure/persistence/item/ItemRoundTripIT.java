@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
+import com.github.gameclean.infrastructure.persistence.common.ItemLocationKind;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
@@ -19,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 /**
  * Persistence round-trip for the {@code Item} aggregate against the real, running Dockerized Postgres
  * ({@code @AutoConfigureTestDatabase(replace = NONE)}). Flyway migrates the schema at context startup (through
- * V6, which gives item its {@code (location_kind, location_ref)} pair and {@code @Version} column); the
- * {@code @DataJdbcTest} slice rolls each test back.
+ * V6, which gives item its {@code (location_kind, location_ref)} pair — now backing the embedded
+ * {@code LocationDbEntity} — and {@code @Version} column); the {@code @DataJdbcTest} slice rolls each test back.
  *
  * <p>It exercises what {@code take} and {@code drop} need end to end: a ground item inserts and is found by
  * its scene; taking it moves it off the ground (a {@code GROUND}→{@code HELD} location change) and updates in
@@ -69,8 +70,8 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         // ... but the same row persists, now held by the player (one row, updated in place).
         assertThat(repository.count()).isEqualTo(1);
         ItemDbEntity stored = repository.findById("itm1").orElseThrow();
-        assertThat(stored.getLocationKind()).isEqualTo(ItemLocationKind.HELD);
-        assertThat(stored.getLocationRef()).isEqualTo("plr1");
+        assertThat(stored.getLocation().getKind()).isEqualTo(ItemLocationKind.HELD);
+        assertThat(stored.getLocation().getRef()).isEqualTo("plr1");
     }
 
     @Test
