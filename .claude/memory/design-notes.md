@@ -1727,11 +1727,13 @@ spine's moment at last: an NPC striking back *is* a reaction to something that h
 one-shot chain (struck-event → retaliate-interaction), combat becomes tit-for-tat — one counter-blow per
 player hit, then silence — which misdescribes the domain: combat is a **stance** the NPC is *in* (it keeps
 attacking every round until someone dies or leaves), not a sequence of discrete episodes. A stance is
-*state*: the hit's transaction persists hostility on the NPC, and the existing animation tick's behaviour
-selection *derives* the counterattack from it (hostile & co-located → attack; the stance cancels the
-wander roll) — squarely the polling/deriving shape of the clock and wandering exemplars above, with combat
-*rounds* falling out of the tick cadence for free (per-mode cadence, if 10s rounds ever feel wrong, is a
-ticker concern, not a domain one). So the third would-be event customer also resolves to polling, and the
+*state*: the hit's transaction persists hostility on the NPC, and the animation tick *derives* the decision
+to counterattack from it, afresh every round (hostile & co-located → strike; the stance pins the NPC in the
+fight, cancelling wander) — squarely the polling/deriving shape of the clock and wandering exemplars above,
+with combat *rounds* falling out of the tick cadence for free. (What the tick does with the derived decision
+was later revised — it *dispatches* it as a command rather than executing it inline; see the two
+command-channel passages below. The decision side, which is what this paragraph defends against the event
+chain, is unchanged.) So the third would-be event customer also resolves to polling, and the
 pattern refines the line's wording: an event fits a **discrete** causal fact demanding a one-shot
 reaction; an **ongoing disposition** belongs in persisted state, derived by a loop. The event spine's
 first causal site is accordingly *not* "an NPC reacting to the player" in general — being struck begets a
@@ -1739,6 +1741,86 @@ stance — but the first genuinely discrete reaction: witness propagation (a gua
 responding to the assault) or an on-death effect. (Promotion candidate, flagged not promoted: *choreograph
 discrete facts, persist dispositions — if the reaction recurs while a condition holds, it is state polled
 by a loop, not an event.*)
+
+**Decision polled, execution dispatched — the tick becomes a pure policy, and the NPC gets a command channel
+symmetric to the console.** `[thread #3]` (#66) The stance doctrine above settled *where the decision lives*;
+designing the retaliation slice split out the question it had silently bundled — *where the decided action
+executes*. The first answer executed inline in the tick's transaction, and its costs were all shape-costs: one
+composite outcome bundling blows with witnessed movements, one transaction folding every NPC's move and the
+player's damage into a single write-set, and — the showcase's real loss — no trace of the NPC as an *actor*:
+the counterattack would be tick plumbing, not an interaction anyone initiates. The revision: the tick *derives*
+each NPC's decision and **dispatches it as a command** (`StrikePlayer(npc)`, `WanderThrough(npc, exit)`)
+through a driven port, and a primary adapter — `NpcCommandSession`, the deliberate sibling of the terminal's
+`ConsoleSession` — receives each command and drives the *executing* interaction: the strike lands through the
+**same combat use case** the player's `hit` runs through (`FightNpc`: player primary actor, NPC a secondary
+actor initiating its own step — the multi-actor Cockburn shape this showcase wanted a live example of; the
+orthodox reading that a secondary actor is only one the *system enlists* is acknowledged and answered by the
+methodology's own table, which has secondary actors *initiating steps*), and the wander through the NPC's own
+`Wander` use case. The symmetry is total on purpose — **every** NPC action rides the channel, wander included
+("animate decides and dispatches, always"): the player's mind decides outside the hexagon and speaks through
+the console; the NPC's mind is a policy interaction *inside* it and speaks through the channel — same command
+grammar, same use cases, different sides of the boundary for the deciding mind. And full symmetry has a
+structural dividend: the animate interaction's only writes were the moves, now behind commands, so the policy
+is **read-only** — no transaction, no version contention, no `doAfterCommit`; every write lives in an
+executing interaction.
+
+Why a *command* and not an event, when the paragraph above just rejected events: the message crosses *after
+the decision is made*. The policy already derived "strike" from stance + co-location + the attack gate;
+nothing downstream is invited to interpret, filter, or ignore — one addressee, imperative, exactly one
+execution per decision. An event (`NpcDecidedToRetaliate`) would lie twice: it invites zero-to-many consumers
+(wrong — exactly one swing per decision), and it tempts the handler to re-decide, leaking the policy back into
+the adapter. In Event-Storming terms the animate use case is the *policy* sticky — "whenever hostile &
+co-located & the gate passes, then command: strike" — and policies emit commands executed by actors; events
+remain what they were above, *facts* for the still-unbuilt spine (on-death, witness propagation). The phase-3
+relay adapter this section promised ("a driving adapter symmetric to the terminal") has thus arrived early,
+with a command as cargo; the outbox itself still waits for the first fleeting fact. Three doctrinal
+consequences. **(i)** The command vocabulary is delivery-mechanism, so it lives in infrastructure exactly like
+the terminal's sealed `Command` set (§9, §1's "would it survive a second adapter?" test) — the core never owns
+a message type; the *driven port's methods are the vocabulary* (`dispatchStrike(NpcId)`,
+`dispatchWander(NpcId, exit)`), the presenter-port precedent applied to the outbound side. **(ii)** The
+channel is the *sanctioned bridge between interactions*: a use case never calls another use case (that would
+make it a controller-orchestrator), so one actor's decision reaches another interaction only by going *out*
+through a port and back *in* through a driving adapter. **(iii)** The policy decides from a **snapshot** —
+derive all decisions, then dispatch all commands, never interleave execution into the derivation — and the
+executing interaction **revalidates at execution** (the player may have moved between decision and blow:
+whiff / target-gone are *execution* stripes), which is where TOCTOU staleness belongs. Presentation splits
+along the same line: the policy's own outcome is one quiet stripe every tick — its executions narrate mid-run
+as their own interactions' outcomes via `printAbove`, so anything visible from the policy would read out of
+order — and the old composite "retaliation + movements witnessed this tick" outcome dissolves; each execution
+narrates its own stripe. Pacing rides the policy too: an authored `attackChance` gates the strike exactly as
+`moveChance` gates wander (the cadence paragraph below applies to it unchanged), and a hostile NPC never
+wanders — the stance pins it in the fight; its branches are *maybe strike* or *stand ground*. (Promotion
+candidate, flagged not promoted: *a use case never calls a use case — one actor's decided action reaches
+another interaction as a command dispatched out a driven port and back in through a driving adapter; commands
+carry decided actions (one addressee, imperative, decided upstream), events carry facts (zero-to-many
+observers); the command vocabulary is infrastructure, the driven port's methods are the core-side
+vocabulary.*)
+
+**The loop is the retry mechanism — durability follows the message's source, so the channel is synchronous on
+purpose.** `[thread #3]` (#66) The channel's first cut is deliberately the *least* machinery that is honest: a
+synchronous in-band dispatch (Spring Integration `DirectChannel` — the subscriber runs inline on the sender's
+thread), no outbox, no persisted claim. That would be negligent for the event spine, and is exactly right
+here, because durability requirements follow the **source** of the message. An event carries a *fleeting
+fact* — lost, it is gone forever, which is why the outbox promise above stands for the spine. A command here
+carries a decision **derived from persisted stance, re-derived every tick** — lost (a crash between
+derivation and execution, a rolled-back strike), it costs one round and nothing more: the next tick
+re-derives it from state that never went anywhere. At-most-once execution per tick, at-least-once-eventually
+overall — *the polling loop is the outbox*. The same recovery serves an optimistic-lock loss inside an
+executing interaction: the strike's `(action, onLockDetected)` overload presents the quiet stripe and the
+loop retries by re-derivation — the watermark lesson replayed. A proposed `active` flag on `Npc` ("filter out
+NPCs already doing something") was examined and **rejected**: under synchronous dispatch the race it guards
+cannot occur — `send()` returns only after the executing interaction has completed, and the fixed-delay
+single-thread scheduler serializes ticks, so no later derivation can observe an NPC mid-action — while the
+flag *can* wedge (a rolled-back execution never resets it, and no retry comes back to clear it). It earns its
+way back only as one of two different things: async-dispatch bookkeeping if the channel ever goes
+asynchronous, or *modeled action duration* (a multi-tick wind-up — which would also make a fine presented
+telegraph), a domain fact belonging on the NPC as state, not a dispatch guard. The async upgrade path is also
+the argument for taking the messaging dependency at all rather than hand-rolling an interface: the driven
+port and both adapters never change; swapping `DirectChannel` for a queue/executor channel is a
+composition-root decision — the architecture is async-ready, synchrony is a deployment detail. (Promotion
+candidate, flagged not promoted: *durability follows the message's source — a fleeting fact needs a
+crash-durable outbox; a command derived from persisted state needs none, because the deriving loop is the
+retry mechanism; match the channel machinery to the message's source, not to the pattern's ceremony.*)
 
 **Cadence decoupled from frequency — one fast metronome, per-behaviour authored odds.** `[thread #3]` Once
 retaliation lands on the polling side (above), `move` and the coming attack-stance must share the one NPC
