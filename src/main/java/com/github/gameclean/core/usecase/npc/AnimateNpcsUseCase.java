@@ -7,11 +7,11 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.npccommands.NpcCommandsOutputPort;
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
-import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
@@ -27,31 +27,38 @@ import java.util.Optional;
  * actor is the <em>system</em> (the background NPC-activity ticker fires it on a fixed real-time interval), so
  * there is no security assertion — the peer of {@code AnnounceTimeOfDay}.
  *
- * <p><b>A blind metronome drives a smart interaction.</b> The ticker carries no NPC knowledge; it just fires
- * this repeatedly. So this use case owns all of it: enumerate the NPCs, roll each one's authored move chance,
- * and on a hit pick a random exit and wander it to the adjacent scene. The dice rolls run <em>outside</em> the
- * transaction (a pure choice with no persistence effect, like the item-spawn rolls), made by an injected
- * {@link Dice} — the game's own source of chance — so the interaction stays deterministic under test.
+ * <p><b>A read-only policy — decide, then dispatch, never execute.</b> This use case performs no writes, holds
+ * no transaction, and registers no {@code doAfterCommit}. It is the Event-Storming <em>policy</em>: from a
+ * single snapshot read it <em>derives</em> each NPC's decision, then <em>dispatches</em> each decided action as
+ * a command through {@link NpcCommandsOutputPort}. A driving adapter turns each command back into the
+ * <em>executing</em> interaction ({@code FightNpc.npcStrikesPlayer} for a strike, {@code Wander.npcWandersThrough}
+ * for a wander), where the writes and their transactions live. The tick itself never touches an aggregate's
+ * state, so there is no version contention here.
  *
- * <p><b>Autonomous movers have no audience for their own failures.</b> An NPC whose current scene cannot be
- * resolved, or that stands in a dead-end (no exits), or that rolls a move into a dangling exit target, is
- * <em>skipped silently</em>: unlike a player command there is no actor to present a "you cannot go that way"
- * outcome to, so the tick simply moves the NPCs that can move.
+ * <p><b>Combat is a persisted stance, wander is the default (issue #66 step 2).</b> Each NPC's decision derives
+ * from its persisted state, re-derived every tick:
+ * <ul>
+ *   <li><b>Hostile</b> NPCs never wander — the stance pins them in the fight. Co-located with the player and the
+ *       authored {@code attackChance} rolls a hit → dispatch a <b>strike</b>; otherwise (roll fails, or not
+ *       co-located, or no player) <em>stand ground</em> (no command).</li>
+ *   <li><b>Non-hostile</b> NPCs roll their {@code moveChance}; on a hit the policy picks a random exit of the
+ *       NPC's current scene and dispatches a <b>wander</b> carrying that exit (the executing interaction never
+ *       re-rolls); a dead-end or unresolvable scene means no command.</li>
+ * </ul>
+ * The policy owns <em>all</em> the dice — the attack gate and the exit pick — so the command carries only the
+ * decided detail.
  *
- * <p><b>Narration is filtered to what the player can witness.</b> Only movements whose source or target is the
- * player's current scene are narrated — a departure the player sees leave, or an arrival into their room; every
- * other move happens off-stage and is presented as the quiet outcome. The player's scene is resolved inline
- * (not through the {@code orient} prologue, which this system interaction does not share) and its absence is
- * tolerated — a tick with no resolvable player narrates nothing but still persists the moves.
+ * <p><b>Batch, then dispatch.</b> Every decision is derived from the one snapshot <em>before</em> any command is
+ * dispatched — execution is never interleaved into the decision loop — so a dispatched execution (which reads
+ * and writes aggregates) can never perturb a later NPC's still-pending decision this tick. TOCTOU staleness is
+ * handled where it belongs: each executing interaction re-validates its preconditions at execution time (the
+ * player may have moved between decision and blow).
  *
- * <p><b>One write, one atomic unit, single-writer.</b> A single {@code doInTransaction} saves every moved NPC —
- * the <em>plain</em> overload with no {@code onLockDetected}, because the ticker is the NPC's only writer today,
- * so a lock loss is unreachable (the {@code drop} case, not {@code take}). The one presentation is deferred to
- * after-commit so the player is never told an NPC moved before the move is durable, and the interaction returns
- * immediately after registering it. Exactly one {@code present*} is reached on every path: an empty world, a
- * tick where nothing moved, or a tick with no perceptible movement all present {@code presentNothingHappened}
- * (the first two before any transaction); the outermost {@code catch} routes any unhandled fault (a
- * {@code PersistenceOperationsError} that has already rolled back, or an unexpected bug) to {@code presentError}.
+ * <p><b>One quiet stripe every tick.</b> The policy's own outcome is always {@code presentNothingHappened} —
+ * its executions narrate their own outcomes mid-run, as their own interactions, so anything the policy presented
+ * would read out of order. The dice rolls and reads are pure/side-effect-free; the outermost {@code catch}
+ * routes any unhandled fault (a {@code PersistenceOperationsError} on a read, a failed dispatch, an unexpected
+ * bug) to {@code presentError}. A lost or rolled-back command costs one round — the next tick re-derives it.
  */
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
@@ -63,108 +70,100 @@ public class AnimateNpcsUseCase implements AnimateNpcsInputPort {
     PlayerOperationsOutputPort playerOps;
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     Dice dice;
-    TransactionOperationsOutputPort txOps;
+    NpcCommandsOutputPort commandOps;
 
     @Override
     public void systemAdvancesNpcs() {
         try {
             // Initiating actor: the system (the NPC ticker) — no security assertion is required.
 
-            // Enumerate the NPCs. An empty world is the safe pre-initialization no-op (the ticker may fire
-            // before the world is seeded): present the quiet outcome and return, with no transaction.
+            // One snapshot: every living NPC. An empty world is the safe pre-initialization no-op (the ticker
+            // may fire before seeding): present the quiet outcome and return, resolving nothing else.
             List<Npc> npcs = npcOps.findAllNpcs();
             if (npcs.isEmpty()) {
                 presenter.presentNothingHappened();
                 return;
             }
 
-            // Roll each NPC's move (outside any transaction — a pure choice, no persistence effect). A move
-            // whose current scene is unresolvable, whose scene is a dead-end, or whose chosen exit dangles is
-            // skipped silently: an autonomous mover has no audience for a failure.
-            List<NpcMove> moves = new ArrayList<>();
-            for (Npc npc : npcs) {
-                Optional<Scene> from = sceneOps.findScene(npc.getCurrentScene());
-                if (from.isEmpty() || from.get().getExits().isEmpty()) {
-                    continue;
-                }
-                if (!dice.roll(npc.getMoveChance())) {
-                    continue;
-                }
-                Exit chosen = dice.pick(from.get().getExits());
-                Optional<Scene> to = sceneOps.findScene(chosen.getTarget());
-                if (to.isEmpty()) {
-                    continue;
-                }
-                moves.add(new NpcMove(npc.moveTo(chosen.getTarget()), from.get(), to.get(), chosen.getName()));
-            }
-
-            // Nothing moved this tick: present the quiet outcome and return, with no transaction.
-            if (moves.isEmpty()) {
-                presenter.presentNothingHappened();
-                return;
-            }
-
-            // Resolve where the player stands, to filter the movements they can witness. A read, so it runs
-            // outside the transaction; its absence is tolerated (no player scene => nothing is perceptible).
+            // Where the player stands, for the hostile NPCs' co-location decision (Optional, tolerant of no
+            // player — a tick with an unresolvable player simply decides no strikes; the others still wander).
             SceneId playerScene = playerRepositoryOps
                     .findPlayer(PlayerId.of(playerOps.currentPlayerId()))
                     .map(Player::getCurrentScene)
                     .orElse(null);
-            List<PerceivedNpcMovement> perceptible = perceptibleMovements(moves, playerScene);
 
-            // One write, one atomic unit. Save every moved NPC (plain transaction — single-writer, no
-            // lock-loss handler), then narrate any perceptible movement only after the moves commit; the
-            // quiet outcome covers a tick that moved NPCs only off-stage. The interaction ends here.
-            txOps.doInTransaction(false, () -> {
-                moves.forEach(move -> npcOps.saveNpc(move.getMovedNpc()));
-                txOps.doAfterCommit(() -> {
-                    if (perceptible.isEmpty()) {
-                        presenter.presentNothingHappened();
-                    } else {
-                        presenter.presentNpcMovements(perceptible);
-                    }
-                });
-            });
-            return;
+            // Derive ALL decisions from the snapshot first (batch), touching no aggregate state.
+            List<NpcCommandDecision> decisions = new ArrayList<>();
+            for (Npc npc : npcs) {
+                decide(npc, playerScene).ifPresent(decisions::add);
+            }
+
+            // Then dispatch every decided command, in decision order — the loop is the retry mechanism, so a
+            // failed dispatch or a rolled-back execution simply costs this round.
+            for (NpcCommandDecision decision : decisions) {
+                switch (decision.getKind()) {
+                    case STRIKE -> commandOps.dispatchStrike(decision.getNpc().getId());
+                    case WANDER -> commandOps.dispatchWander(decision.getNpc().getId(), decision.getExitName());
+                }
+            }
+
+            // The policy's own outcome is always quiet — the executions narrate themselves mid-run.
+            presenter.presentNothingHappened();
 
         } catch (Exception e) {
-            // Outermost checkpoint: a PersistenceOperationsError (already rolled back), a malformed configured
-            // player id, or an unexpected bug ends here.
+            // Outermost checkpoint: a read fault, a failed dispatch, or an unexpected bug ends here.
             presenter.presentError(e);
         }
     }
 
     /**
-     * Classifies each move against the player's current scene: a move <em>from</em> that scene is a
-     * {@link MovementKind#DEPARTED} (detail = the exit name it left by), a move <em>into</em> it is an
-     * {@link MovementKind#ARRIVED} (detail = the name of the scene it came from); a move touching neither is
-     * off-stage and dropped. A null player scene (unresolved player) yields no perceptible movements.
+     * Derives one NPC's decision from its persisted stance and the player's location, owning every die the
+     * decision needs. A hostile NPC only ever strikes (co-located + the attack gate passes) or stands ground; a
+     * non-hostile NPC only ever wanders (its move gate passes and its scene has an exit) or stays. Returns empty
+     * for "no command this tick" (stand ground / stay / dead-end).
      */
-    private static List<PerceivedNpcMovement> perceptibleMovements(List<NpcMove> moves, SceneId playerScene) {
-        List<PerceivedNpcMovement> perceptible = new ArrayList<>();
-        if (playerScene == null) {
-            return perceptible;
-        }
-        for (NpcMove move : moves) {
-            if (move.getFrom().getId().equals(playerScene)) {
-                perceptible.add(new PerceivedNpcMovement(move.getMovedNpc(), MovementKind.DEPARTED, move.getExitName()));
-            } else if (move.getTo().getId().equals(playerScene)) {
-                perceptible.add(new PerceivedNpcMovement(move.getMovedNpc(), MovementKind.ARRIVED, move.getFrom().getName()));
+    private Optional<NpcCommandDecision> decide(Npc npc, SceneId playerScene) {
+        if (npc.isHostile()) {
+            // Hostile NPCs never wander — the stance pins them in the fight.
+            boolean coLocated = playerScene != null && npc.getCurrentScene().equals(playerScene);
+            if (coLocated && dice.roll(npc.getAttackChance())) {
+                return Optional.of(NpcCommandDecision.strike(npc));
             }
+            return Optional.empty();   // stand ground: roll failed, not co-located, or no player
         }
-        return perceptible;
+        // Non-hostile: maybe wander. Roll first, then resolve the scene and pick an exit (the policy owns both).
+        if (!dice.roll(npc.getMoveChance())) {
+            return Optional.empty();   // stays put
+        }
+        Optional<Scene> from = sceneOps.findScene(npc.getCurrentScene());
+        if (from.isEmpty() || from.get().getExits().isEmpty()) {
+            return Optional.empty();   // unresolvable scene or a dead-end: no wander
+        }
+        Exit chosen = dice.pick(from.get().getExits());
+        return Optional.of(NpcCommandDecision.wander(npc, chosen.getName()));
     }
 
     /**
-     * Use-case-private record of one resolved NPC move: the NPC already moved to its new scene (the value to
-     * persist), plus the source and target scenes and the exit taken — the context {@link #perceptibleMovements}
-     * needs to classify and phrase a witnessed movement. Not a domain concept, so it stays out of the model.
+     * Use-case-private record of one decided NPC command: the NPC it is for, whether to strike or wander, and —
+     * for a wander — the exit the policy chose. Not a domain concept (a command is delivery-mechanism), so it
+     * stays out of the model; it only carries the decision from the batch loop to the dispatch loop, keeping
+     * "derive all, then dispatch all" visible in one method.
      */
     @Value
-    private static class NpcMove {
-        Npc movedNpc;
-        Scene from;
-        Scene to;
-        String exitName;
+    private static class NpcCommandDecision {
+
+        enum Kind { STRIKE, WANDER }
+
+        Kind kind;
+        Npc npc;
+        String exitName;   // null for STRIKE
+
+        static NpcCommandDecision strike(Npc npc) {
+            return new NpcCommandDecision(Kind.STRIKE, npc, null);
+        }
+
+        static NpcCommandDecision wander(Npc npc, String exitName) {
+            return new NpcCommandDecision(Kind.WANDER, npc, exitName);
+        }
     }
 }

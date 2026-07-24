@@ -46,9 +46,10 @@ public class YamlGameSeedSource implements GameSeedSourceOperationsOutputPort {
     public GameSeed loadGameSeed() {
         Resource seed = properties.getWorld().getSeedLocation();
         String startingSceneId = properties.getPlayer().getStartingSceneId();
+        int playerMaxHitPoints = properties.getPlayer().getMaxHitPoints();
         log.info("[GameSeed] Loading the authored seed from {} with starting scene {}", seed, startingSceneId);
         try (InputStream in = seed.getInputStream()) {
-            return reader.read(in, startingSceneId);
+            return reader.read(in, startingSceneId, playerMaxHitPoints);
         } catch (IOException | RuntimeException e) {
             throw new GameSeedSourceOperationsError(
                     "could not read or parse the game seed from %s".formatted(seed), e);

@@ -1,6 +1,6 @@
 package com.github.gameclean.infrastructure.terminal.conversation;
 
-import com.github.gameclean.core.usecase.combat.HitInputPort;
+import com.github.gameclean.core.usecase.combat.FightNpcInputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceKind;
 import org.springframework.context.ApplicationContext;
 
@@ -26,6 +26,6 @@ public class HitConversation extends AbstractSelectionConversation {
     @Override
     protected void resumeWith(int ordinal, List<String> offer) {
         // Fresh prototype per resume (like ConsoleSession's other pulls); the use case presents every outcome.
-        applicationContext.getBean(HitInputPort.class).playerHitsChosenCandidate(ordinal, offer);
+        applicationContext.getBean(FightNpcInputPort.class).playerHitsChosenCandidate(ordinal, offer);
     }
 }

@@ -26,7 +26,9 @@ class NpcTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A figure in a travel-worn hooded cloak.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
+                .hostile(false)
                 .build();
     }
 
@@ -40,6 +42,8 @@ class NpcTest {
         assertThat(moved.getCurrentScene()).isEqualTo(SceneId.of("scn2"));
         assertThat(moved.getId()).isEqualTo(NpcId.of("npc1"));
         assertThat(moved.getMoveChance()).isEqualTo(new Chance(1, 4));
+        assertThat(moved.getAttackChance()).isEqualTo(new Chance(1, 3));   // carried forward
+        assertThat(moved.isHostile()).isFalse();                           // carried forward
         assertThat(atGate.getCurrentScene()).isEqualTo(SceneId.of("scn1"));
     }
 
@@ -101,6 +105,7 @@ class NpcTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(null)
                 .build());
     }
@@ -113,9 +118,45 @@ class NpcTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
                 .version(-1)
                 .build());
+    }
+
+    @Test
+    void rejects_a_null_attack_chance() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .attackChance(null)
+                .hitPoints(HitPoints.full(10))
+                .build());
+    }
+
+    @Test
+    void provoked_turns_the_npc_hostile_carrying_identity_and_version_forward() {
+        Npc calm = Npc.builder()
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
+                .hitPoints(HitPoints.full(10))
+                .version(3)
+                .build();
+
+        Npc angered = calm.provoked();
+
+        // Copy-on-write: now hostile, same identity/version; the original stays peaceful.
+        assertThat(angered.isHostile()).isTrue();
+        assertThat(angered.getId()).isEqualTo(NpcId.of("npc1"));
+        assertThat(angered.getVersion()).isEqualTo(3);
+        assertThat(calm.isHostile()).isFalse();
     }
 
     @Test
@@ -133,6 +174,7 @@ class NpcTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(new HitPoints(10, 10))
                 .version(7)
                 .build();
@@ -154,6 +196,7 @@ class NpcTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(new HitPoints(3, 10))
                 .build();
 

@@ -10,16 +10,16 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.npccommands.NpcCommandsOutputPort;
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
-import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -27,24 +27,24 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
- * Interaction tests for {@link AnimateNpcsUseCase} in isolation — every output port is mocked and the use case
- * is exercised directly through its input port. The move is non-deterministic, so a {@link ScriptedDice} is
- * scripted with fixed rolls and exit picks, making both the hit/miss decision and the chosen exit reproducible.
- * The transaction port is stubbed to run its action inline and fire after-commit callbacks immediately, so the
- * single post-commit presentation is observable.
+ * Interaction tests for {@link AnimateNpcsUseCase} — the read-only policy (#66 step 2). Every output port is
+ * mocked and the use case is exercised through its input port. A {@link ScriptedDice} pins the attack gate and
+ * the wander move-roll + exit pick, so the decisions are reproducible.
  *
- * <p>The interaction presents <em>once</em> on every path: an empty world, a tick where nothing moved, and a
- * tick with no perceptible movement all present {@code presentNothingHappened} (the first two before any
- * transaction); a tick with witnessed movement presents {@code presentNpcMovements} after commit; an unhandled
- * fault routes to {@code presentError}. The perceptibility filter (DEPARTED / ARRIVED / off-stage) and the
- * silent-skip cases (dead-end, dangling target, unresolved scene, no player) are pinned individually.
+ * <p>The policy <b>writes nothing</b> and <b>always presents the quiet stripe</b> — it decides each NPC's action
+ * from persisted stance and dispatches it as a command through {@link NpcCommandsOutputPort}; the executions
+ * narrate themselves elsewhere. The behaviour branches (L5) are pinned individually: a hostile, co-located NPC
+ * that passes its attack gate → strike; a failed gate or a non-co-located hostile → stand ground; a non-hostile
+ * NPC that passes its move gate → wander with the rolled exit. Batch-then-dispatch (all decisions derived before
+ * any command is dispatched) and "zero persistence writes" are asserted explicitly.
  */
 @ExtendWith(MockitoExtension.class)
 class AnimateNpcsUseCaseTest {
@@ -62,169 +62,126 @@ class AnimateNpcsUseCaseTest {
     @Spy
     private ScriptedDice dice = new ScriptedDice();
     @Mock
-    private TransactionOperationsOutputPort txOps;
+    private NpcCommandsOutputPort commandOps;
 
     @InjectMocks
     private AnimateNpcsUseCase useCase;
 
     @Test
-    void presentsNothingHappenedForAnEmptyWorldWithNoTransaction() {
+    void presentsNothingHappenedForAnEmptyWorldResolvingNothingElse() {
         when(npcOps.findAllNpcs()).thenReturn(List.of());
 
         useCase.systemAdvancesNpcs();
 
         verify(presenter).presentNothingHappened();
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
-        verifyNoInteractions(sceneOps, playerOps, playerRepositoryOps);
+        verifyNoInteractions(sceneOps, playerOps, playerRepositoryOps, commandOps);
     }
 
     @Test
-    void aMissMovesNothingAndPresentsNothingHappenedWithNoTransaction() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
-        dice.willRoll(false);   // rolls but misses; no pick, no move
+    void aHostileCoLocatedNpcThatPassesItsAttackGateDispatchesAStrikeAndNoWander() {
+        when(npcOps.findAllNpcs()).thenReturn(List.of(hostileNpc("npc1", "scn1")));
+        playerInScene("scn1");                 // co-located with the hostile NPC
+        dice.willRoll(true);                   // the attack gate passes
 
         useCase.systemAdvancesNpcs();
 
+        verify(commandOps).dispatchStrike(NpcId.of("npc1"));
+        verify(commandOps, never()).dispatchWander(any(), any());
+        verify(presenter).presentNothingHappened();
+        verify(npcOps, never()).saveNpc(any());   // read-only: the policy never writes
+    }
+
+    @Test
+    void aHostileCoLocatedNpcThatFailsItsAttackGateStandsGround() {
+        when(npcOps.findAllNpcs()).thenReturn(List.of(hostileNpc("npc1", "scn1")));
+        playerInScene("scn1");
+        dice.willRoll(false);                  // the attack gate fails
+
+        useCase.systemAdvancesNpcs();
+
+        verify(commandOps, never()).dispatchStrike(any());
+        verify(commandOps, never()).dispatchWander(any(), any());
+        verify(presenter).presentNothingHappened();
+    }
+
+    @Test
+    void aHostileNpcNotCoLocatedStandsGroundWithoutRolling() {
+        when(npcOps.findAllNpcs()).thenReturn(List.of(hostileNpc("npc1", "scn1")));
+        playerInScene("scn2");                 // player elsewhere — not co-located
+        // No roll is scripted: a non-co-located hostile NPC never reaches the attack gate; an unscripted roll
+        // would throw, pinning that it does not roll.
+
+        useCase.systemAdvancesNpcs();
+
+        verify(commandOps, never()).dispatchStrike(any());
+        verify(commandOps, never()).dispatchWander(any(), any());
+        verify(presenter).presentNothingHappened();
+    }
+
+    @Test
+    void aNonHostileNpcThatPassesItsMoveGateDispatchesAWanderWithTheRolledExit() {
+        when(npcOps.findAllNpcs()).thenReturn(List.of(peacefulNpc("npc1", "scn1")));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
+        playerInScene("scn2");
+        dice.willRoll(true).willPick(0);       // move gate passes; pick the only exit (north)
+
+        useCase.systemAdvancesNpcs();
+
+        verify(commandOps).dispatchWander(NpcId.of("npc1"), "north");
+        verify(commandOps, never()).dispatchStrike(any());
         verify(presenter).presentNothingHappened();
         verify(npcOps, never()).saveNpc(any());
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
-        // The player is never resolved when nothing moves.
-        verifyNoInteractions(playerOps, playerRepositoryOps);
     }
 
     @Test
-    void narratesADepartureWhenTheNpcLeavesThePlayersScene() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
-        playerInScene("scn1");   // player watches from the source scene
-        dice.willRoll(true).willPick(0);   // hit, take the only exit (north -> scn2)
-        runTransactionAndFireAfterCommit(txOps);
+    void aNonHostileNpcThatFailsItsMoveGateStaysPut() {
+        when(npcOps.findAllNpcs()).thenReturn(List.of(peacefulNpc("npc1", "scn1")));
+        playerInScene("scn2");
+        dice.willRoll(false);                  // stays put — the scene is never even resolved for an exit
 
         useCase.systemAdvancesNpcs();
 
-        // The NPC is saved at its new scene ...
-        ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
-        verify(npcOps).saveNpc(saved.capture());
-        assertThat(saved.getValue().getCurrentScene()).isEqualTo(SceneId.of("scn2"));
-        // ... and the player, standing where it left, sees a departure by the exit name.
-        assertSinglePerceived(MovementKind.DEPARTED, "npc1", "north");
+        verify(commandOps, never()).dispatchWander(any(), any());
+        verify(commandOps, never()).dispatchStrike(any());
+        verify(presenter).presentNothingHappened();
     }
 
     @Test
-    void narratesAnArrivalWhenTheNpcEntersThePlayersScene() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
-        playerInScene("scn2");   // player watches from the target scene
+    void withNoPlayerAHostileStandsGroundWhileOthersStillWander() {
+        Npc hostile = hostileNpc("npc1", "scn1");
+        Npc peaceful = peacefulNpc("npc2", "scn3");
+        when(npcOps.findAllNpcs()).thenReturn(List.of(hostile, peaceful));
+        when(sceneOps.findScene(SceneId.of("scn3"))).thenReturn(Optional.of(armouryWithExit()));
+        noPlayer();
+        // Hostile first (not co-located, no player → no roll); then the peaceful NPC's move gate passes + pick.
         dice.willRoll(true).willPick(0);
-        runTransactionAndFireAfterCommit(txOps);
 
         useCase.systemAdvancesNpcs();
 
-        verify(npcOps).saveNpc(any(Npc.class));
-        // The arrival detail is the source scene's name, not an exit.
-        assertSinglePerceived(MovementKind.ARRIVED, "npc1", "Old Gate");
+        verify(commandOps, never()).dispatchStrike(any());        // hostile stands ground with no player
+        verify(commandOps).dispatchWander(NpcId.of("npc2"), "west");
+        verify(presenter).presentNothingHappened();
     }
 
     @Test
-    void savesAnOffstageMoveButPresentsNothingHappened() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
+    void derivesEveryDecisionBeforeDispatchingAnyCommand() {
+        Npc first = peacefulNpc("npc1", "scn1");    // scn1 -> scn2 (north)
+        Npc second = peacefulNpc("npc2", "scn3");   // scn3 -> scn4 (west)
+        when(npcOps.findAllNpcs()).thenReturn(List.of(first, second));
         when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
-        playerInScene("scn3");   // player is elsewhere: the move touches neither their scene
-        dice.willRoll(true).willPick(0);
-        runTransactionAndFireAfterCommit(txOps);
+        when(sceneOps.findScene(SceneId.of("scn3"))).thenReturn(Optional.of(armouryWithExit()));
+        playerInScene("scn2");
+        dice.willRoll(true).willPick(0).willRoll(true).willPick(0);
 
         useCase.systemAdvancesNpcs();
 
-        // The move still persists ...
-        verify(npcOps).saveNpc(any(Npc.class));
-        // ... but there is nothing the player can witness.
-        verify(presenter).presentNothingHappened();
-        verify(presenter, never()).presentNpcMovements(any());
-    }
-
-    @Test
-    void savesTheMoveButNarratesNothingWhenNoPlayerCanBeResolved() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
-        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
-        when(playerOps.currentPlayerId()).thenReturn("plr1");
-        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
-        dice.willRoll(true).willPick(0);
-        runTransactionAndFireAfterCommit(txOps);
-
-        useCase.systemAdvancesNpcs();
-
-        verify(npcOps).saveNpc(any(Npc.class));
-        verify(presenter).presentNothingHappened();
-        verify(presenter, never()).presentNpcMovements(any());
-    }
-
-    @Test
-    void skipsADeadEndNpcSilentlyWithoutRollingAndPresentsNothingHappened() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn3")));
-        when(sceneOps.findScene(SceneId.of("scn3"))).thenReturn(Optional.of(armoury()));   // no exits
-        // No roll is scripted: the dead-end is skipped before the dice are touched, and an unscripted roll
-        // would throw — pinning that a dead-end NPC never rolls.
-
-        useCase.systemAdvancesNpcs();
-
-        verify(presenter).presentNothingHappened();
-        verify(npcOps, never()).saveNpc(any());
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
-    }
-
-    @Test
-    void skipsAnNpcWhoseCurrentSceneCannotBeResolved() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scnX")));
-        when(sceneOps.findScene(SceneId.of("scnX"))).thenReturn(Optional.empty());
-
-        useCase.systemAdvancesNpcs();
-
-        verify(presenter).presentNothingHappened();
-        verify(npcOps, never()).saveNpc(any());
-    }
-
-    @Test
-    void skipsAMoveIntoADanglingExitTargetSilently() {
-        Scene gateToNowhere = Scene.builder()
-                .id(SceneId.of("scn1")).name("Old Gate")
-                .shortDescription("A weathered archway.").fullDescription("A gate.")
-                .exits(List.of(new Exit("north", SceneId.of("scn9"))))   // target never resolves
-                .build();
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1")));
-        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gateToNowhere));
-        when(sceneOps.findScene(SceneId.of("scn9"))).thenReturn(Optional.empty());
-        dice.willRoll(true).willPick(0);   // hit and pick, but the target dangles
-
-        useCase.systemAdvancesNpcs();
-
-        verify(presenter).presentNothingHappened();
-        verify(npcOps, never()).saveNpc(any());
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
-    }
-
-    @Test
-    void narratesOnlyThePerceptibleOfSeveralMovesButSavesThemAll() {
-        when(npcOps.findAllNpcs()).thenReturn(List.of(npc("npc1", "scn1"), npc("npc2", "scn3")));
-        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));            // npc1: scn1 -> scn2
-        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
-        when(sceneOps.findScene(SceneId.of("scn3"))).thenReturn(Optional.of(armouryWithExit())); // npc2: scn3 -> scn4
-        when(sceneOps.findScene(SceneId.of("scn4"))).thenReturn(Optional.of(watchtower()));
-        playerInScene("scn1");   // sees npc1 depart; npc2's scn3->scn4 is off-stage
-        dice.willRoll(true).willPick(0)   // npc1 hits, takes its only exit
-                .willRoll(true).willPick(0);   // npc2 hits, takes its only exit
-        runTransactionAndFireAfterCommit(txOps);
-
-        useCase.systemAdvancesNpcs();
-
-        // Both moves persist ...
-        verify(npcOps, times(2)).saveNpc(any(Npc.class));
-        // ... but only npc1's departure is narrated.
-        assertSinglePerceived(MovementKind.DEPARTED, "npc1", "north");
+        // Batch-then-dispatch: the SECOND NPC's decision read (findScene scn3) happens BEFORE the FIRST NPC's
+        // command is dispatched — impossible if execution were interleaved into the decision loop.
+        InOrder order = inOrder(sceneOps, commandOps);
+        order.verify(sceneOps).findScene(SceneId.of("scn1"));
+        order.verify(sceneOps).findScene(SceneId.of("scn3"));
+        order.verify(commandOps).dispatchWander(NpcId.of("npc1"), "north");
+        order.verify(commandOps).dispatchWander(NpcId.of("npc2"), "west");
     }
 
     @Test
@@ -235,8 +192,8 @@ class AnimateNpcsUseCaseTest {
         useCase.systemAdvancesNpcs();
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentNpcMovements(any());
         verify(presenter, never()).presentNothingHappened();
+        verifyNoInteractions(commandOps);
     }
 
     // --- fixtures -----------------------------------------------------------------------------------
@@ -245,29 +202,33 @@ class AnimateNpcsUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1")))
                 .thenReturn(Optional.of(Player.builder()
-                        .id(PlayerId.of("plr1")).currentScene(SceneId.of(sceneId)).build()));
+                        .id(PlayerId.of("plr1")).currentScene(SceneId.of(sceneId))
+                        .hitPoints(HitPoints.full(30)).version(1).build()));
     }
 
-    private void assertSinglePerceived(MovementKind kind, String npcId, String detail) {
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<PerceivedNpcMovement>> captor = ArgumentCaptor.forClass(List.class);
-        verify(presenter).presentNpcMovements(captor.capture());
-        assertThat(captor.getValue()).singleElement().satisfies(movement -> {
-            assertThat(movement.getKind()).isEqualTo(kind);
-            assertThat(movement.getNpc().getId()).isEqualTo(NpcId.of(npcId));
-            assertThat(movement.getDetail()).isEqualTo(detail);
-        });
-        verify(presenter, never()).presentNothingHappened();
+    private void noPlayer() {
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
     }
 
-    private static Npc npc(String id, String currentScene) {
+    private static Npc peacefulNpc(String id, String currentScene) {
+        return npc(id, currentScene, false);
+    }
+
+    private static Npc hostileNpc(String id, String currentScene) {
+        return npc(id, currentScene, true);
+    }
+
+    private static Npc npc(String id, String currentScene, boolean hostile) {
         return Npc.builder()
                 .id(NpcId.of(id))
                 .currentScene(SceneId.of(currentScene))
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
+                .hostile(hostile)
                 .build();
     }
 
@@ -280,37 +241,12 @@ class AnimateNpcsUseCaseTest {
                 .build();
     }
 
-    private static Scene courtyard() {
-        return Scene.builder()
-                .id(SceneId.of("scn2")).name("Courtyard")
-                .shortDescription("A courtyard.").fullDescription("A grassy yard.")
-                .exits(List.of(new Exit("south", SceneId.of("scn1"))))
-                .build();
-    }
-
-    /** scn3 "Armoury" with no exits — a dead-end. */
-    private static Scene armoury() {
-        return Scene.builder()
-                .id(SceneId.of("scn3")).name("Armoury")
-                .shortDescription("An armoury.").fullDescription("Empty racks.")
-                .exits(List.of())
-                .build();
-    }
-
-    /** scn3 with a single exit west -> scn4, for the multi-NPC case. */
+    /** scn3 with a single exit west -> scn4. */
     private static Scene armouryWithExit() {
         return Scene.builder()
                 .id(SceneId.of("scn3")).name("Armoury")
                 .shortDescription("An armoury.").fullDescription("Empty racks.")
                 .exits(List.of(new Exit("west", SceneId.of("scn4"))))
-                .build();
-    }
-
-    private static Scene watchtower() {
-        return Scene.builder()
-                .id(SceneId.of("scn4")).name("Watchtower")
-                .shortDescription("A watchtower.").fullDescription("A high parapet.")
-                .exits(List.of(new Exit("down", SceneId.of("scn3"))))
                 .build();
     }
 }

@@ -52,7 +52,7 @@ class WorldSeedRoundTripIT extends AbstractPostgresIT {
         // given the authored seed parsed and constructed into aggregates ...
         List<Scene> world;
         try (InputStream in = getClass().getResourceAsStream("/world/scenes.yaml")) {
-            world = reader.read(in, "scn1").getScenes().stream().map(WorldSeedRoundTripIT::toScene).toList();
+            world = reader.read(in, "scn1", 30).getScenes().stream().map(WorldSeedRoundTripIT::toScene).toList();
         }
         assertThat(world).hasSize(4);
 

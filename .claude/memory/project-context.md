@@ -44,26 +44,28 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 
 ## Package layout (Clean DDD)
 
-- `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`,
-  `item/`, `npc/` (the `Npc` aggregate + `NpcId`/`NpcTemplate`), `spawn/` (the shared `SpawnRule` VO, used by item and npc templates), `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
+- `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`
+  (the `Player` aggregate — position + `HitPoints` + optimistic-locking `version` since #66 step 2),
+  `item/`, `npc/` (the `Npc` aggregate + `NpcId`/`NpcTemplate`; carries a `hostile` stance + authored `attackChance` since #66 step 2), `combat/` (the shared `HitPoints` gauge VO — current/max + clamp-at-zero damage, held by both `Npc` and `Player`), `spawn/` (the shared `SpawnRule` VO, used by item and npc templates), `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
   `dice/` (the `Dice` domain capability — interface + `AbstractDice`/`SystemDice`/`SeededDice` impls — and the `Chance` VO it rolls; design-notes §4),
   `designation/` (the `Designatable` capability interface — the two facts the `select` dialogue asks of a candidate, implemented by `Item`; #67),
   `blackjack/` (the cards **generic subdomain** as pure VOs — `Suit`/`Rank`/`Card`/`Hand`/`Deck`/`BlackjackRound`/`RoundOutcome`; ArchUnit-confined to itself + `dice/` + the `model/` root + JDK/Lombok — a simulated module boundary, so the package can never name a `PlayerId`; #72),
   `id/` (the `Ids` helper — the model's single knower of the generated-id-body alphabet+length; `ItemId.mint(Dice)` rolls bodies through it, design-notes §2/§4/#53)) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
+  `port/npccommands/` (the NPC command channel's driven port — `NpcCommandsOutputPort.dispatchStrike`/`dispatchWander`; the port methods ARE the core-side command vocabulary, #66),
   `port/seed/`, `port/calendar/` (calendar-source port + error), `port/daytime/`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/npc/` holds `AnimateNpcs` (system-actor autonomous NPC movement); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
   `Terminal`, `Player`, `Time`). Sub-packages:
   `infrastructure/persistence/{aggregate}/` (incl. `clock/`, `daytime/`, plus the shared `common/` — the embeddable shapes `HitPointsDbEntity`/`LocationDbEntity` + `ItemLocationKind` + `CompositeDbConverter`, the persistence-family MapStruct `default` pairs for `@Embedded` composites, #83), `infrastructure/mapping/` (layer-neutral MapStruct support — `ScalarConverter`, the shared single-scalar `default` converters (VO-ID↔`String` #77, `Chance`↔its `num/den` text #83) every DB-entity mapper `extends`; a sibling of `persistence` because VO↔`String` is generic scalar mapping, reusable by any future mapper family), `infrastructure/world/` (`GameSeedYamlReader` + `YamlGameSeedSource` + `GameSeeder`),
   `infrastructure/calendar/` (`CalendarYamlReader` + `YamlCalendarSource` — the latter implements **both** the calendar-source and day-phase-schedule-source ports over `calendar.yaml`), `infrastructure/clock/` (`SystemGameTimeSource`),
-  `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving `AnimateNpcs`),
+  `infrastructure/time/` (`GameClockTicker` — the scheduler-driven background metronome (a `SchedulingConfigurer`) driving `AnnounceTimeOfDay`; scheduling enabled on `BootSequence`), `infrastructure/npc/` (`NpcActivityTicker` — the second background metronome, driving the `AnimateNpcs` policy; plus `command/` — the NPC command channel: the sealed `NpcCommand` set (`StrikePlayer`/`WanderThrough`), `SpringNpcCommandDispatchAdapter`, the Spring Integration `DirectChannel` bean (`NpcCommandChannelConfig`), and `NpcCommandSession` — the `ConsoleSession` sibling subscribing to the channel and driving the executing interactions, #66),
   `infrastructure/transaction/` (Spring tx adapter + config), `infrastructure/terminal/` (JLine; sub-packaged
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
   (session-lifetime conversational buffer holding one armed `Affordance`, #72/#79) + the **sealed** `Affordance`
@@ -442,7 +444,11 @@ player's keeping):
   (`take`/`drop` had been missing) and gained `inventory`.
 
 `NPC` step 1 vertical **complete** (issue #63) — authored NPCs: spawned at init, listed in the room,
-autonomously wandering; the first realization of the `[thread #3]` "Player and NPCs act in parallel" premise:
+autonomously wandering; the first realization of the `[thread #3]` "Player and NPCs act in parallel" premise.
+**The autonomous-behaviour mechanics below were substantially revised by #66 step 2** (see the retaliation block):
+`AnimateNpcs` is now a read-only policy that *dispatches* commands, and the wandering *execution* (with its
+movement narration) moved to the new `Wander` use case — so this block's "loads NPCs, moves them, saves in one
+transaction, narrates movements" description is historical.
 
 - **Domain** — `Npc` aggregate (`core/model/npc/`): `NpcId` (prefix `npc`, `mint(Dice)`), `currentScene`
   (`SceneId` reference), short/full descriptions, `moveChance` (`Chance`), `moveTo(SceneId)` copy-on-write.
@@ -470,6 +476,43 @@ autonomously wandering; the first realization of the `[thread #3]` "Player and N
 - **Ticker / infra** — `NpcActivityTicker` (`infrastructure/npc/`, blind `SchedulingConfigurer`, second async
   writer/metronome; reads `game.npc.ticker.interval` default `10s`); `TerminalAnimateNpcsPresenter` +
   `NpcRenderer` (async `printAbove` narration); `game.npc.*` on `GameConfigurationProperties`.
+
+`NPC` step 2 — retaliation via the command channel **complete** (issue #66) — combat becomes a persisted
+*stance* the animate tick derives and *dispatches*, so the tick is a read-only policy and every NPC action rides
+a command channel symmetric to the console (design-notes §8):
+
+- **Domain** — `Npc` gains a `hostile` boolean (spawn default false) + `provoked()` and an authored
+  `attackChance` (`Chance`, validity-gated like `moveChance`); `Player` gains `HitPoints` + an optimistic-locking
+  `version` + `takeDamage`/`isDead` (the shared `combat/HitPoints` VO's second consumer). A struck-but-surviving
+  NPC is provoked; a slain one is not.
+- **`FightNpc`** (renamed from `Hit`, `core/usecase/combat/`) — the multi-actor combat use case. The player-actor
+  `playerHitsTarget`/`playerHitsChosenCandidate` designation flow (over `orient` + `select`-NPC) is unchanged but
+  now provokes the survivor. New secondary-actor `npcStrikesPlayer(npcId)`: re-validates at execution (NPC
+  present+alive, player present+alive, co-located — else a quiet stripe), rolls a d10, lowers the player, and
+  presents `presentNpcStruckPlayer`/`presentPlayerSlain` after commit (async, `printAbove`); a lost lock race is
+  quiet. `TerminalHitPresenter` renamed `TerminalFightNpcPresenter`; the terminal `hit` verb / `HitCommand` /
+  `HitConversation` / `AffordanceKind.HIT` are unchanged (delivery vocabulary).
+- **`AnimateNpcs`** — now a **read-only policy**: one snapshot read, derive each NPC's decision
+  (hostile + co-located + `attackChance` roll → strike; non-hostile + `moveChance` roll → wander with a
+  policy-picked exit; a hostile NPC never wanders), batch-then-dispatch through `NpcCommandsOutputPort`, present
+  one quiet stripe. No transaction, no writes; its executions narrate themselves.
+- **`Wander`** (`core/usecase/npc/`) — the executing interaction for a dispatched wander; owns the
+  perceptibility-filtered movement narration (`PerceivedNpcMovement`/`MovementKind` moved here from `AnimateNpcs`,
+  now one movement per presentation).
+- **Channel** — a synchronous Spring Integration `DirectChannel` (in-band; the polling loop is the retry
+  mechanism, so no outbox; async later is a composition-root swap with port + adapters untouched). Driven port
+  `NpcCommandsOutputPort` (its methods ARE the vocabulary); infra sealed `NpcCommand` set; dispatch adapter;
+  `NpcCommandSession` subscribes and drives the executing use cases per command. A use case never calls a use
+  case — one actor's decision crosses out a driven port and back in through a driving adapter.
+- **Persistence / seed** — Flyway `V11` (npc `hostile` + `attack_chance` text) + `V12` (player embedded
+  `(hit_points, max_hit_points)` + `version`); player save is now **version-driven** (optimistic locking no
+  longer deferred — the counterstrike is the player's second writer); `NpcEntry`/`GameSeed` gain
+  `attackChance`/`playerMaxHitPoints`; new `game.player.max-hit-points` config (default 30). `move` stays on the
+  plain tx overload (a lock loss propagates to `presentError`) — pinned by a test.
+- **Boot 4** — `spring-boot-starter-integration` resolves; Boot 4.0.6 pins Spring Integration 7.0.4; a bare
+  `DirectChannel` needs no `@EnableIntegration` (see `spring-boot-4-notes.md`).
+- **Deferred** — player-death consequences (a dead player is a quiet stripe today; ending/pausing the session is
+  its own issue); stance clearing / pursuit / de-aggro; intrinsic-period cadence authoring.
 
 `select` candidate-type generalization **complete** (issue #67) — the deferred `<C, T>` step, cashed as a pure
 behavior-preserving refactor ahead of the `hit` vertical (#66, whose combat targets are the second candidate
@@ -533,9 +576,11 @@ deliberately never persisted (abandonment = forfeit; the dealer sweeps the cards
   `SystemDice`) + singleton `blackjackConversation`; new `BlackjackSubdomainArchitectureTest` (a
   *positive* dependency rule, so it analyzes production classes only via `ImportOption.DoNotIncludeTests`).
 
-Tests: 447 unit (Surefire, DB-free) + 24 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Tests: 470 unit (Surefire, DB-free) + 25 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
-over carried items (needs a composite ground∪keeping provisioner), NPCs *reacting* to the player and
-async/event processing (both tickers poll; the outbox event spine is still ahead), blackjack stakes
+over carried items (needs a composite ground∪keeping provisioner), **player-death consequences** (a slain
+player is a quiet stripe today — ending/pausing the session is deferred), the outbox **event spine** (both
+tickers still poll; NPC retaliation is a persisted *stance* polled by the tick, not an event — the spine's
+first customer stays a discrete fact like an on-death effect or witness propagation), blackjack stakes
 (the trigger that would mint the round aggregate — see design-notes §9).

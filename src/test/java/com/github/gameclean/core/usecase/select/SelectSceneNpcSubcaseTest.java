@@ -143,7 +143,9 @@ class SelectSceneNpcSubcaseTest {
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the NPC.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
+                .hostile(false)
                 .build();
     }
 

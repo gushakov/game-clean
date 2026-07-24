@@ -45,17 +45,19 @@ public class GameSeedYamlReader {
      * Parses the given YAML stream and assembles the full game seed. The document may carry top-level
      * {@code scenes:}, {@code items:} and {@code npcs:} sequences; any absent yields an empty list.
      *
-     * @param yamlStream      the authored seed document
-     * @param startingSceneId the configured starting scene id (not read from the file)
+     * @param yamlStream         the authored seed document
+     * @param startingSceneId    the configured starting scene id (not read from the file)
+     * @param playerMaxHitPoints the configured player's max hit points (not read from the file)
      * @return the assembled {@link GameSeed} (never null)
      */
-    public GameSeed read(InputStream yamlStream, String startingSceneId) {
+    public GameSeed read(InputStream yamlStream, String startingSceneId, int playerMaxHitPoints) {
         Objects.requireNonNull(yamlStream, "yaml stream must not be null");
 
         Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         Map<String, Object> root = yaml.load(yamlStream);
 
-        return new GameSeed(parseScenes(root), startingSceneId, parseItems(root), parseNpcs(root));
+        return new GameSeed(
+                parseScenes(root), startingSceneId, playerMaxHitPoints, parseItems(root), parseNpcs(root));
     }
 
     private static List<SceneEntry> parseScenes(Map<String, Object> root) {
@@ -122,6 +124,7 @@ public class GameSeedYamlReader {
         Object spawnNode = node.get("spawn");
         SpawnEntry spawn = spawnNode == null ? null : toSpawnEntry(asMap(spawnNode));
         int[] moveChance = parseChance(asString(node.get("moveChance")));
+        int[] attackChance = parseChance(asString(node.get("attackChance")));
         return new NpcEntry(
                 asString(node.get("id")),
                 asString(node.get("shortDescription")),
@@ -129,6 +132,8 @@ public class GameSeedYamlReader {
                 spawn,
                 moveChance[0],
                 moveChance[1],
+                attackChance[0],
+                attackChance[1],
                 asInt(node.get("hitPoints"), "npc hit points"));
     }
 

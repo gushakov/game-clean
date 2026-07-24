@@ -91,7 +91,8 @@ class LookUseCaseTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene))
+                .hitPoints(HitPoints.full(30)).version(1).build();
     }
 
     private static Scene scene(String id) {
@@ -120,7 +121,9 @@ class LookUseCaseTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
+                .hostile(false)
                 .build();
     }
 }

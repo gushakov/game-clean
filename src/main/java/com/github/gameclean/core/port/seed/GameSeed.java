@@ -12,8 +12,10 @@ import java.util.List;
  * single validity gate), so this carrier may legitimately hold <em>domain</em>-invalid data until it
  * reaches that gate.
  *
- * <p>The scenes, items and NPCs come from the seed source (a file today); the starting scene id comes from
- * configuration. The seed-source adapter assembles them before the use case reads them.
+ * <p>The scenes, items and NPCs come from the seed source (a file today); the starting scene id and the player's
+ * max hit points come from configuration. The seed-source adapter assembles them before the use case reads them
+ * — configured player facts ride this carrier exactly like {@code startingSceneId}, so the use case builds the
+ * always-valid {@code Player} (position + {@code HitPoints.full(playerMaxHitPoints)}) at its one validity gate.
  *
  * <p>Lombok {@code @Value} (not a Java record), matching the shape used across the codebase.
  */
@@ -22,6 +24,7 @@ public class GameSeed {
 
     List<SceneEntry> scenes;
     String startingSceneId;
+    int playerMaxHitPoints;
     List<ItemEntry> items;
     List<NpcEntry> npcs;
 }

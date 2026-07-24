@@ -55,25 +55,34 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   (`scene_id` → `(location_kind, location_ref)`) + `version`, `V7` npc (`current_scene_id` + a move-chance
   pair; no FK), `V8` npc hit points (`(hit_points, max_hit_points)`) + `version`, `V9` scene mini-game child
   table, `V10` npc move chance collapsed to one `move_chance` varchar (`num/den` text + shape CHECK, backfilled
-  from the V7 pair). A composite PK on an owned child
+  from the V7 pair), `V11` npc `hostile` boolean + `attack_chance` varchar (`num/den` text + shape CHECK, #66),
+  `V12` player `(hit_points, max_hit_points)` embedded pool + `version` (#66 — an NPC counterstrike makes the
+  player a second writer). A composite PK on an owned child
   `(scene_id, name)` enforces a domain uniqueness invariant at the DB level. A merged migration is immutable
   (fix forward with a new `Vxx`); `V6` is the first to *alter* an existing table. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
   carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.
-- **Player family** (`infrastructure/persistence/player/`) — mirrors the scene family exactly:
-  `PlayerDbEntity` (`@Table("player")`, `@Column("current_scene_id")`, no owned children),
-  `PlayerDbEntityMapper` (`PlayerId`/`SceneId` ↔ String converters), `PlayerSpringDataRepository`,
-  `SpringPlayerRepositoryAdapter` implementing `PlayerRepositoryOperationsOutputPort` (`findPlayer` via
-  `findById().map(toDomain)`, `savePlayer` via `aggregateTemplate.insert`).
+- **Player family** (`infrastructure/persistence/player/`) — now mirrors the **npc** family (versioned) rather
+  than the version-less scene family (since #66): `PlayerDbEntity` (`@Table("player")`, `@Column("current_scene_id")`,
+  an `@Embedded.Nullable HitPointsDbEntity` over `(hit_points, max_hit_points)`, and `@Version`),
+  `PlayerDbEntityMapper` (extends `ScalarConverter` + `CompositeDbConverter` — id/scene ↔ String, hit points ↔
+  the embedded shape), `PlayerSpringDataRepository`, `SpringPlayerRepositoryAdapter` implementing
+  `PlayerRepositoryOperationsOutputPort` — the **version-driven `save`** (replacing the old
+  `existsById`/`aggregateTemplate` upsert; wraps `OptimisticLockingFailureException → OptimisticLockingError` so
+  a move losing to a counterstrike is reacted to); `findPlayer` catches `DataAccessException |
+  InvalidDomainObjectError` (a corrupt row is an integrity fault). The adapter no longer holds
+  `JdbcAggregateTemplate`.
 - **Npc family** (`infrastructure/persistence/npc/`) — `NpcDbEntity` (`@Table("npc")`, `current_scene_id`,
-  a single `move_chance` varchar holding the `num/den` text, an `@Embedded.Nullable HitPointsDbEntity` over
-  `(hit_points, max_hit_points)`, and `@Version` since V8), `NpcDbEntityMapper` (extends `ScalarConverter` +
-  `CompositeDbConverter`; only the `currentScene ↔ currentSceneId` name mismatch is declared),
+  a `move_chance` and an `attack_chance` varchar each holding `num/den` text (#66), a `hostile` boolean (#66),
+  an `@Embedded.Nullable HitPointsDbEntity` over `(hit_points, max_hit_points)`, and `@Version` since V8),
+  `NpcDbEntityMapper` (extends `ScalarConverter` + `CompositeDbConverter`; `moveChance`/`attackChance`/`hostile`
+  map by name, only the `currentScene ↔ currentSceneId` name mismatch is declared),
   `NpcSpringDataRepository` (living-only derived queries traversing the embedded path —
-  `findByCurrentSceneIdAndHitPointsCurrentGreaterThan` / `findByHitPointsCurrentGreaterThan`; `count` from
-  `CrudRepository`), `SpringNpcRepositoryAdapter` implementing `NpcRepositoryOperationsOutputPort` — the
-  **version-driven `save`** (mirrors the item adapter; wraps `OptimisticLockingFailureException →
+  `findByCurrentSceneIdAndHitPointsCurrentGreaterThan` / `findByHitPointsCurrentGreaterThan`; `findById` +
+  `count` from `CrudRepository`), `SpringNpcRepositoryAdapter` implementing `NpcRepositoryOperationsOutputPort`
+  — the **version-driven `save`** (mirrors the item adapter; wraps `OptimisticLockingFailureException →
   OptimisticLockingError`); reads catch `DataAccessException | InvalidDomainObjectError` (a corrupt row is an
-  integrity fault).
+  integrity fault). `findNpc(NpcId)` loads a single living NPC (`findById` + filter `!isDead()`) for the
+  counterstrike execution.
 
 ### Test layering — Surefire (unit) vs Failsafe (integration)
 
@@ -247,6 +256,37 @@ Established by the JLine entry-point work (issue #6).
   idempotency. `BootSequenceTest` (unit) pins each `@Order`-ed runner firing only its own adapter and that
   seeding's `@Order` precedes the console's (read by reflection). `InitializeGameUseCaseTest` additionally
   covers the seed-source failure path (stubbed to throw → `presentError`).
+
+## The NPC command channel (policy → command → executing interaction)
+
+Established by NPC retaliation (#66 step 2). One actor's decided action reaches another interaction without a
+use case ever calling a use case: it goes **out** through a driven port and back **in** through a driving
+adapter — the sanctioned bridge between interactions (design-notes §8). The pipeline, end to end:
+
+1. **Decide (read-only policy).** `AnimateNpcs` reads one snapshot and derives each NPC's action (strike /
+   wander / nothing), owning all the dice. It writes nothing.
+2. **Dispatch (driven port).** It calls `NpcCommandsOutputPort.dispatchStrike(NpcId)` /
+   `dispatchWander(NpcId, exit)` — the port methods *are* the core-side command vocabulary (no message type in
+   core, the outbound twin of a presenter port).
+3. **Adapt out.** `SpringNpcCommandDispatchAdapter` (`infrastructure/npc/command/`) builds an infra
+   `NpcCommand` record (`StrikePlayer`/`WanderThrough` — the sealed set mirroring the terminal's `Command`
+   set), flattens `NpcId → asString()`, and `channel.send(MessageBuilder.withPayload(cmd).build())`.
+4. **Channel.** `NpcCommandChannelConfig` declares a Spring Integration `DirectChannel` bean
+   (`npcCommandChannel`) — **synchronous, in-band**: `send()` runs the subscriber inline on the ticker thread
+   and returns only after the executing interaction completes. Gated by `game.terminal.enabled` with the rest
+   of the interactive runtime.
+5. **Adapt in (driving adapter).** `NpcCommandSession` (the `ConsoleSession` sibling) subscribes at
+   `@PostConstruct`, exhaustive-`switch`es the received `NpcCommand`, and pulls a fresh prototype executing use
+   case per command (`FightNpc.npcStrikesPlayer` / `Wander.npcWandersThrough`). No decisions, renders nothing.
+6. **Execute.** The executing use case re-validates at execution (L2 — the player may have moved/died between
+   decision and blow), writes in its own narrow transaction, and narrates its own outcome via `printAbove`.
+
+**Why synchronous, no outbox:** durability follows the message's *source*. A command derived from persisted
+stance, re-derived every tick, costs one round if lost — the polling loop is the retry mechanism. Going async
+is a composition-root swap (a queue/executor channel) with the port and both adapters untouched; that is the
+argument for taking the Spring Integration dependency rather than hand-rolling one. **Dependency:**
+`spring-boot-starter-integration` (Boot 4.0.6 pins Spring Integration 7.0.4); a bare `DirectChannel` used
+manually needs no `@EnableIntegration` (see `spring-boot-4-notes.md`).
 
 ## Recipe — running and driving the terminal app
 

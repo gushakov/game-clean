@@ -4,9 +4,11 @@ import com.github.gameclean.core.model.npc.Npc;
 import lombok.Value;
 
 /**
- * One NPC movement the player can witness from their current scene — the unit of the {@code AnimateNpcs} success
- * outcome. The use case classifies each move that touches the player's scene into a {@link MovementKind} and
- * pairs it with the NPC that moved and a {@code detail} the renderer needs to phrase it:
+ * One NPC movement the player can witness from their current scene — the unit of the {@code Wander} success
+ * outcome (it moved here from the animate use case when combat split animate into a read-only policy and a
+ * {@code Wander} executing interaction, #66 step 2). The use case classifies a move that touches the player's
+ * scene into a {@link MovementKind} and pairs it with the NPC that moved and a {@code detail} the renderer
+ * needs to phrase it:
  *
  * <ul>
  *   <li>{@link MovementKind#DEPARTED} — the NPC left the player's scene; {@code detail} is the <em>exit name</em>

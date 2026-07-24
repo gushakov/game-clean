@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.blackjack.Hand;
 import com.github.gameclean.core.model.blackjack.Rank;
 import com.github.gameclean.core.model.blackjack.RoundOutcome;
 import com.github.gameclean.core.model.blackjack.Suit;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
@@ -261,7 +262,8 @@ class PlayBlackjackUseCaseTest {
     }
 
     private static Player player() {
-        return Player.builder().id(PlayerId.of("plr1")).currentScene(SceneId.of("scn3")).build();
+        return Player.builder().id(PlayerId.of("plr1")).currentScene(SceneId.of("scn3"))
+                .hitPoints(HitPoints.full(30)).version(1).build();
     }
 
     private static Scene scene(Set<MiniGame> miniGames) {

@@ -72,6 +72,16 @@
             <version>4.1.3</version>
         </dependency>
 
+        <!-- NPC command channel (#66 step 2): the animate policy dispatches decided actions as commands over a
+             Spring Integration channel, and a driving adapter drives the executing interactions. First cut is a
+             synchronous in-band DirectChannel; going async later is a composition-root swap (queue/executor
+             channel) with the port and adapters untouched — which is why we take the messaging dependency rather
+             than hand-rolling one. Version is managed by the Spring Boot 4 BOM. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-integration</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
