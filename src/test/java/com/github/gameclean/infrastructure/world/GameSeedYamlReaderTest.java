@@ -109,7 +109,7 @@ class GameSeedYamlReaderTest {
     private GameSeed readSeed() {
         try (InputStream in = getClass().getResourceAsStream("/world/scenes.yaml")) {
             assertThat(in).as("world/scenes.yaml on the classpath").isNotNull();
-            return reader.read(in, "scn1");
+            return reader.read(in, "scn1", 30);
         } catch (Exception e) {
             throw new IllegalStateException("failed to read world seed", e);
         }

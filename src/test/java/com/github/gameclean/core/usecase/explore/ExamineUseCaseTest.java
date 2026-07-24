@@ -1,5 +1,6 @@
 package com.github.gameclean.core.usecase.explore;
 
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
@@ -108,7 +109,8 @@ class ExamineUseCaseTest {
     }
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene))
+                .hitPoints(HitPoints.full(30)).version(1).build();
     }
 
     private static Scene scene(String id) {

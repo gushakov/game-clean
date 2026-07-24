@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure.terminal.render;
 
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
+import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.usecase.npc.PerceivedNpcMovement;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +21,13 @@ import java.util.List;
  * domain-aware collaborator (it knows {@link Npc} and {@link PerceivedNpcMovement}) over the domain-agnostic
  * {@link Console}.
  *
- * <p>Movements are produced by a background actor (the NPC-activity ticker) while the player may be at the
- * {@code game> } prompt, so each is written with {@link Console#printAbove} (above the live prompt), exactly as
- * the day-phase announcer writes. The {@code hit} outcomes, by contrast, are the synchronous response to a
- * player command, so they use {@link Console#write}/{@link Console#printError}, like the item outcomes. Scene
- * <em>listing</em> — the "Also here:" block when a player looks — stays in {@link CurrentSceneRenderer}.
+ * <p>The asynchronous outcomes — a witnessed wander, and a provoked NPC's counterstrike against the player —
+ * are produced by a background actor (the NPC-activity ticker, or the command session running a dispatched
+ * strike) while the player may be at the {@code game> } prompt, so each is written with
+ * {@link Console#printAbove} (above the live prompt), exactly as the day-phase announcer writes. The player's
+ * own {@code hit} outcomes, by contrast, are the synchronous response to a player command, so they use
+ * {@link Console#write}/{@link Console#printError}, like the item outcomes. Scene <em>listing</em> — the "Also
+ * here:" block when a player looks — stays in {@link CurrentSceneRenderer}.
  */
 @Component
 @ConditionalOnProperty(prefix = "game.terminal", name = "enabled", havingValue = "true")
@@ -35,16 +38,36 @@ public class NpcRenderer {
     private static final AttributedStyle MOVEMENT = AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN);
     private static final AttributedStyle STRUCK = AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW);
     private static final AttributedStyle SLAIN = AttributedStyle.DEFAULT.foreground(AttributedStyle.RED).bold();
+    private static final AttributedStyle STRUCK_PLAYER =
+            AttributedStyle.DEFAULT.foreground(AttributedStyle.RED);
 
     Console console;
 
-    /** Narrates each witnessed movement on its own line, above the live prompt, in the order given. */
-    public void renderMovements(List<PerceivedNpcMovement> movements) {
-        for (PerceivedNpcMovement movement : movements) {
-            AttributedStringBuilder sb = new AttributedStringBuilder();
-            sb.style(MOVEMENT).append(phrase(movement));
-            console.printAbove(sb);
-        }
+    /** Narrates one witnessed movement above the live prompt (the Wander use case presents one at a time). */
+    public void renderMovement(PerceivedNpcMovement movement) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(MOVEMENT).append(phrase(movement));
+        console.printAbove(sb);
+    }
+
+    /**
+     * A provoked NPC's counterstrike that the player survived — narrated above the prompt (asynchronous), naming
+     * the striker, the damage, and the player's remaining health.
+     */
+    public void renderNpcStruckPlayer(Npc npc, int damage, Player survivor) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(STRUCK_PLAYER).append("%s strikes you for %d damage. (%d/%d)".formatted(
+                bareName(npc.getShortDescription()), damage,
+                survivor.getHitPoints().getCurrent(), survivor.getHitPoints().getMax()));
+        console.printAbove(sb);
+    }
+
+    /** A provoked NPC's lethal counterstrike — narrated above the prompt (asynchronous). */
+    public void renderPlayerSlain(Npc npc, int damage) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(SLAIN).append("%s strikes you down for %d damage. You are slain.".formatted(
+                bareName(npc.getShortDescription()), damage));
+        console.printAbove(sb);
     }
 
     /** Confirmation of a landed, non-lethal strike: whom, for how much, and the NPC's remaining health. */

@@ -2,6 +2,7 @@ package com.github.gameclean.core.port.persistence;
 
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 
 import java.util.Optional;
 
@@ -27,11 +28,15 @@ public interface PlayerRepositoryOperationsOutputPort {
     Optional<Player> findPlayer(PlayerId id);
 
     /**
-     * Persists the player, inserting it if new and updating it in place otherwise (an upsert). The boot
-     * seeder creates the player; {@code move} updates its position. The adapter hides the insert-vs-update
-     * decision, so callers express only intent — "persist this player".
+     * Persists the player, inserting it if new (version {@code 0}) and updating it in place otherwise, with an
+     * optimistic-locking version check. The boot seeder creates the player; {@code move} updates its position;
+     * an NPC counterstrike updates its hit points. Now that the player is contested (its {@code move} races an
+     * NPC's counterstrike), this is a version-checked save (the {@code Npc}/{@code Item} save's twin): a write
+     * carrying a version the store has moved past is rejected.
      *
-     * @throws PersistenceOperationsError if the save fails
+     * @throws OptimisticLockingError     if the player was modified concurrently (a stale version) — reacted to
+     *                                    via the transaction port's {@code onLockDetected}
+     * @throws PersistenceOperationsError if the save fails otherwise
      */
     void savePlayer(Player player);
 }

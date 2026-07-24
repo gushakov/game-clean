@@ -1,6 +1,7 @@
 package com.github.gameclean.core.usecase.orient;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
@@ -109,7 +110,8 @@ class OrientPlayerSubcaseTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene))
+                .hitPoints(HitPoints.full(30)).version(1).build();
     }
 
     private static Scene scene(String id) {

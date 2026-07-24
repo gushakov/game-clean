@@ -217,6 +217,7 @@ npcs:
       A stooped old woman in oilskins gone stiff with salt, a gutting-knife still loose in
       one hand. She watches the water more than she watches you.
     moveChance: 1/30       # wanders fairly often (~every 30s at the 1s tick)
+    attackChance: 1/3      # gutting-knife handy — hits back hard once provoked (~every ~3s)
     hitPoints: 15          # health pool it spawns at; a strike does 1..10 damage
     spawn:
       scenes: scn1
@@ -229,6 +230,7 @@ npcs:
       A gaunt man feeling his way along the walls with a tarred pole, though every lamp on
       this coast went dark years ago. He hums a tune the tide seems to answer.
     moveChance: 1/50       # wanders, but lingers longer (~every 50s)
+    attackChance: 1/6      # frail and blind — flails back only now and then once provoked
     hitPoints: 12          # health pool it spawns at; a strike does 1..10 damage
     spawn:
       scenes: scn1
@@ -241,6 +243,7 @@ npcs:
       An old man so long at his post he seems grown to it, oilskins crusted with barnacle
       and weed. He has not left these steps in living memory, and does not mean to start.
     moveChance: 1/200      # moves very rarely — all but rooted to the spot (~every few minutes)
+    attackChance: 1/4      # stolid but stubborn — swings steadily once roused
     hitPoints: 18          # health pool it spawns at; a strike does 1..10 damage
     spawn:
       scenes: scn1

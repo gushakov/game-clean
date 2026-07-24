@@ -10,6 +10,7 @@ import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutput
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
+import com.github.gameclean.core.port.npccommands.NpcCommandsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
@@ -21,8 +22,8 @@ import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.AskForTimeUseCase;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameUseCase;
-import com.github.gameclean.core.usecase.combat.HitInputPort;
-import com.github.gameclean.core.usecase.combat.HitUseCase;
+import com.github.gameclean.core.usecase.combat.FightNpcInputPort;
+import com.github.gameclean.core.usecase.combat.FightNpcUseCase;
 import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.ExamineUseCase;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
@@ -41,6 +42,8 @@ import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeUseCase;
 import com.github.gameclean.core.usecase.npc.AnimateNpcsInputPort;
 import com.github.gameclean.core.usecase.npc.AnimateNpcsUseCase;
+import com.github.gameclean.core.usecase.npc.WanderInputPort;
+import com.github.gameclean.core.usecase.npc.WanderUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
 import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
@@ -57,14 +60,15 @@ import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTi
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalDropPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalFightNpcPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalGuidancePresenter;
-import com.github.gameclean.infrastructure.terminal.presenter.TerminalHitPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalInventoryPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalPlayBlackjackPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalTakePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalWanderPresenter;
 import com.github.gameclean.infrastructure.terminal.render.BlackjackRenderer;
 import com.github.gameclean.infrastructure.terminal.render.CalendarRenderer;
 import com.github.gameclean.infrastructure.terminal.render.Console;
@@ -212,7 +216,7 @@ public class UseCaseConfig {
 
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-    public HitInputPort hitUseCase(
+    public FightNpcInputPort fightNpcUseCase(
             OrientRenderer orientRenderer,
             NpcRenderer npcRenderer,
             Console console,
@@ -223,13 +227,16 @@ public class UseCaseConfig {
             NpcRepositoryOperationsOutputPort npcOps,
             TransactionOperationsOutputPort txOps) {
         // One presenter instance, shared with the orient and the scene-sourced NPC select subcases (as take does
-        // with items), so every outcome — struck, slain, got-away, the orient not-founds, the disambiguation
-        // outcomes — reaches the same one. Dice is a domain collaborator (a fresh SystemDice, like the ticker).
-        TerminalHitPresenter presenter =
-                new TerminalHitPresenter(orientRenderer, npcRenderer, console, affordanceContext);
+        // with items), so every outcome — both actors' strikes, got-away, the orient not-founds, the
+        // disambiguation outcomes — reaches the same one. This bean is pulled by BOTH the console (player hits)
+        // and the NPC command session (npcStrikesPlayer), each getting a fresh prototype. Dice is a domain
+        // collaborator (a fresh SystemDice, like the ticker).
+        TerminalFightNpcPresenter presenter =
+                new TerminalFightNpcPresenter(orientRenderer, npcRenderer, console, affordanceContext);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneNpcSubcase select = new SelectSceneNpcSubcase(presenter, npcOps);
-        return new HitUseCase(presenter, orient, select, npcOps, txOps, new SystemDice());
+        return new FightNpcUseCase(
+                presenter, orient, select, npcOps, playerRepositoryOps, playerOps, txOps, new SystemDice());
     }
 
     @Bean
@@ -336,15 +343,34 @@ public class UseCaseConfig {
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public AnimateNpcsInputPort animateNpcsUseCase(
+            NpcRepositoryOperationsOutputPort npcOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            NpcCommandsOutputPort npcCommandsOps) {
+        // A read-only policy: it decides and dispatches commands, writing nothing — so no transaction port, and
+        // its presenter needs no renderer (it only ever presents the quiet stripe, a trace log). The dispatched
+        // executions narrate themselves through their own use cases (Wander, FightNpc). Dice is a domain
+        // collaborator (a fresh SystemDice, like the ticker).
+        TerminalAnimateNpcsPresenter presenter = new TerminalAnimateNpcsPresenter();
+        return new AnimateNpcsUseCase(
+                presenter, npcOps, sceneOps, playerOps, playerRepositoryOps, new SystemDice(), npcCommandsOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public WanderInputPort wanderUseCase(
             NpcRenderer npcRenderer,
             NpcRepositoryOperationsOutputPort npcOps,
             SceneRepositoryOperationsOutputPort sceneOps,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             TransactionOperationsOutputPort txOps) {
-        TerminalAnimateNpcsPresenter presenter = new TerminalAnimateNpcsPresenter(npcRenderer);
-        return new AnimateNpcsUseCase(
-                presenter, npcOps, sceneOps, playerOps, playerRepositoryOps, new SystemDice(), txOps);
+        // The executing interaction for a dispatched wander, pulled fresh per command by the NPC command
+        // session. Its presenter narrates a witnessed movement (asynchronously, above the prompt) via the
+        // shared NpcRenderer; the quiet stripe is a trace log.
+        TerminalWanderPresenter presenter = new TerminalWanderPresenter(npcRenderer);
+        return new WanderUseCase(presenter, npcOps, sceneOps, playerOps, playerRepositoryOps, txOps);
     }
 
     @Bean

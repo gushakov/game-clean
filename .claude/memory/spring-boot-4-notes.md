@@ -147,6 +147,24 @@ Confirmed: `InitializeGameIT`'s full-context startup binds `GameConfigurationPro
 `Ticker(5s)` and comes up clean. (Same constructor-binding + `@DefaultValue` machinery as the existing
 `World`/`Terminal`/`Player`/`Time` groups — no Boot 4 difference.)
 
+## Spring Integration starter resolves on Boot 4; SI pinned to 7.0.x **[hit]**
+
+*Issue #66 step 2, the NPC command channel.* `spring-boot-starter-integration` still exists on Boot 4 and
+resolves cleanly — `spring-boot-dependencies` 4.0.6 pins **`spring-integration-core` to 7.0.4** (Spring
+Integration tracks Spring Framework's major, so Framework 7 ⇒ SI 7). Confirmed with
+`dependency:tree -Dincludes=org.springframework.integration` → `spring-integration-core:jar:7.0.4:compile`,
+BUILD SUCCESS. No version pin needed; the BOM manages it.
+
+- A **bare `DirectChannel`** used manually (`new DirectChannel()`, `.subscribe(handler)`, `.send(msg)`) needs
+  **no `@EnableIntegration`** and none of the integration autoconfig — those are for the annotation/DSL
+  programming model. We declare the channel as a plain `@Bean` and subscribe a `MessageHandler` in a
+  `@PostConstruct`, so the messaging dependency buys only the channel abstraction (and the async-upgrade path:
+  swap `DirectChannel` for a queue/executor channel in the composition root, port + adapters untouched).
+- The starter still activates Boot's integration autoconfig globally (default `errorChannel`/`taskScheduler`
+  beans) when SI is on the classpath — harmless here, and `@DataJdbcTest` slices don't import it anyway. The
+  Boot-4 modularization mental model still holds: the *starter* is the safe coordinate (it pulls whatever
+  autoconfig module exists), and we don't depend on that autoconfig regardless.
+
 ## Unchanged / carried over from 3.x (so you don't misattribute)
 
 - `@AutoConfiguration` + `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`

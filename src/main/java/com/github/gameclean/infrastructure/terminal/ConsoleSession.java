@@ -3,7 +3,7 @@ package com.github.gameclean.infrastructure.terminal;
 import com.github.gameclean.core.usecase.blackjack.PlayBlackjackInputPort;
 import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
-import com.github.gameclean.core.usecase.combat.HitInputPort;
+import com.github.gameclean.core.usecase.combat.FightNpcInputPort;
 import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
@@ -221,8 +221,8 @@ public class ConsoleSession {
     private void hitTarget(String target) {
         // Same idiom as take: a fresh prototype use case per interaction. An ambiguous target makes the use
         // case present a menu and arm the AffordanceContext (kind HIT), so the next bare number resumes striking.
-        HitInputPort hitUseCase = applicationContext.getBean(HitInputPort.class);
-        hitUseCase.playerHitsTarget(target);
+        FightNpcInputPort fightNpcUseCase = applicationContext.getBean(FightNpcInputPort.class);
+        fightNpcUseCase.playerHitsTarget(target);
     }
 
     private void reviewBelongings() {

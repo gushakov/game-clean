@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.initialize;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.item.Item;
@@ -484,18 +485,18 @@ class InitializeGameUseCaseTest {
     }
 
     private static GameSeed seed(List<SceneEntry> scenes, String startingSceneId, ItemEntry... items) {
-        return new GameSeed(scenes, startingSceneId, List.of(items), List.of());
+        return new GameSeed(scenes, startingSceneId, 30, List.of(items), List.of());
     }
 
     private static GameSeed seedWithNpcs(List<SceneEntry> scenes, String startingSceneId, NpcEntry... npcs) {
-        return new GameSeed(scenes, startingSceneId, List.of(), List.of(npcs));
+        return new GameSeed(scenes, startingSceneId, 30, List.of(), List.of(npcs));
     }
 
     private static NpcEntry npc(String id, int moveNumerator, int moveDenominator,
                                 int chanceNumerator, int chanceDenominator, int max, String... candidateScenes) {
         return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
                 new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max),
-                moveNumerator, moveDenominator, 10);
+                moveNumerator, moveDenominator, 1, 3, 10);
     }
 
     private static List<SceneEntry> twoConnectedScenes() {
@@ -515,7 +516,8 @@ class InitializeGameUseCaseTest {
     }
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene))
+                .hitPoints(HitPoints.full(30)).version(1).build();
     }
 
     // --- assertion helpers ----------------------------------------------------------------------

@@ -2,38 +2,24 @@ package com.github.gameclean.core.usecase.npc;
 
 import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
 
-import java.util.List;
-
 /**
  * Presenter (driven) output port for {@code AnimateNpcs}, co-located with its use case. Extends
- * {@link ErrorHandlingPresenterOutputPort} for the catch-all {@code presentError}. Every method is {@code void}
- * and follows the {@code present + Outcome} grammar; domain objects pass straight through (immutable, so the
- * presenter cannot corrupt them — no Response-Model DTOs).
+ * {@link ErrorHandlingPresenterOutputPort} for the catch-all {@code presentError}.
  *
- * <p>Two outcomes, both deliberately present so "exactly one {@code present*} per run" holds even for a quiet
- * tick (the use case never silently returns without presenting), mirroring {@code AnnounceTimeOfDay}'s
- * quiet-poll outcome:
- * <ul>
- *   <li>{@link #presentNpcMovements(List)} — one or more NPC movements the player can witness (departures from,
- *       or arrivals into, their current scene). This is an <em>asynchronous</em> presentation: a system actor
- *       producing output the player sees mid-session (rendered with JLine {@code printAbove}).</li>
- *   <li>{@link #presentNothingHappened()} — the common case: no NPCs, no NPC moved, or no movement was
- *       perceptible from where the player stands. A real outcome the adapter renders as silence (a trace log),
- *       not a missing presentation. It also covers the ticker firing before the world is seeded (no NPCs yet).</li>
- * </ul>
+ * <p><b>The policy has a single, always-quiet stripe.</b> Since {@code AnimateNpcs} became a read-only policy
+ * that <em>dispatches</em> commands (issue #66 step 2), it no longer narrates anything itself — each dispatched
+ * action narrates its own outcome mid-run, as its own executing interaction (a wander through {@code Wander},
+ * a strike through {@code FightNpc}), so anything the policy presented would read out of order. Its own outcome
+ * is therefore always {@link #presentNothingHappened()}: a real outcome the adapter renders as silence (a trace
+ * log), not a missing presentation — so "exactly one {@code present*} per run" holds for every tick. It also
+ * covers the ticker firing before the world is seeded (no NPCs yet). The witnessed-movement narration this port
+ * once carried moved to {@code Wander}'s presenter.
  */
 public interface AnimateNpcsPresenterOutputPort extends ErrorHandlingPresenterOutputPort {
 
     /**
-     * One or more NPC movements the player can witness from their current scene: narrate them to the player.
-     *
-     * @param movements the perceptible movements this tick, in the order the NPCs were enumerated (non-empty)
-     */
-    void presentNpcMovements(List<PerceivedNpcMovement> movements);
-
-    /**
-     * Quiet tick: no NPCs, none moved, or nothing was perceptible from where the player stands — nothing to
-     * narrate. Also the safe pre-initialization outcome (the ticker firing before any NPC is seeded).
+     * Quiet tick: the policy has decided and dispatched (possibly nothing) — nothing for the policy itself to
+     * narrate. The executing interactions narrate their own outcomes.
      */
     void presentNothingHappened();
 }

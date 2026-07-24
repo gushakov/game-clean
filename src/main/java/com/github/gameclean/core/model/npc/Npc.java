@@ -41,6 +41,15 @@ import java.util.Objects;
  * {@code drop} (single-writer, plain transaction) vs {@code take} (contested, versioned) contrast among items.
  * A freshly spawned NPC is version {@code 0} (persistence treats that as a new row).
  *
+ * <p><b>Combat is a persisted stance, not a one-shot reaction (#66 step 2).</b> An NPC struck by the player
+ * becomes {@code hostile} ({@link #provoked()}), and stays so indefinitely — hostility is a bare {@code boolean},
+ * not a {@code hostileToward(PlayerId)} in a single-player world. The animate policy <em>re-derives</em> the
+ * counterattack from that persisted stance every tick (a hostile, co-located NPC strikes back), so combat rounds
+ * fall out of the tick cadence without any per-episode event. The {@link #attackChance} is the authored per-tick
+ * odds a hostile, co-located NPC actually swings on a given round — the combat twin of {@link #moveChance}; a
+ * hostile NPC never wanders (the stance pins it in the fight), so the two chances gate mutually-exclusive
+ * behaviours.
+ *
  * <p>An NPC is a designation target ({@link Designatable}): {@code hit <npc>} resolves a typed fragment
  * against the NPCs in the scene exactly as {@code examine}/{@code take} resolve items, so an {@code Npc}
  * answers {@link #matches(String)} and {@link #hasIdToken(String)} — the first non-item consumer of the
@@ -61,20 +70,26 @@ public class Npc implements Designatable {
     String shortDescription;
     String fullDescription;
     Chance moveChance;
+    Chance attackChance;
     HitPoints hitPoints;
+
+    /** Whether this NPC is in a hostile stance toward the player (struck and fighting back), re-derived each tick. */
+    boolean hostile;
 
     /** Optimistic-locking token — opaque to the domain, managed by persistence, not part of value equality. */
     long version;
 
     @Builder
     public Npc(NpcId id, SceneId currentScene, String shortDescription, String fullDescription, Chance moveChance,
-               HitPoints hitPoints, long version) {
+               Chance attackChance, HitPoints hitPoints, boolean hostile, long version) {
         this.id = DomainValidation.requireNonNull(id, "npc id must not be null");
         this.currentScene = DomainValidation.requireNonNull(currentScene, "npc current scene must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
         this.fullDescription = requireNonBlank(fullDescription, "npc full description");
         this.moveChance = DomainValidation.requireNonNull(moveChance, "npc move chance must not be null");
+        this.attackChance = DomainValidation.requireNonNull(attackChance, "npc attack chance must not be null");
         this.hitPoints = DomainValidation.requireNonNull(hitPoints, "npc hit points must not be null");
+        this.hostile = hostile;
         if (version < 0) {
             throw new InvalidDomainObjectError("npc version must not be negative, got " + version);
         }
@@ -139,6 +154,18 @@ public class Npc implements Designatable {
      */
     public Npc takeDamage(int amount) {
         return withHitPoints(hitPoints.damage(amount));
+    }
+
+    /**
+     * Returns a copy of this NPC turned <em>hostile</em> — struck by the player, it enters the combat stance
+     * and stays there (the animate policy re-derives the counterattack from this persisted flag every tick).
+     * Immutable copy-on-write via Lombok {@code @With}, carrying the current {@link #version} forward. Already
+     * hostile ↦ an equal copy; there is no de-escalation yet (pursuit / de-aggro is deferred).
+     *
+     * @return a new NPC in the hostile stance, carrying this NPC's version
+     */
+    public Npc provoked() {
+        return withHostile(true);
     }
 
     /**

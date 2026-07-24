@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure.persistence.npc;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.npc.Npc;
+import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
@@ -15,6 +16,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Spring Data JDBC-backed implementation of {@link NpcRepositoryOperationsOutputPort} — the driven adapter for
@@ -66,6 +68,18 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
                     "Cannot load NPCs in scene %s (unreadable or corrupt)".formatted(sceneId.asString()), e);
+        }
+    }
+
+    @Override
+    public Optional<Npc> findNpc(NpcId id) {
+        try {
+            return repository.findById(id.asString())
+                    .map(mapper::toDomain)
+                    .filter(npc -> !npc.isDead());   // a dead NPC is gone from targeting, like the list reads
+        } catch (DataAccessException | InvalidDomainObjectError e) {
+            throw new PersistenceOperationsError(
+                    "Cannot load npc %s (unreadable or corrupt)".formatted(id.asString()), e);
         }
     }
 

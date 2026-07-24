@@ -1,10 +1,12 @@
 package com.github.gameclean.core.port.persistence;
 
 import com.github.gameclean.core.model.npc.Npc;
+import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Driven (output) port for NPC persistence — the use case drives it; an infrastructure adapter implements it.
@@ -39,6 +41,14 @@ public interface NpcRepositoryOperationsOutputPort {
      * @throws PersistenceOperationsError if the lookup fails
      */
     List<Npc> findNpcsInScene(SceneId sceneId);
+
+    /**
+     * @return the living NPC with the given id, or empty if none is persisted or it is dead. The NPC
+     *         counterstrike ({@code FightNpc.npcStrikesPlayer}) loads its striker by id; a gone-or-dead NPC
+     *         yields an empty result, which the interaction treats as a quiet no-op (the loop re-derives).
+     * @throws PersistenceOperationsError if the lookup fails
+     */
+    Optional<Npc> findNpc(NpcId id);
 
     /**
      * Persists a single NPC, inserting it if new (version {@code 0}) and updating it in place otherwise, with an
