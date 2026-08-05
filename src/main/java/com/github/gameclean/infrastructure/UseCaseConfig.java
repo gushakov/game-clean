@@ -49,6 +49,7 @@ import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneNpcSubcase;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
+import com.github.gameclean.infrastructure.terminal.GameLifecycle;
 import com.github.gameclean.infrastructure.terminal.conversation.BlackjackConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
 import com.github.gameclean.infrastructure.terminal.conversation.DropConversation;
@@ -221,6 +222,7 @@ public class UseCaseConfig {
             NpcRenderer npcRenderer,
             Console console,
             AffordanceContext affordanceContext,
+            GameLifecycle gameLifecycle,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
@@ -229,10 +231,11 @@ public class UseCaseConfig {
         // One presenter instance, shared with the orient and the scene-sourced NPC select subcases (as take does
         // with items), so every outcome — both actors' strikes, got-away, the orient not-founds, the
         // disambiguation outcomes — reaches the same one. This bean is pulled by BOTH the console (player hits)
-        // and the NPC command session (npcStrikesPlayer), each getting a fresh prototype. Dice is a domain
+        // and the NPC command session (npcStrikesPlayer), each getting a fresh prototype. On a lethal
+        // counterstrike the presenter announces game-over and latches the GameLifecycle. Dice is a domain
         // collaborator (a fresh SystemDice, like the ticker).
         TerminalFightNpcPresenter presenter =
-                new TerminalFightNpcPresenter(orientRenderer, npcRenderer, console, affordanceContext);
+                new TerminalFightNpcPresenter(orientRenderer, npcRenderer, console, affordanceContext, gameLifecycle);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneNpcSubcase select = new SelectSceneNpcSubcase(presenter, npcOps);
         return new FightNpcUseCase(

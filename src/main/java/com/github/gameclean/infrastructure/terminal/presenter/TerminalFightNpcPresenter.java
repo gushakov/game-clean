@@ -10,6 +10,7 @@ import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.AffordanceKind;
+import com.github.gameclean.infrastructure.terminal.GameLifecycle;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.NpcRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
@@ -36,6 +37,12 @@ import java.util.List;
  * dispatched the counterstrike and a background session runs it while the player may be at the prompt — so they
  * are narrated above the live prompt, and the quiet whiff ({@link #presentNothingHappened}) is a trace log.
  *
+ * <p>The slain outcome is <em>terminal</em> for the game: {@link #presentPlayerSlain} narrates the lethal blow
+ * and then hands off to {@link GameLifecycle#endGame()}, which announces game-over and latches the session to
+ * end. Rendering-plus-latch is the death analog of arming the {@link AffordanceContext}: the use case already
+ * decided the player is slain (it chose this stripe), and the presenter only propagates that terminal outcome
+ * into session state — the console owns the actual loop-break, exactly as it does for {@code bye}.
+ *
  * <p>The disambiguation menu is ordered here once (stable by short description, then id) and the same order is
  * both displayed and remembered, so the visible menu and the latent offer cannot drift — exactly as take does.
  */
@@ -49,6 +56,7 @@ public class TerminalFightNpcPresenter
     NpcRenderer npcRenderer;
     Console console;
     AffordanceContext affordanceContext;
+    GameLifecycle gameLifecycle;
 
     @Override
     public void presentNpcStruck(Npc npc, int damage) {
@@ -72,7 +80,10 @@ public class TerminalFightNpcPresenter
 
     @Override
     public void presentPlayerSlain(Npc npc, int damage) {
+        // Terminal outcome: narrate the lethal blow, then announce game-over and latch the session to end. The
+        // console reads the latch on the next keystroke and leaves the game (banking time via SuspendGame).
         npcRenderer.renderPlayerSlain(npc, damage);
+        gameLifecycle.endGame();
     }
 
     @Override

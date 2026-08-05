@@ -70,4 +70,17 @@ public class TerminalConfig {
     public AffordanceContext affordanceContext() {
         return new AffordanceContext();
     }
+
+    /**
+     * The session-lifetime end-of-game latch — a shared infrastructure resource (not an adapter). A death
+     * outcome's presenter calls {@code endGame()} (from a background ticker thread) to announce game-over and
+     * latch; the console loop reads {@code endRequested()} on the next keystroke and ends the session. Kept
+     * separate from {@link AffordanceContext} on purpose — opposite thread-safety and lifecycle contracts (see
+     * {@link GameLifecycle}). It takes the {@link Console} because it owns the single-sourced "announce the
+     * game-over line and latch" step, not just the flag.
+     */
+    @Bean
+    public GameLifecycle gameLifecycle(Console console) {
+        return new GameLifecycle(console);
+    }
 }

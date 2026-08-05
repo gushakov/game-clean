@@ -70,7 +70,9 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   by concern — root holds `ConsoleSession` driving loop + `TerminalConfig` resource wiring + `AffordanceContext`
   (session-lifetime conversational buffer holding one armed `Affordance`, #72/#79) + the **sealed** `Affordance`
   value (`SelectionAffordance` = kind + selection tokens; `EphemeralAffordance` = kind + opaque state envelope)
-  + the `AffordanceKind` enum;
+  + the `AffordanceKind` enum + `GameLifecycle` (session-lifetime **cross-thread** end-of-game latch:
+  `endGame()` announces the game-over line + raises a `volatile` flag, `endRequested()` read by the loop — the
+  first driven→driving back-channel a background actor writes; separate from `AffordanceContext`, #87);
   `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation`
   with its per-dialogue `continuedBy(Command)` predicate + `AbstractSelectionConversation` Template-Method base +
   `Examine`/`Take`/`Drop`/`Hit`/`BlackjackConversation`); `presenter/` the driven
@@ -576,11 +578,32 @@ deliberately never persisted (abandonment = forfeit; the dealer sweeps the cards
   `SystemDice`) + singleton `blackjackConversation`; new `BlackjackSubdomainArchitectureTest` (a
   *positive* dependency rule, so it analyzes production classes only via `ImportOption.DoNotIncludeTests`).
 
-Tests: 470 unit (Surefire, DB-free) + 25 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Player death` game-over vertical **step 1 complete** (issue #87) — a slain player now ends the session
+instead of lingering in a running world; **infra-only, no core/use-case/schema change** (death detection +
+decision already existed from #66):
+
+- **`GameLifecycle`** (`infrastructure/terminal/`, new resource declared in `TerminalConfig`) — a
+  session-lifetime **cross-thread** end-of-game latch: `endGame()` announces "Game is over. Press Enter to
+  quit." above the prompt + raises a `volatile` flag; `endRequested()` is read by the console loop. Holds the
+  single-sourced "announce + latch" step so any future death cause reuses it. Kept **separate** from
+  `AffordanceContext` (opposite thread/lifecycle/routing contracts — design-notes §9).
+- **`TerminalFightNpcPresenter.presentPlayerSlain`** now renders the lethal blow then calls
+  `gameLifecycle.endGame()` — the death analog of arming an affordance (presenter propagates the terminal
+  outcome to session state; it does not decide or break).
+- **`ConsoleSession`** — after `readLine`, before parsing, checks `gameLifecycle.endRequested()`; if set,
+  discards the (void) keystroke and ends via the existing `leaveGame()` (`SuspendGame` banks the time), then
+  `break`. `bye` and death converge on one terminal path — design-notes §9 (the driven→driving back-channel).
+- **Deferred** (this step is "present + quit" only): boot with an already-dead player, stopping the tickers,
+  and **revive/respawn + NPC de-aggro** (a persisted `hostile` NPC would attack a fresh incarnation — the
+  natural home is a future revive use case that resets the player *and* de-aggros the world; #66/#87 non-goal).
+  The #66 `isDead()` quiet-stripe guard stays as defense-in-depth. New DB / manual HP+`hostile` reset for now.
+
+Tests: 474 unit (Surefire, DB-free) + 25 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
-over carried items (needs a composite ground∪keeping provisioner), **player-death consequences** (a slain
-player is a quiet stripe today — ending/pausing the session is deferred), the outbox **event spine** (both
+over carried items (needs a composite ground∪keeping provisioner), **player revive/respawn + NPC de-aggro**
+(#87 step 1 ended the session on death; boot-with-dead-player and reviving a fresh incarnation without a
+still-`hostile` NPC attacking it are the deferred next slice), the outbox **event spine** (both
 tickers still poll; NPC retaliation is a persisted *stance* polled by the tick, not an event — the spine's
 first customer stays a discrete fact like an on-death effect or witness propagation), blackjack stakes
 (the trigger that would mint the round aggregate — see design-notes §9).

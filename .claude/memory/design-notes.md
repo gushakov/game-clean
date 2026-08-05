@@ -1925,6 +1925,56 @@ the dispatch"), `bye` is handled by an early `if (command instanceof QuitCommand
 no-op `QuitCommand` arm purely for sealed-set exhaustiveness, and that dead arm is the honest signal that `bye`
 is the one command whose handling carries a loop-control effect the switch cannot express.
 
+**Player death ends the session through a *driven→driving back-channel* — the async twin of `bye`.** `[thread #3]`
+`[thread #4]` A lethal NPC counterstrike (#87) must stop the loop, but unlike `bye` the fact is discovered on
+the **ticker thread**, inside `FightNpc.npcStrikesPlayer`'s `presentPlayerSlain` stripe, while the console is
+parked in `readLine` on its own thread. There is no `Command` to intercept and no return channel
+(unidirectional flow, §4). The resolution reuses a mechanism the design already had but had only seen carry
+*conversational* state: the driven presenter **deposits the fact in shared session state**
+(`GameLifecycle.endGame()` — announce the game-over line, raise a `volatile` latch), and the driving loop
+**reads it on its next turn** (before parsing the keystroke that woke the read, which is now void) and ends the
+session via the *same* `leaveGame()` path `bye` uses. So `bye` and death converge on one terminal path (bank the
+time via `SuspendGame`, then `break`); they differ only in initiator and thread. The fact never travels *up* a
+call stack (that would be the forbidden `Result` return, §4) — it is displaced into the next, independent
+inbound flow, which is exactly why one-way flow survives.
+
+**This names a pattern: the driven→driving back-channel is the one-way-flow-preserving alternative to a return
+value.** `[thread #4]` The presenter-arming channel already documented for the affordance / blackjack loop
+(*mode buffer → controller relays in → interaction → presenter arms → mode buffer*, below) and this game-over
+latch are **two instances of one shape**: a dumb shared resource the *driven* side writes and the *driving* loop
+reads a turn later, so output can influence the next input without a return. The second instance is what
+promotes it from "`AffordanceContext` is a one-off buffer" to a Clean DDD pattern — and it carries something
+categorically different: `AffordanceContext` feeds back *conversational-interpretation* state (how to read the
+next line), `GameLifecycle` feeds back a *session-lifecycle control signal* (whether there is a next line at
+all). Framed in delivery terms, `GameLifecycle` is the console's hand-built **session-termination hook** — the
+thing a servlet container or TUI framework owns and hides, made explicit here precisely because the console
+"internalized its own dispatch loop" (above): own the loop, own the signal that stops it. (Promotion candidate,
+flagged not promoted: *a driven→driving back-channel — a dumb resource the presenter writes and the loop reads
+next turn — is how one-way flow lets output influence the next input without a return value; conversational
+routing state and session-lifecycle control are two things it can carry.*)
+
+**Why a *separate* holder, not a `GAME_OVER` affordance — the "would it survive the mechanism's invariants?"
+test.** `[thread #3]` Folding game-over into `AffordanceContext` was weighed and rejected, and the reasons are
+the sibling of §1's "would it survive a *second adapter*?" — here, "would it survive the *mechanism's own
+invariants*?": **(a)** an affordance is thread-confined to the input thread — its own note records that "no
+background actor's presenter may write the mode buffer" as the revisit trigger (below); game-over is written by
+a background (ticker) actor, so it is precisely that trigger, and the faithful resolution is a *new cross-thread
+buffer*, not loosening `AffordanceContext`'s confinement (which stands intact, single-slot and single-threaded);
+**(b)** an affordance is reversible and abandon-cleared, game-over is terminal and never cleared (a dead player
+doing "something else" must not un-die); **(c)** every `AffordanceKind` must have a `Conversation` handler (a
+wiring check enforces it) so an armed offer can resume — game-over resumes nothing, carries no kind, payload, or
+handler. Opposite thread contract, opposite lifecycle, no routing → a separate resource with its own contract.
+And it is correctly *infra* by §1's own litmus: `GameLifecycle` would not survive a second adapter (a web or GUI
+driver has no `readLine` loop to break; it would react to `Player.isDead()` by disabling input or showing a
+modal), so it is delivery, not domain — which is exactly why it is *not* a domain capability like `Dice` (which
+survives any driver, §4), and why "the console loop should stop" stays distinct from a future domain
+`GameSession`-status. The decision to end stayed in the use case (it chose the slain stripe, terminal by the
+game's rules); the presenter only *propagates* that outcome to session state, and the console owns the
+loop-break — humble presenter, loop control in the driving adapter, as with `bye`. (Promotion candidate, flagged
+not promoted: *test a candidate for reuse of an existing mechanism by "would it survive that mechanism's
+invariants?" — the sibling of the second-adapter test; opposite thread/lifecycle/routing contracts mean a new
+holder, not a new enum constant.*)
+
 **Resuming a multi-step conversation — substance (use case) vs. modality (infra), the container as the
 resumer map.** `[thread #4]` When a follow-up line must resume a pending dialogue (`examine`'s pick, and the
 same for `take`/`drop`), the §4 split decides the wiring: the use case is the conversation's **substance** —
