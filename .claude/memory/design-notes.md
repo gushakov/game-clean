@@ -2279,6 +2279,51 @@ disjoint fields keyed by a discriminator, seal it into one subtype per family ra
 per-family-empty fields — the §2 sealed-over-nullable ruling applies to delivery-mechanism carriers too; the
 discriminator is then freed to be a pure routing key.*)
 
+**The buffer's currency has a second axis — the counterparty's animation decides the state's home.**
+`[thread #1]` `[thread #3]` `[thread #4]` The token-vs-envelope split above discriminates by *custody* (does
+the domain owe anyone memory of the conversation). The haggle and quest-dialogue explorations surfaced an
+**independent second test: who animates the counterparty.** A *persona* executed inside the player's own
+interaction (the blackjack dealer) leaves the conversation single-threaded, and the envelope is legal; a
+*ticker-animated actor* (a hostile fighter, a shopkeeper who counteroffers on his own clock) makes the
+conversation two-writer, and its state must be a **versioned aggregate**, the buffer degrading to the
+correlation token the token discipline already prescribes. Either test alone forces the aggregate — blackjack
+fails both; a haggle passes the animation test regardless of stakes. The reason the envelope cannot simply "go
+cross-thread" is that its safety rests on exactly two preconditions — **single writer** and **shell opacity**
+— and a second animated actor breaks both at once: the counteroffer is a read-modify-write on the envelope
+(`volatile` cannot express it), and whatever arbitrated two actors' concurrent updates would have to *read*
+the payload — infrastructure doing domain arbitration, the exact thing opacity exists to forbid. The
+methodology's home for two-actor shared state already exists (aggregate + `@Version` + narrow transactions,
+§5), and combat is the standing proof: a genuinely multi-threaded player↔NPC conversation with no envelope and
+no ticker-side buffer writes — only the synchronous outcomes arm `HIT`; the async outcomes narrate above the
+prompt. This also reveals `AffordanceContext`'s thread confinement as **semantic, not incidental**: arming is
+a *speech act* — it fixes how the player's next line will be read — and "the armed affordance is what the
+player is looking at" can be maintained only by the input thread (a ticker re-arming mid-keystroke makes an
+ordinal resolve against a menu the player never saw: a semantics race no lock fixes). `GameLifecycle` is the
+degenerate corner where a cross-thread write is safe *by construction* — monotonic, one bit,
+interpretation-free: whatever the next keystroke was going to mean, the game ends. So the recorded revisit
+trigger (above) sharpens: when the system-signal family arrives, an NPC-initiated arm must ride its *own
+dispatched turn* (the two-producer `Command` shape), serialized into the input beat — never a concurrent
+buffer write — and the async side never renders positional menus (numbering is safe only in the beat that
+arms it). Three holders, three contracts: `AffordanceContext` carries next-line *interpretation*
+(input-thread-confined, forever); `GameLifecycle` carries a terminal *control signal* (cross-thread,
+monotonic); the aggregate carries two-actor *evolving state* (any thread, the database arbitrates). The rule
+predicts shapes before building: the haggle is **combat-shaped** — a `Negotiation` aggregate; the animate
+policy's stance ladder *queries* the open negotiation (a query, never a duplicated flag on `Npc` — a second
+copy of a relationship is denormalization drift); the policy rolls only the *tempo* die and the command
+carries only the subject id, because a live contested aggregate cannot be pre-decided from a snapshot the way
+a wander's static exit can — content is computed at execution against fresh state. The quest dialogue is
+**blackjack-shaped** even though the quest-giver is a real `Npc`, because *during the dialogue* the NPC is a
+persona: replies are computed from the authored graph inside the player's own interaction. Corollary of that
+shape: an envelope conversation is **invisible to the tick** (its state lives in the terminal's memory), so
+it cannot pin its counterpart — the world may move under it, absorbed by lazy staleness (each resume
+re-validates the interlocutor; the vanished-hermit outcome is `presentTargetNoLongerAvailable`'s kin). Wanting
+the world to *respect* a conversation is itself the signal its state has outgrown the envelope. (Promotion
+candidate, flagged not promoted: *a conversation's between-interaction state is homed by two independent
+tests — custody (does the domain owe memory) and animation (does a second actor write); either forces a
+versioned aggregate and degrades the mode buffer to a correlation token; the mode buffer itself is
+input-thread-confined semantically — arming fixes the next line's interpretation — so cross-thread holders
+are legal only for interpretation-free, monotonic signals.*)
+
 **Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
 lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the
 full round — hole card and deck included — must transit the presenter, because the presenter is the arming
