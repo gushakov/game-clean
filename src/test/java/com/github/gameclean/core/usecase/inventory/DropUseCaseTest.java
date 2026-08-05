@@ -1,5 +1,6 @@
 package com.github.gameclean.core.usecase.inventory;
 
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
@@ -150,7 +151,8 @@ class DropUseCaseTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     private void orientedAtScn1() {
-        Player player = Player.builder().id(SELF).currentScene(HERE).build();
+        Player player = Player.builder().id(SELF).currentScene(HERE)
+                .hitPoints(HitPoints.full(30)).version(1).build();
         when(orientPlayerSubcase.playerGetsBearings()).thenReturn(new OrientPlayerResult(player, scn1()));
     }
 

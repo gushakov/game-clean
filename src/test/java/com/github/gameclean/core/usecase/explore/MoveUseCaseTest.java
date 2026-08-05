@@ -13,6 +13,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
@@ -167,6 +168,23 @@ class MoveUseCaseTest {
         verify(presenter, never()).presentSceneEntered(any(), any(), any());
     }
 
+    @Test
+    void routesAnOptimisticLockLossToTheCatchAll() {
+        // move now races the NPC counterstrike for the player row, but stays on the PLAIN doInTransaction
+        // overload — so a lost lock is NOT reacted to locally: it propagates like any other error to the
+        // outermost catch and presentError (the single-writer→propagate vs contested→handler contrast).
+        OptimisticLockingError lost = new OptimisticLockingError("player modified concurrently");
+        orientedAt("plr1", gateTo("scn2"));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
+        doThrow(lost).when(playerRepositoryOps).savePlayer(any());
+        runTransaction(txOps);
+
+        useCase.playerMovesThrough("east");
+
+        verify(presenter).presentError(lost);
+        verify(presenter, never()).presentSceneEntered(any(), any(), any());
+    }
+
     // --- fixtures -----------------------------------------------------------------------------------
 
     /** Stub the orient subcase to return the player standing in the given current scene. */
@@ -177,7 +195,8 @@ class MoveUseCaseTest {
     }
 
     private static Player player(String id, String currentScene) {
-        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene)).build();
+        return Player.builder().id(PlayerId.of(id)).currentScene(SceneId.of(currentScene))
+                .hitPoints(HitPoints.full(30)).version(1).build();
     }
 
     /** The player's current scene (scn1), with a single "east" exit to the given target. */
@@ -223,6 +242,7 @@ class MoveUseCaseTest {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A cloaked figure.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
                 .build();
     }

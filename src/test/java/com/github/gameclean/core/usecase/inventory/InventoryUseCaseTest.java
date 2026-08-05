@@ -1,6 +1,7 @@
 package com.github.gameclean.core.usecase.inventory;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
@@ -115,7 +116,8 @@ class InventoryUseCaseTest {
 
     private void ambientPlayerResolves() {
         when(playerOps.currentPlayerId()).thenReturn(SELF.asString());
-        Player player = Player.builder().id(SELF).currentScene(SceneId.of("scn1")).build();
+        Player player = Player.builder().id(SELF).currentScene(SceneId.of("scn1"))
+                .hitPoints(HitPoints.full(30)).version(1).build();
         when(playerRepositoryOps.findPlayer(SELF)).thenReturn(Optional.of(player));
     }
 

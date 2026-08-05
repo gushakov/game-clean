@@ -11,6 +11,7 @@ import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
@@ -64,6 +65,6 @@ class YamlGameSeedSourceTest {
     private void givenAReadableSeedThatParsesTo(RuntimeException parseFailure) {
         when(properties.getWorld().getSeedLocation()).thenReturn(new ByteArrayResource("scenes:".getBytes()));
         when(properties.getPlayer().getStartingSceneId()).thenReturn("scn1");
-        when(reader.read(any(), eq("scn1"))).thenThrow(parseFailure);
+        when(reader.read(any(), eq("scn1"), anyInt())).thenThrow(parseFailure);
     }
 }

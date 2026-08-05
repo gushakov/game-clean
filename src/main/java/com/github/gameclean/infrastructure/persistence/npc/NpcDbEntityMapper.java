@@ -11,13 +11,14 @@ import org.mapstruct.Mapping;
  * the shock-absorber layer that lets schema and model evolve at different speeds.
  *
  * <p>Every value object converts through a shared inherited pair, selected by MapStruct on source + target
- * type: the npc-id, the scene-id of {@code currentScene}, and the {@code moveChance} odds to / from a single
- * raw string via {@link ScalarConverter} (the chance as its canonical {@code num/den} text); the
- * {@code hitPoints} pool to / from its embedded {@code HitPointsDbEntity} shape via
+ * type: the npc-id, the scene-id of {@code currentScene}, and the {@code moveChance} / {@code attackChance}
+ * odds to / from a single raw string via {@link ScalarConverter} (each chance as its canonical {@code num/den}
+ * text); the {@code hitPoints} pool to / from its embedded {@code HitPointsDbEntity} shape via
  * {@link CompositeDbConverter}. Re-wrapping runs each value object's own validation, so a malformed stored
- * value surfaces as a domain error rather than slipping through. {@code moveChance} and {@code hitPoints}
- * match by name, so they need no {@code @Mapping} at all; only the {@code currentScene ↔ currentSceneId}
- * name mismatch is declared. The {@code version} maps straight through (by name) in both directions.
+ * value surfaces as a domain error rather than slipping through. {@code moveChance}, {@code attackChance},
+ * {@code hostile} and {@code hitPoints} all match by name, so they need no {@code @Mapping} at all; only the
+ * {@code currentScene ↔ currentSceneId} name mismatch is declared. The {@code version} maps straight through
+ * (by name) in both directions.
  */
 @Mapper(componentModel = "spring")
 public interface NpcDbEntityMapper extends ScalarConverter, CompositeDbConverter {

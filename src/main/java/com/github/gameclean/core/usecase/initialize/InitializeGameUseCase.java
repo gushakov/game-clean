@@ -2,6 +2,7 @@ package com.github.gameclean.core.usecase.initialize;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.clock.GameClock;
+import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.Dice;
@@ -130,7 +131,12 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             try {
                 playerId = PlayerId.of(playerOps.currentPlayerId());
                 startingScene = SceneId.of(seed.getStartingSceneId());
-                player = Player.builder().id(playerId).currentScene(startingScene).build();
+                player = Player.builder()
+                        .id(playerId)
+                        .currentScene(startingScene)
+                        .hitPoints(HitPoints.full(seed.getPlayerMaxHitPoints()))
+                        .version(0)
+                        .build();
             } catch (InvalidDomainObjectError e) {
                 presenter.presentInvalidParametersError(e);
                 return;
@@ -336,8 +342,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::of).toList();
             SpawnRule rule = new SpawnRule(chance, spawn.getMax(), candidateScenes);
             Chance moveChance = new Chance(entry.getMoveChanceNumerator(), entry.getMoveChanceDenominator());
+            Chance attackChance =
+                    new Chance(entry.getAttackChanceNumerator(), entry.getAttackChanceDenominator());
             NpcTemplate template = new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(),
-                    rule, moveChance, entry.getHitPoints());
+                    rule, moveChance, attackChance, entry.getHitPoints());
             authored.add(new AuthoredNpc(entry.getId(), template));
         }
         return authored;

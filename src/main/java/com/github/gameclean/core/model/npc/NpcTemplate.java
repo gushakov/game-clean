@@ -17,8 +17,8 @@ import java.util.Set;
  * An authored kind of NPC together with the rule by which it populates the world — the always-valid form of
  * one {@code npcs:} entry in the seed. The NPC twin of {@code ItemTemplate}: it holds the short and full
  * descriptions every spawned instance carries and the {@link SpawnRule} governing how many instances appear
- * and where, <em>plus</em> the authored {@link Chance moveChance} each spawned NPC wanders with. Immutable,
- * equality by value.
+ * and where, <em>plus</em> the authored {@link Chance moveChance} each spawned NPC wanders with and the
+ * authored {@link Chance attackChance} it strikes back with once provoked. Immutable, equality by value.
  *
  * <p>It is <em>transient</em>: the initialization use case constructs it as the validity gate for authored NPC
  * input, uses it to spawn instances, and never persists it (instances copy its descriptions and move chance;
@@ -34,14 +34,16 @@ public class NpcTemplate {
     String fullDescription;
     SpawnRule spawnRule;
     Chance moveChance;
+    Chance attackChance;
     int maxHitPoints;
 
     public NpcTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule, Chance moveChance,
-                       int maxHitPoints) {
+                       Chance attackChance, int maxHitPoints) {
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
         this.fullDescription = requireNonBlank(fullDescription, "npc full description");
         this.spawnRule = DomainValidation.requireNonNull(spawnRule, "npc spawn rule must not be null");
         this.moveChance = DomainValidation.requireNonNull(moveChance, "npc move chance must not be null");
+        this.attackChance = DomainValidation.requireNonNull(attackChance, "npc attack chance must not be null");
         if (maxHitPoints <= 0) {
             throw new InvalidDomainObjectError("npc max hit points must be strictly positive, got " + maxHitPoints);
         }
@@ -50,9 +52,9 @@ public class NpcTemplate {
 
     /**
      * Builds one NPC instance of this template at the given scene, stamped with the given freshly generated id.
-     * The descriptions and move chance are copied onto the instance — instances hold their own state and do not
-     * reference the template. The instance spawns at full health ({@link HitPoints#full(int)} of
-     * {@link #maxHitPoints}) and version {@code 0} (a new, not-yet-persisted row).
+     * The descriptions, move chance and attack chance are copied onto the instance — instances hold their own
+     * state and do not reference the template. The instance spawns at full health ({@link HitPoints#full(int)}
+     * of {@link #maxHitPoints}), <em>non-hostile</em>, and version {@code 0} (a new, not-yet-persisted row).
      */
     public Npc instanceAt(NpcId id, SceneId currentScene) {
         return Npc.builder()
@@ -61,7 +63,9 @@ public class NpcTemplate {
                 .shortDescription(shortDescription)
                 .fullDescription(fullDescription)
                 .moveChance(moveChance)
+                .attackChance(attackChance)
                 .hitPoints(HitPoints.full(maxHitPoints))
+                .hostile(false)
                 .version(0)
                 .build();
     }

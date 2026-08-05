@@ -20,7 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
  * Persistence round-trip for the {@code Npc} aggregate against the real, running Dockerized Postgres
  * ({@code @AutoConfigureTestDatabase(replace = NONE)}). Flyway migrates the schema at context startup (V8 gives
  * npc its {@code (hit_points, max_hit_points)} pair and {@code @Version} column; V10 collapses the move chance
- * into a single {@code num/den} text column); the {@code @DataJdbcTest} slice rolls each test back.
+ * into a single {@code num/den} text column; V11 adds the {@code hostile} stance and the {@code attack_chance}
+ * text column); the {@code @DataJdbcTest} slice rolls each test back.
  *
  * <p>It exercises what spawning, autonomous movement, and {@code hit} need end to end: an NPC inserts and is
  * found by its scene and among all NPCs (its move-chance and hit-point columns surviving the round-trip);
@@ -56,8 +57,10 @@ class NpcRoundTripIT extends AbstractPostgresIT {
                 .satisfies(npc -> {
                     assertThat(npc.getId()).isEqualTo(NpcId.of("npc1"));
                     assertThat(npc.getCurrentScene()).isEqualTo(HERE);
-                    // The move-chance and hit-point columns survive the round-trip.
+                    // The move-chance, attack-chance, hostile-stance and hit-point columns survive the round-trip.
                     assertThat(npc.getMoveChance()).isEqualTo(new Chance(1, 4));
+                    assertThat(npc.getAttackChance()).isEqualTo(new Chance(1, 3));
+                    assertThat(npc.isHostile()).isFalse();
                     assertThat(npc.getHitPoints()).isEqualTo(HitPoints.full(10));
                 });
     }
@@ -124,6 +127,7 @@ class NpcRoundTripIT extends AbstractPostgresIT {
                 .shortDescription("A hooded wanderer.")
                 .fullDescription("A figure in a travel-worn hooded cloak.")
                 .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
                 .build();
     }

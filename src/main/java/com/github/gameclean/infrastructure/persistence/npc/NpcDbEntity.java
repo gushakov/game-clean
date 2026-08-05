@@ -15,8 +15,10 @@ import org.springframework.data.relational.core.mapping.Table;
  *
  * <p>The current scene is stored as its raw id string, deliberately <em>not</em> a foreign key (cross-aggregate
  * references are resolved as a use-case rule, not by the database), mirroring {@code player.current_scene_id}.
- * The move chance is stored as its canonical {@code num/den} text in a single {@code move_chance} column
- * (chance arithmetic never happens in SQL, and the fraction reads directly in query results); the hit points
+ * The move chance and the attack chance are each stored as their canonical {@code num/den} text in a single
+ * column ({@code move_chance} / {@code attack_chance}) — chance arithmetic never happens in SQL, and the
+ * fraction reads directly in query results; the {@code hostile} stance is a plain boolean column re-derived by
+ * the animate policy each tick. The hit points
  * embed as the shared {@link HitPointsDbEntity} over the same {@code (hit_points, max_hit_points)} column pair
  * (current out of max) — two int columns of this very table, kept because current/max are plausibly
  * SQL-comparable (queryability decides column shape), reachable in derived queries through the embedded
@@ -50,6 +52,12 @@ public class NpcDbEntity {
 
     @Column("move_chance")
     private String moveChance;
+
+    @Column("attack_chance")
+    private String attackChance;
+
+    @Column("hostile")
+    private boolean hostile;
 
     @Embedded.Nullable
     private HitPointsDbEntity hitPoints;

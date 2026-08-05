@@ -100,9 +100,20 @@ public class GameConfigurationProperties {
         /** Scene the player starts in; the boot seeder creates the player there if absent. */
         String startingSceneId;
 
-        public Player(@DefaultValue("plr1") String id, @DefaultValue("scn1") String startingSceneId) {
+        /**
+         * The player's hit-point pool: the boot seeder spawns the player at {@code HitPoints.full(maxHitPoints)}
+         * (#66 step 2). Carried into {@code InitializeGame} through the {@code GameSeed} carrier alongside the
+         * starting scene id, and validated at the use-case gate (a non-positive value is a presented outcome).
+         * Tuned against the NPC hit points and flat d10 strike damage — the default 30 lets a provoked NPC's
+         * counterstrikes threaten the player over a few rounds.
+         */
+        int maxHitPoints;
+
+        public Player(@DefaultValue("plr1") String id, @DefaultValue("scn1") String startingSceneId,
+                      @DefaultValue("30") int maxHitPoints) {
             this.id = id;
             this.startingSceneId = startingSceneId;
+            this.maxHitPoints = maxHitPoints;
         }
     }
 

@@ -3,7 +3,7 @@ package com.github.gameclean.infrastructure.terminal;
 import com.github.gameclean.core.usecase.blackjack.PlayBlackjackInputPort;
 import com.github.gameclean.core.usecase.clock.AskForTimeInputPort;
 import com.github.gameclean.core.usecase.clock.SuspendGameInputPort;
-import com.github.gameclean.core.usecase.combat.HitInputPort;
+import com.github.gameclean.core.usecase.combat.FightNpcInputPort;
 import com.github.gameclean.core.usecase.explore.ExamineInputPort;
 import com.github.gameclean.core.usecase.explore.LookInputPort;
 import com.github.gameclean.core.usecase.explore.MoveInputPort;
@@ -52,6 +52,13 @@ import java.util.Set;
  * parser never produces it (design-notes §9). {@code bye} is intercepted before the dispatch switch because it
  * must {@code break} the loop, which a switch arm cannot do without a flag.
  *
+ * <p>There is a second, <em>asynchronous</em> way the loop ends: a background actor (a provoked NPC's lethal
+ * counterstrike, run on the ticker thread) latches {@link GameLifecycle} when the player is slain. The loop
+ * cannot notice mid-{@code readLine}, so it checks the latch on the next keystroke that wakes the read, before
+ * parsing — the player's line is void once the game is over — and ends the session exactly as {@code bye} does,
+ * via {@link #leaveGame()}. So {@code bye} and death converge on the same terminal path (bank the time, then
+ * break); they differ only in who initiates and on which thread.
+ *
  * <p>It also holds the one piece of conversational state the design admits: the armed {@link Affordance} in
  * the shared {@link AffordanceContext} resource — a disambiguation offer's tokens, or an ephemeral
  * conversation's opaque state envelope (a blackjack round) — tagged with the {@link AffordanceKind} of the
@@ -86,6 +93,7 @@ public class ConsoleSession {
     LineReader lineReader;
     CommandParser commandParser;
     AffordanceContext affordanceContext;
+    GameLifecycle gameLifecycle;
     ApplicationContext applicationContext;
     List<Conversation> conversations;
 
@@ -127,6 +135,16 @@ public class ConsoleSession {
             } catch (UserInterruptException e) { // Ctrl-C — ignore, keep playing
                 continue;
             } catch (EndOfFileException e) {      // Ctrl-D — quit
+                break;
+            }
+
+            // A background death (a provoked NPC's lethal counterstrike) may have latched the game over while we
+            // were parked in readLine; the player's keystroke woke us. The game is finished, so whatever they
+            // typed is void — end the session the same way 'bye' does: bank this session's time via SuspendGame,
+            // then break. This is loop control, like the QuitCommand interception below; the game-over line was
+            // already presented (above the prompt) by the FightNpc presenter when it latched.
+            if (gameLifecycle.endRequested()) {
+                leaveGame();
                 break;
             }
 
@@ -221,8 +239,8 @@ public class ConsoleSession {
     private void hitTarget(String target) {
         // Same idiom as take: a fresh prototype use case per interaction. An ambiguous target makes the use
         // case present a menu and arm the AffordanceContext (kind HIT), so the next bare number resumes striking.
-        HitInputPort hitUseCase = applicationContext.getBean(HitInputPort.class);
-        hitUseCase.playerHitsTarget(target);
+        FightNpcInputPort fightNpcUseCase = applicationContext.getBean(FightNpcInputPort.class);
+        fightNpcUseCase.playerHitsTarget(target);
     }
 
     private void reviewBelongings() {
