@@ -116,6 +116,28 @@ class TakeUseCaseTest {
     }
 
     @Test
+    void refusesToTakeAnAnchoredItemAndWritesNothing() {
+        orientedAtScn1();
+        Item chest = Item.builder()
+                .id(ItemId.of("itm6"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("A barnacled sea chest.")
+                .fullDescription("A longer description of the chest.")
+                .container(true)
+                .anchored(true)
+                .version(1)
+                .build();
+        when(selectTargetSubcase.playerDesignatesTarget("chest", HERE)).thenReturn(chest);
+
+        useCase.playerTakesTarget("chest");
+
+        // A business refusal decided on the domain fact, before any write or transaction opens.
+        verify(presenter).presentItemAnchored(chest);
+        verify(presenter, never()).presentItemTaken(any());
+        verifyNoInteractions(itemOps, txOps);
+    }
+
+    @Test
     void presentsNothingWhenTheOrientSubcaseHasAlreadyPresented() {
         when(orientPlayerSubcase.playerGetsBearings()).thenThrow(new SubcaseAlreadyPresented());
 

@@ -3,6 +3,7 @@ package com.github.gameclean.infrastructure.world;
 import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.seed.ContainsEntry;
 import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.ItemEntry;
@@ -61,7 +62,7 @@ class GameSeedYamlReaderTest {
     void readsAuthoredItemsWithTheirSpawnRulesSplittingTheAuthoringSyntax() {
         List<ItemEntry> items = readSeed().getItems();
 
-        assertThat(items).extracting(ItemEntry::getId).containsExactly("itm1", "itm2", "itm3");
+        assertThat(items).extracting(ItemEntry::getId).containsExactly("itm1", "itm2", "itm3", "itm4");
 
         ItemEntry dagger = items.getFirst();
         assertThat(dagger.getShortDescription()).isEqualTo("A rusty dagger.");
@@ -72,6 +73,25 @@ class GameSeedYamlReaderTest {
         assertThat(spawn.getChanceNumerator()).isEqualTo(12);            // "12/50" split into a fraction
         assertThat(spawn.getChanceDenominator()).isEqualTo(50);
         assertThat(spawn.getMax()).isEqualTo(3);
+    }
+
+    @Test
+    void readsAuthoredContainmentSplittingTheChanceAndDefaultingToAbsence() {
+        List<ItemEntry> items = readSeed().getItems();
+
+        // itm4 (the oak chest) authors `container: true` and one contains entry; every other item omits both,
+        // so the flag defaults false and the contains list stays null (authored absence, like an absent spawn).
+        ItemEntry chest = items.get(3);
+        assertThat(chest.isContainer()).isTrue();
+        assertThat(chest.getContains()).containsExactly(new ContainsEntry("itm1", 1, 45));
+        // `portable` is unauthored on the chest — the carrier keeps the absence visible (null, not false),
+        // because the gate applies the kind-sensitive default (a container is anchored unless authored).
+        assertThat(chest.getPortable()).isNull();
+
+        ItemEntry dagger = items.getFirst();
+        assertThat(dagger.isContainer()).isFalse();
+        assertThat(dagger.getContains()).isNull();
+        assertThat(dagger.getPortable()).isNull();
     }
 
     @Test

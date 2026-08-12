@@ -24,6 +24,7 @@ import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
+import com.github.gameclean.core.port.seed.ContainsEntry;
 import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsError;
@@ -260,6 +261,177 @@ class InitializeGameUseCaseTest {
         assertThat(captor.getValue()).containsOnlyKeys("itm1");
         assertThat(captor.getValue().get("itm1")).containsExactly(SceneId.of("scn9"));
         verifyNothingInitialized();
+    }
+
+    // --- containment ----------------------------------------------------------------------------
+
+    @Test
+    void fillsASpawnedContainerFromItsAuthoredContainmentAndPresentsBoth() {
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                containedOnlyItem("itm1"),
+                containerItem("itm4", List.of(new ContainsEntry("itm1", 1, 1)), 1, 1, 1, "scn1")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        // The contained-only itm1 draws nothing of its own. The chest: spawn roll hits, scene pick 0 (scn1),
+        // 8 zero-glyphs -> "itm00000000"; then its one containment entry rolls a hit and mints the contained
+        // instance from 8 one-glyphs -> "itm11111111".
+        dice.willRoll(true, true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps, times(2)).saveItem(saved.capture());
+        Item chest = saved.getAllValues().get(0);
+        Item dagger = saved.getAllValues().get(1);
+        assertThat(chest.getId()).isEqualTo(ItemId.of("itm00000000"));
+        assertThat(chest.isContainer()).isTrue();
+        assertThat(chest.getLocation()).isEqualTo(new Location.OnGround(SceneId.of("scn1")));
+        assertThat(dagger.getId()).isEqualTo(ItemId.of("itm11111111"));
+        assertThat(dagger.isContainer()).isFalse();
+        assertThat(dagger.getLocation()).isEqualTo(new Location.Inside(chest.getId()));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Item>> presentedItems = ArgumentCaptor.forClass(List.class);
+        verify(presenter).presentGameInitialized(
+                anyList(), eq(PlayerId.of("plr1")), presentedItems.capture(), anyList());
+        assertThat(presentedItems.getValue()).extracting(i -> i.getId().asString())
+                .containsExactly("itm00000000", "itm11111111");
+    }
+
+    @Test
+    void leavesTheContainerEmptyWhenTheContainmentRollMisses() {
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                containedOnlyItem("itm1"),
+                containerItem("itm4", List.of(new ContainsEntry("itm1", 1, 45)), 1, 1, 1, "scn1")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        // The chest spawns (roll, scene pick, 8 glyphs); its containment roll misses, so no id is minted for
+        // the dagger — the pick script would throw on an unscripted ninth-plus pull.
+        dice.willRoll(true, false).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps).saveItem(saved.capture());
+        assertThat(saved.getValue().isContainer()).isTrue();
+    }
+
+    @Test
+    void rejectsContainsDeclaredOnANonContainerAndDoesNotInitialize() {
+        // itm1 declares contents without the container capability — an authoring shape violation at the gate.
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                new ItemEntry("itm1", "A rusty dagger.", "A plain iron dagger.", false, null,
+                        List.of(new ContainsEntry("itm2", 1, 2)), null)));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsAContainmentTargetThatDoesNotResolveAndDoesNotInitialize() {
+        // itm9 resolves to no authored item — the inter-template twin of an unknown spawn scene.
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                containerItem("itm4", List.of(new ContainsEntry("itm9", 1, 45)), 1, 1, 1, "scn1")));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, List<String>>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentItemContainmentTargetInvalid(captor.capture());
+        assertThat(captor.getValue()).containsOnlyKeys("itm4");
+        assertThat(captor.getValue().get("itm4")).containsExactly("itm9");
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsAContainmentTargetThatIsItselfAContainerAndDoesNotInitialize() {
+        // Nesting is not authored in this slice: a chest may not declare another chest among its contents.
+        // This is also the guard against the template cycle below (each chest containing the other), which
+        // would otherwise mint instances without bound at fill time.
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                containerItem("itm4", List.of(new ContainsEntry("itm5", 1, 2)), 1, 1, 1, "scn1"),
+                containerItem("itm5", List.of(new ContainsEntry("itm4", 1, 2)), 1, 1, 1, "scn1")));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, List<String>>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentItemContainmentTargetInvalid(captor.capture());
+        assertThat(captor.getValue()).containsOnlyKeys("itm4", "itm5");
+        assertThat(captor.getValue().get("itm4")).containsExactly("itm5");
+        assertThat(captor.getValue().get("itm5")).containsExactly("itm4");
+        verifyNothingInitialized();
+    }
+
+    // --- portability resolution at the gate -----------------------------------------------------
+
+    @Test
+    void plainItemsSpawnPortableWhileContainersDefaultToAnchored() {
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                item("itm1", 1, 1, 1, "scn1"),
+                containerItem("itm4", List.of(), 1, 1, 1, "scn1")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        // Each template consumes a spawn roll, a scene pick, and 8 id glyphs (dagger all-zero, chest all-one).
+        dice.willRoll(true, true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps, times(2)).saveItem(saved.capture());
+        // Neither entry authors `portable`, so the kind-sensitive defaults resolve at the gate:
+        assertThat(saved.getAllValues().get(0).isAnchored()).isFalse();   // a plain item is portable
+        assertThat(saved.getAllValues().get(1).isAnchored()).isTrue();    // a container is anchored
+    }
+
+    @Test
+    void anAuthoredPortableTrueMakesAContainerCarryable() {
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                new ItemEntry("itm6", "A barnacled sea chest.", "A sea chest crusted white with barnacle.",
+                        true, Boolean.TRUE, List.of(), new SpawnEntry(List.of("scn1"), 1, 1, 1))));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps).saveItem(saved.capture());
+        // The authored fact overrides the container default — the transportable chest is explicit.
+        assertThat(saved.getValue().isContainer()).isTrue();
+        assertThat(saved.getValue().isAnchored()).isFalse();
+    }
+
+    @Test
+    void anAuthoredPortableFalseAnchorsAPlainItem() {
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                new ItemEntry("itm8", "A granite anvil.", "An anvil nobody carries anywhere.",
+                        false, Boolean.FALSE, null, new SpawnEntry(List.of("scn1"), 1, 1, 1))));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps).saveItem(saved.capture());
+        // The authored fact anchors a non-container too — portability is a general item fact.
+        assertThat(saved.getValue().isAnchored()).isTrue();
     }
 
     // --- npc spawning ---------------------------------------------------------------------------
@@ -511,7 +683,20 @@ class InitializeGameUseCaseTest {
 
     private static ItemEntry item(String id, int chanceNumerator, int chanceDenominator, int max,
                                   String... candidateScenes) {
+        return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.", false, null, null,
+                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max));
+    }
+
+    /** A contained-only item: no spawn rule (never on the ground), appears only through containers. */
+    private static ItemEntry containedOnlyItem(String id) {
         return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.",
+                false, null, null, null);
+    }
+
+    /** A container with unauthored {@code portable} — the gate's container default (anchored) applies. */
+    private static ItemEntry containerItem(String id, List<ContainsEntry> contains, int chanceNumerator,
+                                           int chanceDenominator, int max, String... candidateScenes) {
+        return new ItemEntry(id, "An oak chest.", "A heavy oak chest banded in black iron.", true, null, contains,
                 new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max));
     }
 

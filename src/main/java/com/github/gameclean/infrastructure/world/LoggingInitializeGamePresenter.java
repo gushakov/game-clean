@@ -61,6 +61,13 @@ public class LoggingInitializeGamePresenter implements InitializeGamePresenterOu
     }
 
     @Override
+    public void presentItemContainmentTargetInvalid(Map<String, List<String>> invalidContainmentTargetsByItem) {
+        invalidContainmentTargetsByItem.forEach((itemId, targets) -> log.warn(
+                "[InitializeGame] Container {} declares invalid containment target(s) {} (unresolved, or a container — nesting is not authored)",
+                itemId, targets));
+    }
+
+    @Override
     public void presentInvalidParametersError(Exception e) {
         log.warn("[InitializeGame] Authored input rejected by the validity gate: {}", e.getMessage());
     }

@@ -170,7 +170,7 @@ public class UseCaseConfig {
                 new TerminalExaminePresenter(orientRenderer, itemRenderer, console, affordanceContext);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneItemSubcase select = new SelectSceneItemSubcase(presenter, itemOps);
-        return new ExamineUseCase(presenter, orient, select);
+        return new ExamineUseCase(presenter, orient, select, itemOps);
     }
 
     @Bean

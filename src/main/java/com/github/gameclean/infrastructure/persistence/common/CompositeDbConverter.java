@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.persistence.common;
 
 import com.github.gameclean.core.model.combat.HitPoints;
+import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -59,6 +60,10 @@ public interface CompositeDbConverter {
                 entity.setKind(ItemLocationKind.HELD);
                 entity.setRef(heldBy.getHolder().asString());
             }
+            case Location.Inside inside -> {
+                entity.setKind(ItemLocationKind.CONTAINED);
+                entity.setRef(inside.getContainer().asString());
+            }
         }
         return entity;
     }
@@ -68,6 +73,7 @@ public interface CompositeDbConverter {
         return entity == null ? null : switch (entity.getKind()) {
             case GROUND -> new Location.OnGround(SceneId.of(entity.getRef()));
             case HELD -> new Location.HeldBy(PlayerId.of(entity.getRef()));
+            case CONTAINED -> new Location.Inside(ItemId.of(entity.getRef()));
         };
     }
 }

@@ -121,4 +121,39 @@ class ItemTest {
         Item held = onGround.takenBy(PlayerId.of("plr1"));   // same id, different location
         assertThat(held).isEqualTo(onGround);
     }
+
+    @Test
+    void the_container_capability_defaults_false_and_survives_copy_on_write() {
+        assertThat(item("A rusty dagger.").isContainer()).isFalse();
+
+        Item chest = Item.builder()
+                .id(ItemId.of("itm1"))
+                .location(new Location.OnGround(SceneId.of("scn1")))
+                .shortDescription("An oak chest.")
+                .fullDescription("A longer description.")
+                .container(true)
+                .build();
+
+        // @With routes through the validating constructor, so the capability rides every location move.
+        assertThat(chest.takenBy(PlayerId.of("plr1")).isContainer()).isTrue();
+        assertThat(chest.droppedAt(SceneId.of("scn2")).isContainer()).isTrue();
+    }
+
+    @Test
+    void the_anchored_fact_defaults_false_and_survives_copy_on_write() {
+        assertThat(item("A rusty dagger.").isAnchored()).isFalse();
+
+        Item anchoredChest = Item.builder()
+                .id(ItemId.of("itm1"))
+                .location(new Location.OnGround(SceneId.of("scn1")))
+                .shortDescription("An oak chest.")
+                .fullDescription("A longer description.")
+                .container(true)
+                .anchored(true)
+                .build();
+
+        // The mutators stay mechanism, not policy: refusing to take an anchored item is the use case's
+        // checkpoint, so the fact simply rides the copy-on-write like every other field.
+        assertThat(anchoredChest.droppedAt(SceneId.of("scn2")).isAnchored()).isTrue();
+    }
 }

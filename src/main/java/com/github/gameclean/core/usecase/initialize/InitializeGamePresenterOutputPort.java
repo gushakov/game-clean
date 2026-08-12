@@ -75,6 +75,17 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
     void presentNpcSpawnSceneUnknown(Map<String, List<SceneId>> unknownSpawnScenesByNpc);
 
     /**
+     * Inter-template consistency failure: one or more authored containers declare a {@code contains} target
+     * that is not a valid containment target — the referenced authoring id resolves to no authored item, or
+     * it resolves to another <em>container</em> (nesting is not authored in this slice; forbidding it also
+     * closes the template-cycle / unbounded-instance-recursion hazard). One stripe covers both flavors — the
+     * diagnostic names the offending refs, and the author inspects them — carving finer stripes only when a
+     * consumer needs to tell them apart. Keyed by the container's authoring id, each mapped to its offending
+     * {@code contains} refs.
+     */
+    void presentItemContainmentTargetInvalid(Map<String, List<String>> invalidContainmentTargetsByItem);
+
+    /**
      * Validation failure while constructing value objects from authored input — a blank scene name, a
      * malformed scene / player / starting-scene id, a null field: the intra-aggregate validity gate
      * rejected an input. Used by both phases; the exception message identifies which.
