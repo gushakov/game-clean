@@ -65,6 +65,11 @@ public class TerminalExaminePresenter
     }
 
     @Override
+    public void presentContainerContents(Item container, List<Item> contents) {
+        itemRenderer.renderContainerContents(container, contents);
+    }
+
+    @Override
     public void presentNoSuchTarget(String target) {
         itemRenderer.renderNoSuchTarget(target);
     }

@@ -44,6 +44,34 @@ public class ItemRenderer {
         console.write(sb);
     }
 
+    /**
+     * The container reveal: the container's description exactly as {@link #renderItemDescription}, then what
+     * lies inside — each content on its own line by short description, sorted for a stable display order, or
+     * "It is empty." Choosing the empty phrasing is formatting this renderer owns; <em>that</em> the item is
+     * a container was the use case's decision (a distinct outcome stripe), never inferred here.
+     */
+    public void renderContainerContents(Item container, List<Item> contents) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW).bold())
+                .append(container.getShortDescription())
+                .style(AttributedStyle.DEFAULT)
+                .append(System.lineSeparator())
+                .append(container.getFullDescription().strip())
+                .append(System.lineSeparator());
+        if (contents.isEmpty()) {
+            sb.append("It is empty.");
+        } else {
+            sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN))
+                    .append("Inside you see:")
+                    .style(AttributedStyle.DEFAULT);
+            contents.stream()
+                    .map(Item::getShortDescription)
+                    .sorted()
+                    .forEach(description -> sb.append(System.lineSeparator()).append("  ").append(description));
+        }
+        console.write(sb);
+    }
+
     /** Nothing present is designated by the fragment the player typed. */
     public void renderNoSuchTarget(String target) {
         console.printError("You see nothing like '%s' here.".formatted(target));
@@ -98,6 +126,11 @@ public class ItemRenderer {
      */
     public void renderItemGotAway(ItemId itemId) {
         console.printError("Someone got there first — it is no longer here.");
+    }
+
+    /** The take was refused: the item is anchored — fixed where it stands. */
+    public void renderItemAnchored(Item item) {
+        console.printError("You cannot carry that — it will not budge.");
     }
 
     /** Confirmation that the player has put an item down in the current scene. */

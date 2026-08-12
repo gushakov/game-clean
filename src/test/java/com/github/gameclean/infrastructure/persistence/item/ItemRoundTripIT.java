@@ -102,6 +102,48 @@ class ItemRoundTripIT extends AbstractPostgresIT {
     }
 
     @Test
+    void a_contained_item_round_trips_and_is_found_inside_its_container_not_on_the_ground() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        Item chest = Item.builder()
+                .id(ItemId.of("itm1"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("An oak chest.")
+                .fullDescription("A heavy oak chest banded in black iron.")
+                .container(true)
+                .anchored(true)
+                .build();
+        Item dagger = Item.builder()
+                .id(ItemId.of("itm2"))
+                .location(new Location.Inside(chest.getId()))
+                .shortDescription("A rusty dagger.")
+                .fullDescription("A longer description of the item.")
+                .build();
+        adapter.saveItem(chest);
+        adapter.saveItem(dagger);
+
+        // The contained item is invisible to the ground listing (the kind-filtered query excludes it) ...
+        assertThat(adapter.findItemsInScene(HERE))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.getId()).isEqualTo(chest.getId());
+                    assertThat(item.isContainer()).isTrue();   // the capability column round-trips (V13)
+                    assertThat(item.isAnchored()).isTrue();    // the anchored column round-trips (V14)
+                });
+
+        // ... and is found inside its container, reconstituted through the CONTAINED (kind, ref) encoding.
+        assertThat(adapter.findItemsInside(chest.getId()))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.getId()).isEqualTo(ItemId.of("itm2"));
+                    assertThat(item.isContainer()).isFalse();
+                    assertThat(item.getLocation()).isEqualTo(new Location.Inside(ItemId.of("itm1")));
+                });
+        ItemDbEntity stored = repository.findById("itm2").orElseThrow();
+        assertThat(stored.getLocation().getKind()).isEqualTo(ItemLocationKind.CONTAINED);
+        assertThat(stored.getLocation().getRef()).isEqualTo("itm1");
+    }
+
+    @Test
     void saveItem_rejects_a_stale_write_with_an_optimistic_locking_error() {
         SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
         adapter.saveItem(groundItem("itm1", "A rusty dagger."));

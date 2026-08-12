@@ -45,6 +45,12 @@ public class ItemDbEntity {
     @Column("full_description")
     private String fullDescription;
 
+    @Column("container")
+    private boolean container;
+
+    @Column("anchored")
+    private boolean anchored;
+
     @Embedded.Nullable
     private LocationDbEntity location;
 }

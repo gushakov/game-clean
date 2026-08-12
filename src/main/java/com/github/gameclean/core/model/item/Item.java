@@ -32,6 +32,21 @@ import java.util.Objects;
  * player's keeping and {@link #droppedAt(SceneId)} puts it back down (immutable copy-on-write, like
  * {@code Player.moveTo}).
  *
+ * <p>An item may be a <b>container</b> — the {@link #container} capability flag, authored on its template.
+ * The flag is the only containment fact the container itself carries: its contents are <em>not</em> a
+ * collection it owns (the containment error rejected twice already, for {@code Scene} and {@code Player}) but
+ * a query against the contained items' {@link Location.Inside} references. There is no {@code Container}
+ * subtype — a subtype would own nothing, since containment lives on the contained item's location; the flag
+ * grows into a richer capability VO (capacity, lockability) only when an interaction demands it (emergence).
+ *
+ * <p>An item may be <b>anchored</b> — fixed where it stands, refused by {@code take} as a presented outcome
+ * (the use case branches on the fact; the mutators below stay mechanism, not policy). The polarity is
+ * deliberate: {@code false} (carryable) is the safe common default under the constructor-level
+ * {@code @Builder}, like {@link #container}. In the authored seed the fact is the positive {@code portable}
+ * key, with kind-sensitive defaults — a plain item is portable unless authored otherwise, a container is
+ * anchored unless authored {@code portable: true} (a transportable container, contents riding along by
+ * reference, is an explicit authored fact, never an accident); the seed gate translates.
+ *
  * <p>It also carries an opaque optimistic-locking {@link #version} — set by persistence on read, checked by
  * persistence on write — so two actors racing to take the same ground item cannot both succeed (the loser's
  * stale write is rejected). Like {@code DayPhaseLog}, the version is carried on the model but never interpreted
@@ -50,15 +65,24 @@ public class Item implements Designatable {
     String shortDescription;
     String fullDescription;
 
+    /** Container capability: whether other items can be located {@link Location.Inside} this one. */
+    boolean container;
+
+    /** Anchored: fixed where it stands — {@code take} refuses to carry it (a presented outcome). */
+    boolean anchored;
+
     /** Optimistic-locking token — opaque to the domain, managed by persistence, not part of value equality. */
     long version;
 
     @Builder
-    public Item(ItemId id, Location location, String shortDescription, String fullDescription, long version) {
+    public Item(ItemId id, Location location, String shortDescription, String fullDescription,
+                boolean container, boolean anchored, long version) {
         this.id = DomainValidation.requireNonNull(id, "item id must not be null");
         this.location = DomainValidation.requireNonNull(location, "item location must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
         this.fullDescription = requireNonBlank(fullDescription, "item full description");
+        this.container = container;
+        this.anchored = anchored;
         if (version < 0) {
             throw new InvalidDomainObjectError("item version must not be negative, got " + version);
         }

@@ -61,6 +61,27 @@ scenes:
 # into randomly chosen candidate scenes (one chance roll per try). Instances are
 # minted fresh generated ids at seed time; the `id` here is only an authoring
 # handle. Spawning is idempotent — a restart never re-rolls.
+#
+# A template may be a *container* (`container: true`): its `contains` list declares
+# what may lie inside, referencing other items by authoring handle. Each spawned
+# container instance rolls each entry once — a hit mints an instance of the
+# referenced template inside that very container. A contained target must not be a
+# container itself (no authored nesting). The `spawn` rule is optional: an item
+# without one never spawns onto the ground and appears only inside containers.
+#
+# The two placement routes are INDEPENDENT. `spawn.max` bounds only the ground-spawn
+# tries of its own rule; containment rolls never count against the contained item's
+# spawn rule (nor vice versa). A template's total world population is therefore its
+# ground placements (at most `spawn.max`) PLUS at most one instance per `contains`
+# entry per spawned container instance — e.g. up to 3 ground daggers plus 1 more per
+# chest below. Cardinality is authored where the placement is authored: the spawn
+# rule owns the ground, each container's `contains` entry owns that container.
+#
+# Portability (`portable`, optional): whether `take` may carry the item off. Defaults
+# are kind-sensitive — a plain item is portable unless authored `portable: false`; a
+# CONTAINER is NOT portable unless authored `portable: true`. A transportable container
+# (its contents ride along, since they reference the container by id, not by scene) is
+# a deliberate authored fact, never an accident of the model.
 items:
   - id: itm1
     shortDescription: A rusty dagger.
@@ -90,6 +111,21 @@ items:
       scenes: scn1
       chance: 40/50
       max: 4
+
+  - id: itm4
+    shortDescription: An oak chest.
+    fullDescription: >
+      A heavy oak chest banded in black iron, its lid scarred by old pry-marks.
+      Whoever forced it last did not bother to lock it again.
+    container: true
+    # no `portable:` — a container defaults to anchored, so `take chest` is refused
+    contains:
+      - item: itm1         # the rusty dagger may lie inside
+        chance: 1/45       # rolled once per spawned chest instance
+    spawn:
+      scenes: scn1
+      chance: 1/1
+      max: 1
 
 # Authored NPCs. Each is a *template*: its `spawn` rule places 0..max instances into
 # randomly chosen candidate scenes (one chance roll per try), exactly like items.

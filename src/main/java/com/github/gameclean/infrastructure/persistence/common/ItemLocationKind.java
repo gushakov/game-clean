@@ -5,7 +5,7 @@ import com.github.gameclean.core.model.item.Location;
 /**
  * Persistence-side discriminator for an item's {@link Location}: the storage tag of the sealed location VO,
  * carried as the {@code kind} half of the embedded {@link LocationDbEntity}. {@code GROUND} pairs with a scene
- * id, {@code HELD} with a holder (player) id.
+ * id, {@code HELD} with a holder (player) id, {@code CONTAINED} with a container item id.
  *
  * <p>It lives in the persistence ring, not the domain: which string tags the database uses is an encoding
  * artifact, not a domain rule (the domain's {@code Location} is a sealed type, not a string). The shared
@@ -19,5 +19,8 @@ public enum ItemLocationKind {
     GROUND,
 
     /** The item is carried by a holder; the ref is a player id. Maps to {@link Location.HeldBy}. */
-    HELD
+    HELD,
+
+    /** The item is inside a container item; the ref is that container's item id. Maps to {@link Location.Inside}. */
+    CONTAINED
 }

@@ -9,10 +9,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
- * Tests for the sealed {@link Location} value object — the two always-valid cases ({@link Location.OnGround} /
- * {@link Location.HeldBy}), each rejecting a null reference at the construction gate, and value equality. The
- * XOR a nullable-holder design would have to police is here structurally impossible: a location is one case or
- * the other, never both, never neither.
+ * Tests for the sealed {@link Location} value object — the three always-valid cases ({@link Location.OnGround} /
+ * {@link Location.HeldBy} / {@link Location.Inside}), each rejecting a null reference at the construction gate,
+ * and value equality. The XOR a nullable-fields design would have to police is here structurally impossible: a
+ * location is exactly one case, never two, never none.
  */
 class LocationTest {
 
@@ -33,9 +33,20 @@ class LocationTest {
     }
 
     @Test
-    void the_two_cases_are_never_equal() {
+    void inside_carries_the_container_and_compares_by_value() {
+        Location.Inside inside = new Location.Inside(ItemId.of("itm42"));
+
+        assertThat(inside.getContainer()).isEqualTo(ItemId.of("itm42"));
+        assertThat(inside).isEqualTo(new Location.Inside(ItemId.of("itm42")));
+    }
+
+    @Test
+    void distinct_cases_are_never_equal() {
         assertThat((Location) new Location.OnGround(SceneId.of("scn1")))
-                .isNotEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
+                .isNotEqualTo(new Location.HeldBy(PlayerId.of("plr1")))
+                .isNotEqualTo(new Location.Inside(ItemId.of("itm42")));
+        assertThat((Location) new Location.HeldBy(PlayerId.of("plr1")))
+                .isNotEqualTo(new Location.Inside(ItemId.of("itm42")));
     }
 
     @Test
@@ -48,5 +59,11 @@ class LocationTest {
     void heldBy_rejects_a_null_holder() {
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> new Location.HeldBy(null));
+    }
+
+    @Test
+    void inside_rejects_a_null_container() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> new Location.Inside(null));
     }
 }

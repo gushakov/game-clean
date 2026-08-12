@@ -46,6 +46,13 @@ below cite these where they produce new evidence.
    the author is most curious about.
 4. **Subcases for shared logic.** When and how must subcases (helpers vs terminal
    subcases) be introduced to factor logic shared across use cases?
+5. **The methodology as the human-AI alignment layer.** The rationale for Clean DDD —
+   letting *humans* align code with the problem space through explicit use cases over
+   DDD models — appears to be the very rationale that makes an *LLM* collaborator
+   effective on this codebase. Where exactly does the doctrine convert semantic
+   correctness into syntactic/structural checkability, and where does it still lean
+   on human dialectic and executable tests? (Surfaced by the containers vertical, #90;
+   doctrine in §13.)
 
 ---
 
@@ -255,6 +262,56 @@ arrived in the same slice: the player's strike is that second writer alongside t
 field appears now, cashing the promise verbatim — the `take` (contested, versioned) vs `drop` (single-writer,
 plain) contrast among items, replayed for NPCs. Neither was invented ahead of the interaction that reads it;
 both are the §2 discipline holding under a genuinely new pressure — a live adversary, not just a second command.
+
+**Containers cash the sealed VO's predicted third case — and the aggregate-boundary test holds a third
+time.** `[thread #1]` `[thread #3]` The `Location` javadoc had named "inside a container" as the anticipated
+third case, and the containers vertical collected: `Inside(ItemId container)` joined the sealed set and the
+promised guarantee fired *literally* — `CompositeDbConverter`'s exhaustive switch stopped compiling until the
+new case was handled, and the V6 `(kind, ref)` encoding absorbed it with no location DDL (only the capability
+column was new). The deeper decision was what a container *is*: **not** a `Container extends Item` subtype and
+**not** an owner of contents. Once containment is a location fact on the *contained* item, a subtype has
+nothing left to own — every boundary (the select generics, presenter ports, the one `item` table, `@With`
+copy-on-write) trades in `Item`, so a subtype would cost a discriminator plus downcasts and buy nothing. And
+the aggregate-boundary test that kept items out of `Scene` and `Player` holds a third time: no
+container↔contents invariant needs one transaction today, so the container carries only a false-default
+`container` capability boolean and "the contents of C" is a kind-filtered query. The flagged trigger to
+reopen the boundary is **capacity** ("at most N inside") — the first *genuine* such invariant this model has
+met: unenforceable as a pure query without racing, it would force either version-bumping the container per
+insert (contention) or accepting the race — a `[thread #3]` study waiting for its interaction. Two boundary
+inversions round it out. *Authoring is container-centric, the model contained-centric*: the seed says "the
+chest may hold a dagger, odds 1/45" (rolled once per spawned container instance), the model has the dagger
+point at its chest; the gate translates, exactly as scene YAML authors exits the use case resolves
+cross-aggregate — and a contains ref must resolve to a **non-container** (no authored nesting), which is also
+the acyclicity guard, since a template-level contains cycle would mint instances without bound at fill time.
+*Cardinality routes are independent*: `spawn.max` bounds only its own rule's ground tries and containment
+rolls never debit the contained template — cardinality is authored where the placement is authored, and a
+cross-route population cap would import an ordering artifact (whether the chest gets its dagger depending on
+how the ground tries happened to fall). On the reveal side, `examine` presents a container as its *own*
+outcome stripe: the use case branches on `isContainer()` and fetches the contents, so the presenter never
+inspects an item to tell "empty container" ("It is empty.") from "not a container" (silence) — deciding vs
+rendering. (Promotion candidate, flagged not promoted: *a container is a capability flag plus a location case
+on the contained item — never a subtype, never an owned collection; the first real container↔contents
+invariant (capacity) is the trigger to revisit the aggregate boundary.*)
+
+**A transportable container is an authored fact — and the boolean's polarity is chosen by the builder, not
+the author.** `[thread #1]` Taking a chest "just worked" the moment `take` met the containers vertical —
+contents ride along by reference, the payoff of by-identity containment — which was delightful but
+*implicit*. Making it explicit split one fact into two well-chosen names. Author-side it is the positive
+`portable:` with kind-sensitive defaults — a plain item is portable unless authored `portable: false`, a
+container is anchored unless authored `portable: true` — so the fun capability is opt-in, never an accident;
+the seed carrier keeps absence visible (a nullable `Boolean`, not a defaulted primitive) because the gate
+must tell authored-false from unauthored. Model-side the resolved fact is stored *inverted* as `anchored`
+(false = carryable): under a constructor-level `@Builder` the unset default must be the safe common case, or
+every existing fixture and future builder call silently flips meaning — the same reason `container` and
+`hostile` are false-default booleans. One concept, two names, one sanctioned translation point (the gate),
+the `mini-games` → `MiniGame` precedent. The refusal itself is the use case's checkpoint: `take` branches on
+the domain fact and presents its own stripe (`presentItemAnchored`) before any transaction opens, while the
+mutators stay mechanism, not policy — `takenBy` carries no anchored guard, matching `examine`'s
+`isContainer()` branch. The model states facts; interactions decide outcomes. (Promotion candidate, flagged
+not promoted: *when authoring vocabulary and model polarity disagree about a boolean's natural default, let
+the authoring side speak positively with kind-sensitive defaults and the model store the false-default
+inverse; the seed gate is the one translation point, and the carrier keeps authored-absence visible as
+null.*)
 
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
@@ -2279,6 +2336,51 @@ disjoint fields keyed by a discriminator, seal it into one subtype per family ra
 per-family-empty fields — the §2 sealed-over-nullable ruling applies to delivery-mechanism carriers too; the
 discriminator is then freed to be a pure routing key.*)
 
+**The buffer's currency has a second axis — the counterparty's animation decides the state's home.**
+`[thread #1]` `[thread #3]` `[thread #4]` The token-vs-envelope split above discriminates by *custody* (does
+the domain owe anyone memory of the conversation). The haggle and quest-dialogue explorations surfaced an
+**independent second test: who animates the counterparty.** A *persona* executed inside the player's own
+interaction (the blackjack dealer) leaves the conversation single-threaded, and the envelope is legal; a
+*ticker-animated actor* (a hostile fighter, a shopkeeper who counteroffers on his own clock) makes the
+conversation two-writer, and its state must be a **versioned aggregate**, the buffer degrading to the
+correlation token the token discipline already prescribes. Either test alone forces the aggregate — blackjack
+fails both; a haggle passes the animation test regardless of stakes. The reason the envelope cannot simply "go
+cross-thread" is that its safety rests on exactly two preconditions — **single writer** and **shell opacity**
+— and a second animated actor breaks both at once: the counteroffer is a read-modify-write on the envelope
+(`volatile` cannot express it), and whatever arbitrated two actors' concurrent updates would have to *read*
+the payload — infrastructure doing domain arbitration, the exact thing opacity exists to forbid. The
+methodology's home for two-actor shared state already exists (aggregate + `@Version` + narrow transactions,
+§5), and combat is the standing proof: a genuinely multi-threaded player↔NPC conversation with no envelope and
+no ticker-side buffer writes — only the synchronous outcomes arm `HIT`; the async outcomes narrate above the
+prompt. This also reveals `AffordanceContext`'s thread confinement as **semantic, not incidental**: arming is
+a *speech act* — it fixes how the player's next line will be read — and "the armed affordance is what the
+player is looking at" can be maintained only by the input thread (a ticker re-arming mid-keystroke makes an
+ordinal resolve against a menu the player never saw: a semantics race no lock fixes). `GameLifecycle` is the
+degenerate corner where a cross-thread write is safe *by construction* — monotonic, one bit,
+interpretation-free: whatever the next keystroke was going to mean, the game ends. So the recorded revisit
+trigger (above) sharpens: when the system-signal family arrives, an NPC-initiated arm must ride its *own
+dispatched turn* (the two-producer `Command` shape), serialized into the input beat — never a concurrent
+buffer write — and the async side never renders positional menus (numbering is safe only in the beat that
+arms it). Three holders, three contracts: `AffordanceContext` carries next-line *interpretation*
+(input-thread-confined, forever); `GameLifecycle` carries a terminal *control signal* (cross-thread,
+monotonic); the aggregate carries two-actor *evolving state* (any thread, the database arbitrates). The rule
+predicts shapes before building: the haggle is **combat-shaped** — a `Negotiation` aggregate; the animate
+policy's stance ladder *queries* the open negotiation (a query, never a duplicated flag on `Npc` — a second
+copy of a relationship is denormalization drift); the policy rolls only the *tempo* die and the command
+carries only the subject id, because a live contested aggregate cannot be pre-decided from a snapshot the way
+a wander's static exit can — content is computed at execution against fresh state. The quest dialogue is
+**blackjack-shaped** even though the quest-giver is a real `Npc`, because *during the dialogue* the NPC is a
+persona: replies are computed from the authored graph inside the player's own interaction. Corollary of that
+shape: an envelope conversation is **invisible to the tick** (its state lives in the terminal's memory), so
+it cannot pin its counterpart — the world may move under it, absorbed by lazy staleness (each resume
+re-validates the interlocutor; the vanished-hermit outcome is `presentTargetNoLongerAvailable`'s kin). Wanting
+the world to *respect* a conversation is itself the signal its state has outgrown the envelope. (Promotion
+candidate, flagged not promoted: *a conversation's between-interaction state is homed by two independent
+tests — custody (does the domain owe memory) and animation (does a second actor write); either forces a
+versioned aggregate and degrades the mode buffer to a correlation token; the mode buffer itself is
+input-thread-confined semantically — arming fixes the next line's interpretation — so cross-thread holders
+are legal only for interpretation-free, monotonic signals.*)
+
 **Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
 lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the
 full round — hole card and deck included — must transit the presenter, because the presenter is the arming
@@ -2758,6 +2860,77 @@ best-case worry was real. (Promotion candidate, flagged not promoted: *mental-mo
 architectural consequence, not a talent — a procedure given one home shaped like a procedure is recognizable
 to its actor and needs no guard matrix; audit alignment as a representation chain (mental model → spec →
 interactions → tests → affordance), and check the vocabulary boundary against the hexagon boundary.*)
+
+## 13. The methodology as the human-AI alignment layer
+
+This section names `[thread #5]`, surfaced when the containers vertical (#90) — a 37-file slice spanning
+every ring — landed essentially without runtime surprises, authored largely by an LLM under close human
+review. Either the model out-performs its reputation, or the doctrine does something identifiable. The claim
+here: identifiable — and it is the *same* thing the doctrine was already doing for humans. Nothing below was
+designed for AI; the dial was turned to its limit and the design held.
+
+**The LLM is the limiting case of the returning maintainer.** Clean DDD's target reader was always the
+maintainer who arrives without the original context — six months later, or newly hired. An LLM arrives with
+*zero* context, every session, by construction (patched by these memory files). Whatever recovers intent from
+artifacts for the human — use cases mirroring the Cockburn spec, screaming packages, presenter methods that
+name their outcome — is life support for the LLM; and these notes cache the one thing code underdetermines,
+the rationale. The collaborator is not a new kind of reader; it is the reader the methodology assumed, at
+maximum amnesia.
+
+**The load-bearing mechanism: aligning "plausible" with "correct".** `[thread #5]` An LLM's native operation
+is generating the continuation that looks right given its context. In most codebases plausible and correct
+diverge — the plausible completion forgets the transaction boundary, presents twice, mutates shared state.
+This codebase is engineered so the locally-plausible continuation *is* the correct one (the checkpoint shape,
+the presenter grammar, always-valid construction, one-stripe-one-presentation), and where style cannot
+guarantee, structure enforces. Rice's theorem — every non-trivial *semantic* property of arbitrary programs
+is undecidable — is why this must be construction, not verification: the doctrine simply never writes
+arbitrary programs. Semantic properties are converted, one by one, into syntactic or structural facts: an
+invalid aggregate is *inexpressible* (always-valid); a missing persistence case is a *compile error* (the
+sealed `Location`'s exhaustive switch — fired literally when `Inside` arrived, §2); a layering violation
+*fails the build* (ArchUnit); the largest class of enterprise runtime error — ORM session and lifecycle — is
+*deleted as a category* (no ORM); wiring is one statically-typed file (the composition root). What remains
+irreducibly semantic — the statics-to-runtime seams: MapStruct generation, derived-query resolution, YAML
+parsing, schema drift — is exactly where the round-trip ITs sit. "Correct without running the app" is
+therefore mislabelled: it is *targeted* execution at the seams plus purity between them, which makes
+whole-app execution nearly redundant.
+
+**Runtime errors are only the detectable residue — the Ubiquitous Language guards the silent kind.**
+`[thread #5]` A crash is the good failure mode: loud, located, cheap. The failure to fear is legal-but-wrong
+— code that runs, presents, persists, and silently means the wrong thing — and structure alone does not
+prevent it. Identifiers are the densest conditioning signal an LLM generates from:
+`presentErrorWhenExitTargetUnknown` carries its specification in its name, so every usage site restates the
+requirement in-context. Rename it `err4` and every structural guarantee survives, while errors migrate into
+the silent category nothing catches. The UL also removes the analysis→implementation translation step —
+Evans' original argument — which the LLM re-performs from scratch every session, and which is a known place
+to hallucinate a mapping: when the request says "examine a container and see its contents" and the code
+already says `Examine`, `Item`, `Location.Inside`, the requirement arrives nearly pre-compiled. Granular
+ports compound this: a use case's constructor is a one-line spec of its footprint, and a port method with its
+failure-currency javadoc is a contract too narrow to over-reach (ISP as documentation). Structure bounds
+*where* errors can live; language shrinks *whether* they are written at all.
+
+**The economics inversion — the strongest practical implication.** The standing objection to explicit
+architecture is ceremony, and a 37-file vertical *is* the ceremony. But ceremony's cost falls on writing,
+and its benefit on reading and verification. A human-AI pairing makes writing nearly free while verification
+— review, the executable spec, the structural gates — remains the scarce resource. So the pairing does not
+merely *benefit from* Clean DDD; it shifts the cost-benefit of explicitness itself. "Too much typing" is
+close to void as an argument against doing it right.
+
+**Confounds, kept honest.** (a) Mere *consistency* helps any sequence predictor: a rigorously uniform
+transaction-script codebase would also be extended fluently — bugs, idioms and all. The distinctive claim is
+that this uniformity is **load-bearing**: the patterns encode correctness properties, so fluent extension is
+*correct* extension, not merely consistent extension. (b) The doctrine is silent precisely at tool-level
+seams (builder-default polarity — which drove §2's `anchored`/`portable` inversion — mapper selection
+semantics, dice-script arithmetic); tests catch those, not doctrine. (c) A single disciplined author reviews
+everything; human review is part of the verification stack, and this thread's evidence cannot yet be
+separated from it. (d) Genuinely novel doctrine — container capacity's check-then-write race (§2) — is
+*flagged* by pattern-recognition but settled only by dialectic. The methodology tells the pairing where the
+problem is hard; it does not yet answer it.
+
+(Promotion candidate, flagged not promoted: *the dependency rule, always-valid construction, Ubiquitous
+Language and interaction-first use cases jointly convert semantic correctness into syntactic checkability —
+which serves a bounded-context, pattern-completing collaborator (an LLM) for the same reason it serves a
+returning human maintainer; and the pairing inverts the ceremony economics, since explicitness costs writing
+(now cheap) and pays in verification (still scarce).*)
 
 ## Non-doctrinal project decision
 

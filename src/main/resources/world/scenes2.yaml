@@ -148,6 +148,15 @@ scenes:
 #                       (distinct ids behind the same description)
 #   - `examine spoon`                            -> no match
 #
+# Containment surface (also certain, also scn1): itm6 is a container that always spawns,
+# always holding an instance of the contained-only itm7 (`contains` chance 1/1) —
+#   - `examine chest`   -> the container reveal, listing the whale tooth inside
+#   - `examine tooth`   -> no match: contained items are not on the ground (they surface
+#                          once `take` learns to reach into containers)
+#   - `take chest`      -> succeeds: itm6 is authored `portable: true`, so the chest — and
+#                          the tooth inside it, which references the chest, not the scene —
+#                          travels in your keeping (drop it elsewhere and examine it there)
+#
 # NOTE: spawning is idempotent — a restart never re-rolls. To see these on a DB that already
 # seeded a previous world, start from a clean play database first.
 items:
@@ -200,6 +209,29 @@ items:
       scenes: scn1
       chance: 1/1
       max: 2
+
+  - id: itm6
+    shortDescription: A barnacled sea chest.
+    fullDescription: >
+      A sailor's sea chest crusted white with barnacle, its rope handles rotted to
+      stubs. The hasp hangs open, long since forced by someone else.
+    container: true
+    portable: true         # explicitly authored — this chest CAN be carried off, contents and all
+    contains:
+      - item: itm7         # the whale tooth is always inside ...
+        chance: 1/1        # ... rolled certainly, once per spawned chest
+    spawn:
+      scenes: scn1
+      chance: 1/1          # the chest itself always spawns
+      max: 1
+
+  # Contained-only: no `spawn` rule, so it never lies on the ground — it exists solely
+  # through the sea chest's `contains` roll above.
+  - id: itm7
+    shortDescription: A scrimshaw whale tooth.
+    fullDescription: >
+      A whale tooth etched with a tiny, patient scene: a three-masted ship going
+      down by the bow while small boats pull away.
 
 # Authored NPCs — like the items, tuned so you actually see them without hunting. All three
 # spawn *certainly* (chance 1/1, max 1) into the starting scene scn1, so a fresh game
