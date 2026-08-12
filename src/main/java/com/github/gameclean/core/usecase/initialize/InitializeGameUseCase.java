@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.daytime.DayPhaseLog;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.ItemTemplate;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcTemplate;
@@ -24,6 +25,7 @@ import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputP
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
+import com.github.gameclean.core.port.seed.ContainsEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ItemEntry;
@@ -40,6 +42,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -151,8 +154,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             }
 
             // Checkpoint 6 — construct the item templates from the authored items (validity gate). Each
-            // template validates its descriptions and its spawn rule (valid chance, non-negative tries, at
-            // least one candidate scene) up front, independent of how the spawn later rolls.
+            // template validates its descriptions, its spawn rule when present (valid chance, non-negative
+            // tries, at least one candidate scene — an absent rule is authored absence: a contained-only item
+            // never spawns onto the ground), and its containment odds up front, independent of how the spawn
+            // and fill later roll. Declaring contains without the container capability is rejected here.
             List<AuthoredItem> authoredItems;
             try {
                 authoredItems = buildAuthoredItems(seed.getItems());
@@ -169,11 +174,23 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 8 — roll and place the item instances. Non-deterministic, but a pure in-memory
-            // construction with no persistence side effect, so it runs outside the transaction.
+            // Checkpoint 8 — inter-template rule: every authored containment target resolves to an authored
+            // item that is not itself a container (nesting is not authored in this slice — which also closes
+            // the template-cycle hazard, where a contains loop would mint instances without bound). Resolved
+            // against the authored set in memory and reported as a meaningful domain outcome, like the exit
+            // and spawn-scene checks.
+            Map<String, List<String>> invalidContainmentTargets = findInvalidContainmentTargets(authoredItems);
+            if (!invalidContainmentTargets.isEmpty()) {
+                presenter.presentItemContainmentTargetInvalid(invalidContainmentTargets);
+                return;
+            }
+
+            // Checkpoint 9 — roll and place the item instances, then fill each spawned container instance
+            // from its authored containment. Non-deterministic, but a pure in-memory construction with no
+            // persistence side effect, so it runs outside the transaction.
             List<Item> spawnedItems = spawnItems(authoredItems);
 
-            // Checkpoint 9 — construct the NPC templates from the authored NPCs (validity gate). Each template
+            // Checkpoint 10 — construct the NPC templates from the authored NPCs (validity gate). Each template
             // validates its descriptions, its spawn rule, and its move chance up front, independent of how the
             // spawn later rolls — the item phase's up-front-gate discipline, applied to NPCs.
             List<AuthoredNpc> authoredNpcs;
@@ -184,7 +201,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 10 — inter-aggregate rule: every NPC's candidate spawn scenes resolve to an authored
+            // Checkpoint 11 — inter-aggregate rule: every NPC's candidate spawn scenes resolve to an authored
             // scene. Resolved in-memory against the world being built, like the exit and item-spawn checks.
             Map<String, List<SceneId>> unknownNpcSpawnScenes = findUnknownNpcSpawnScenes(authoredNpcs, scenes);
             if (!unknownNpcSpawnScenes.isEmpty()) {
@@ -192,11 +209,11 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 11 — roll and place the NPC instances, outside the transaction (a pure in-memory
+            // Checkpoint 12 — roll and place the NPC instances, outside the transaction (a pure in-memory
             // construction with no persistence side effect, like item spawning).
             List<Npc> spawnedNpcs = spawnNpcs(authoredNpcs);
 
-            // Checkpoint 12 — one outcome, one atomic unit. A single transaction seeds the world if it is
+            // Checkpoint 13 — one outcome, one atomic unit. A single transaction seeds the world if it is
             // still empty, creates the player if none exists yet, spawns items if none were spawned yet, spawns
             // NPCs if none were spawned yet, creates the world clock at time zero if none exists yet, and seeds
             // the day-phase log at its sentinel if none exists yet; holding all these read-then-write guards in
@@ -292,18 +309,73 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         }
         List<AuthoredItem> authored = new ArrayList<>(entries.size());
         for (ItemEntry entry : entries) {
+            // An absent spawn rule is authored absence, not invalid input: a contained-only item never
+            // spawns onto the ground and appears exclusively through a container's containment rolls.
+            SpawnRule rule = null;
             SpawnEntry spawn = entry.getSpawn();
-            if (spawn == null) {
-                throw new InvalidDomainObjectError(
-                        "item '%s' has no spawn rule".formatted(entry.getId()));
+            if (spawn != null) {
+                Chance chance = new Chance(spawn.getChanceNumerator(), spawn.getChanceDenominator());
+                List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::of).toList();
+                rule = new SpawnRule(chance, spawn.getMax(), candidateScenes);
             }
-            Chance chance = new Chance(spawn.getChanceNumerator(), spawn.getChanceDenominator());
-            List<SceneId> candidateScenes = spawn.getScenes().stream().map(SceneId::of).toList();
-            SpawnRule rule = new SpawnRule(chance, spawn.getMax(), candidateScenes);
-            ItemTemplate template = new ItemTemplate(entry.getShortDescription(), entry.getFullDescription(), rule);
-            authored.add(new AuthoredItem(entry.getId(), template));
+            // Portability resolves at the gate: an authored `portable` wins; unauthored defaults by kind —
+            // a plain item is portable, a container is anchored (a transportable container, contents riding
+            // along by reference, is an explicit authored fact, never an accident). The model stores the
+            // resolved inverse (`anchored`, false = carryable, the safe builder default).
+            boolean anchored = entry.getPortable() != null ? !entry.getPortable() : entry.isContainer();
+            ItemTemplate template = new ItemTemplate(entry.getShortDescription(), entry.getFullDescription(),
+                    entry.isContainer(), anchored, rule);
+            authored.add(new AuthoredItem(entry.getId(), template, buildContainments(entry)));
         }
         return authored;
+    }
+
+    /**
+     * Constructs one authored item's containment at the validity gate: each {@code contains} entry's odds
+     * become a {@link Chance} up front, independent of how the fill later rolls — the template discipline
+     * (reject invalid authoring even if no roll would ever exercise it). Declaring {@code contains} without
+     * the container capability is rejected here too: a per-entry authoring shape violation, like an NPC
+     * without a spawn rule. Whether each target ref <em>resolves</em> is the inter-template checkpoint's
+     * business, not this gate's.
+     */
+    private static List<Containment> buildContainments(ItemEntry entry) {
+        List<ContainsEntry> contains = entry.getContains() == null ? List.of() : entry.getContains();
+        if (!contains.isEmpty() && !entry.isContainer()) {
+            throw new InvalidDomainObjectError(
+                    "item '%s' declares contains but is not a container".formatted(entry.getId()));
+        }
+        List<Containment> containments = new ArrayList<>(contains.size());
+        for (ContainsEntry containsEntry : contains) {
+            containments.add(new Containment(containsEntry.getItem(),
+                    new Chance(containsEntry.getChanceNumerator(), containsEntry.getChanceDenominator())));
+        }
+        return containments;
+    }
+
+    private static Map<String, List<String>> findInvalidContainmentTargets(List<AuthoredItem> authoredItems) {
+        Map<String, AuthoredItem> byAuthoredId = mapByAuthoredId(authoredItems);
+        Map<String, List<String>> invalid = new LinkedHashMap<>();
+        for (AuthoredItem item : authoredItems) {
+            List<String> offending = new ArrayList<>();
+            for (Containment containment : item.getContainments()) {
+                AuthoredItem target = byAuthoredId.get(containment.getTargetRef());
+                if (target == null || target.isContainer()) {
+                    offending.add(containment.getTargetRef());
+                }
+            }
+            if (!offending.isEmpty()) {
+                invalid.put(item.getAuthoredId(), offending);
+            }
+        }
+        return invalid;
+    }
+
+    private static Map<String, AuthoredItem> mapByAuthoredId(List<AuthoredItem> authoredItems) {
+        Map<String, AuthoredItem> byAuthoredId = new LinkedHashMap<>();
+        for (AuthoredItem item : authoredItems) {
+            byAuthoredId.putIfAbsent(item.getAuthoredId(), item);
+        }
+        return byAuthoredId;
     }
 
     private static Map<String, List<SceneId>> findUnknownSpawnScenes(List<AuthoredItem> authoredItems,
@@ -320,9 +392,21 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     }
 
     private List<Item> spawnItems(List<AuthoredItem> authoredItems) {
+        Map<String, AuthoredItem> byAuthoredId = mapByAuthoredId(authoredItems);
         List<Item> spawned = new ArrayList<>();
         for (AuthoredItem item : authoredItems) {
-            spawned.addAll(item.spawnInto(dice));
+            List<Item> instances = item.spawnInto(dice);
+            spawned.addAll(instances);
+            // Fill each spawned container instance from its authored containment: one roll per contains
+            // entry per instance, so two chests roll their contents independently. Every target resolved at
+            // the containment checkpoint, so the lookup cannot miss.
+            for (Item instance : instances) {
+                for (Containment containment : item.getContainments()) {
+                    byAuthoredId.get(containment.getTargetRef())
+                            .spawnInside(dice, containment.getChance(), instance.getId())
+                            .ifPresent(spawned::add);
+                }
+            }
         }
         return spawned;
     }
@@ -373,18 +457,26 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     }
 
     /**
-     * Use-case-private pairing of an item's authoring handle (used only for diagnostics — e.g. reporting an
-     * unknown spawn scene) with its always-valid {@link ItemTemplate}. The handle is not a domain identity,
-     * so it stays out of the model. It forwards {@link #candidateScenesNotIn} and {@link #spawnInto} to the
-     * template one level, so the use case tells the holder rather than reaching through it into the template
-     * and rule: the application keeps only the orchestration (looping authored items, holding the dice,
-     * collecting), while the whole spawn policy — including minting each instance's id from the dice — stays
-     * on the model.
+     * Use-case-private pairing of an item's authoring handle (used for diagnostics — e.g. reporting an
+     * unknown spawn scene — and as the key containment refs resolve against) with its always-valid
+     * {@link ItemTemplate} and its gate-validated {@link Containment} declarations. The handle is not a
+     * domain identity, so it stays out of the model. It forwards {@link #candidateScenesNotIn},
+     * {@link #spawnInto} and {@link #spawnInside} to the template one level, so the use case tells the
+     * holder rather than reaching through it into the template and rule: the application keeps only the
+     * orchestration (looping authored items, holding the dice, collecting), while the whole spawn policy —
+     * including minting each instance's id from the dice — stays on the model.
      */
     @Value
     private static class AuthoredItem {
         String authoredId;
         ItemTemplate template;
+
+        /** The authored containment of this item — empty unless it is a container declaring contents. */
+        List<Containment> containments;
+
+        boolean isContainer() {
+            return template.isContainer();
+        }
 
         List<SceneId> candidateScenesNotIn(Set<SceneId> knownSceneIds) {
             return template.candidateScenesNotIn(knownSceneIds);
@@ -393,6 +485,22 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         List<Item> spawnInto(Dice dice) {
             return template.spawnInto(dice);
         }
+
+        Optional<Item> spawnInside(Dice dice, Chance chance, ItemId container) {
+            return template.spawnInside(dice, chance, container);
+        }
+    }
+
+    /**
+     * Use-case-private form of one authored {@code contains} declaration after the validity gate: the
+     * contained template's authoring handle paired with the validated appearance {@link Chance}. The handle
+     * stays out of the model (not a domain identity); the odds are handed to the contained template as a
+     * <em>value</em> at fill time — they are the container's authored fact, not the contained template's.
+     */
+    @Value
+    private static class Containment {
+        String targetRef;
+        Chance chance;
     }
 
     /**

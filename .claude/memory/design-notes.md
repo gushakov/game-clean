@@ -256,6 +256,56 @@ field appears now, cashing the promise verbatim — the `take` (contested, versi
 plain) contrast among items, replayed for NPCs. Neither was invented ahead of the interaction that reads it;
 both are the §2 discipline holding under a genuinely new pressure — a live adversary, not just a second command.
 
+**Containers cash the sealed VO's predicted third case — and the aggregate-boundary test holds a third
+time.** `[thread #1]` `[thread #3]` The `Location` javadoc had named "inside a container" as the anticipated
+third case, and the containers vertical collected: `Inside(ItemId container)` joined the sealed set and the
+promised guarantee fired *literally* — `CompositeDbConverter`'s exhaustive switch stopped compiling until the
+new case was handled, and the V6 `(kind, ref)` encoding absorbed it with no location DDL (only the capability
+column was new). The deeper decision was what a container *is*: **not** a `Container extends Item` subtype and
+**not** an owner of contents. Once containment is a location fact on the *contained* item, a subtype has
+nothing left to own — every boundary (the select generics, presenter ports, the one `item` table, `@With`
+copy-on-write) trades in `Item`, so a subtype would cost a discriminator plus downcasts and buy nothing. And
+the aggregate-boundary test that kept items out of `Scene` and `Player` holds a third time: no
+container↔contents invariant needs one transaction today, so the container carries only a false-default
+`container` capability boolean and "the contents of C" is a kind-filtered query. The flagged trigger to
+reopen the boundary is **capacity** ("at most N inside") — the first *genuine* such invariant this model has
+met: unenforceable as a pure query without racing, it would force either version-bumping the container per
+insert (contention) or accepting the race — a `[thread #3]` study waiting for its interaction. Two boundary
+inversions round it out. *Authoring is container-centric, the model contained-centric*: the seed says "the
+chest may hold a dagger, odds 1/45" (rolled once per spawned container instance), the model has the dagger
+point at its chest; the gate translates, exactly as scene YAML authors exits the use case resolves
+cross-aggregate — and a contains ref must resolve to a **non-container** (no authored nesting), which is also
+the acyclicity guard, since a template-level contains cycle would mint instances without bound at fill time.
+*Cardinality routes are independent*: `spawn.max` bounds only its own rule's ground tries and containment
+rolls never debit the contained template — cardinality is authored where the placement is authored, and a
+cross-route population cap would import an ordering artifact (whether the chest gets its dagger depending on
+how the ground tries happened to fall). On the reveal side, `examine` presents a container as its *own*
+outcome stripe: the use case branches on `isContainer()` and fetches the contents, so the presenter never
+inspects an item to tell "empty container" ("It is empty.") from "not a container" (silence) — deciding vs
+rendering. (Promotion candidate, flagged not promoted: *a container is a capability flag plus a location case
+on the contained item — never a subtype, never an owned collection; the first real container↔contents
+invariant (capacity) is the trigger to revisit the aggregate boundary.*)
+
+**A transportable container is an authored fact — and the boolean's polarity is chosen by the builder, not
+the author.** `[thread #1]` Taking a chest "just worked" the moment `take` met the containers vertical —
+contents ride along by reference, the payoff of by-identity containment — which was delightful but
+*implicit*. Making it explicit split one fact into two well-chosen names. Author-side it is the positive
+`portable:` with kind-sensitive defaults — a plain item is portable unless authored `portable: false`, a
+container is anchored unless authored `portable: true` — so the fun capability is opt-in, never an accident;
+the seed carrier keeps absence visible (a nullable `Boolean`, not a defaulted primitive) because the gate
+must tell authored-false from unauthored. Model-side the resolved fact is stored *inverted* as `anchored`
+(false = carryable): under a constructor-level `@Builder` the unset default must be the safe common case, or
+every existing fixture and future builder call silently flips meaning — the same reason `container` and
+`hostile` are false-default booleans. One concept, two names, one sanctioned translation point (the gate),
+the `mini-games` → `MiniGame` precedent. The refusal itself is the use case's checkpoint: `take` branches on
+the domain fact and presents its own stripe (`presentItemAnchored`) before any transaction opens, while the
+mutators stay mechanism, not policy — `takenBy` carries no anchored guard, matching `examine`'s
+`isContainer()` branch. The model states facts; interactions decide outcomes. (Promotion candidate, flagged
+not promoted: *when authoring vocabulary and model polarity disagree about a boolean's natural default, let
+the authoring side speak positively with kind-sensitive defaults and the model store the false-default
+inverse; the seed gate is the one translation point, and the carrier keeps authored-absence visible as
+null.*)
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches

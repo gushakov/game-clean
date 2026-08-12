@@ -2,6 +2,7 @@ package com.github.gameclean.infrastructure.persistence.item;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
@@ -67,6 +68,17 @@ public class SpringItemRepositoryAdapter implements ItemRepositoryOperationsOutp
         } catch (DataAccessException | InvalidDomainObjectError e) {
             throw new PersistenceOperationsError(
                     "Cannot load items held by %s (unreadable or corrupt)".formatted(holder.asString()), e);
+        }
+    }
+
+    @Override
+    public List<Item> findItemsInside(ItemId container) {
+        try {
+            return repository.findByLocationKindAndLocationRef(ItemLocationKind.CONTAINED, container.asString())
+                    .stream().map(mapper::toDomain).toList();
+        } catch (DataAccessException | InvalidDomainObjectError e) {
+            throw new PersistenceOperationsError(
+                    "Cannot load items inside container %s (unreadable or corrupt)".formatted(container.asString()), e);
         }
     }
 

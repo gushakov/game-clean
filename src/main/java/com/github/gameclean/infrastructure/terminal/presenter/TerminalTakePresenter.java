@@ -56,6 +56,11 @@ public class TerminalTakePresenter
     }
 
     @Override
+    public void presentItemAnchored(Item item) {
+        itemRenderer.renderItemAnchored(item);
+    }
+
+    @Override
     public void presentNoSuchTarget(String target) {
         itemRenderer.renderNoSuchTarget(target);
     }

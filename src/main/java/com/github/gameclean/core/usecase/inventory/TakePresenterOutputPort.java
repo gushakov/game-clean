@@ -33,4 +33,12 @@ public interface TakePresenterOutputPort extends ErrorHandlingPresenterOutputPor
      * outcome — the write-side twin of {@code select}'s read-side {@code presentTargetNoLongerAvailable}.
      */
     void presentItemGotAway(ItemId itemId);
+
+    /**
+     * The item is <em>anchored</em> — fixed where it stands (an anchored chest, an unauthored-portable
+     * container), so the take is refused. A business outcome decided by the use case on the domain fact
+     * ({@code Item#isAnchored()}), reached before any write: the item stays exactly where it was, so it is
+     * not an error and not a race — its own stripe.
+     */
+    void presentItemAnchored(Item item);
 }

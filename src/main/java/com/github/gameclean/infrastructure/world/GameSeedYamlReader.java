@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.world;
 
+import com.github.gameclean.core.port.seed.ContainsEntry;
 import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.ItemEntry;
@@ -117,7 +118,28 @@ public class GameSeedYamlReader {
                 asString(node.get("id")),
                 asString(node.get("shortDescription")),
                 asString(node.get("fullDescription")),
+                asBoolean(node.get("container")),
+                asOptionalBoolean(node.get("portable")),
+                parseContains(node.get("contains")),
                 spawn);
+    }
+
+    /**
+     * Parses an item's authored {@code contains:} sequence — one {@code {item, chance}} entry per possible
+     * content — into {@link ContainsEntry} carriers; an absent key stays {@code null} (authored absence, the
+     * same convention as an absent {@code spawn:}). The chance fraction is split syntactically here, like the
+     * spawn chance; whether the referenced item resolves is the use-case gate's business.
+     */
+    private static List<ContainsEntry> parseContains(Object node) {
+        if (node == null) {
+            return null;
+        }
+        List<ContainsEntry> contains = new ArrayList<>();
+        for (Map<String, Object> containsNode : asListOfMaps(node)) {
+            int[] chance = parseChance(asString(containsNode.get("chance")));
+            contains.add(new ContainsEntry(asString(containsNode.get("item")), chance[0], chance[1]));
+        }
+        return contains;
     }
 
     private static NpcEntry toNpcEntry(Map<String, Object> node) {
@@ -176,6 +198,26 @@ public class GameSeedYamlReader {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> asMap(Object node) {
         return (Map<String, Object>) node;
+    }
+
+    private static boolean asBoolean(Object value) {
+        // An absent flag is authored absence — false. SafeConstructor yields a Boolean for YAML booleans;
+        // a quoted "true" arrives as a String, tolerated the same way asInt tolerates quoted numbers.
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return Boolean.parseBoolean(value.toString().strip());
+    }
+
+    /**
+     * A boolean whose absence must stay visible ({@code null}), because the gate applies a kind-sensitive
+     * default — unlike {@link #asBoolean}, which folds absence into {@code false}.
+     */
+    private static Boolean asOptionalBoolean(Object value) {
+        return value == null ? null : asBoolean(value);
     }
 
     private static int asInt(Object value, String what) {

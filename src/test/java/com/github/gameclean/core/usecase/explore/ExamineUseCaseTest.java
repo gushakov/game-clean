@@ -9,6 +9,7 @@ import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
+import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.usecase.orient.OrientPlayerResult;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcaseInputPort;
@@ -25,12 +26,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Interaction tests for {@link ExamineUseCase} in isolation. The use case is now <b>pure orchestration</b>
- * over two orthogonal subcases — {@code orient} (where the player stands) and {@code select} (which item they
- * mean) — so both are mocked and the test pins the composition, not the disambiguation. Each subcase's own
- * outcomes are covered by {@code OrientPlayerSubcaseTest} / {@code SelectSceneItemSubcaseTest}; here we drive
- * the three exits the parent must handle: a resolved item to describe, a subcase that has already presented
- * (the marker, swallowed as a no-op), and an unexpected failure routed to the catch-all.
+ * Interaction tests for {@link ExamineUseCase} in isolation. The use case orchestrates two orthogonal
+ * subcases — {@code orient} (where the player stands) and {@code select} (which item they mean) — so both are
+ * mocked and the test pins the composition, not the disambiguation. Each subcase's own outcomes are covered
+ * by {@code OrientPlayerSubcaseTest} / {@code SelectSceneItemSubcaseTest}; here we drive the exits the parent
+ * must handle: a resolved item to reveal — two stripes, decided on the domain fact (a plain item's
+ * description vs. a container's contents, fetched through the one persistence port this use case owns) — a
+ * subcase that has already presented (the marker, swallowed as a no-op), and an unexpected failure routed to
+ * the catch-all.
  */
 @ExtendWith(MockitoExtension.class)
 class ExamineUseCaseTest {
@@ -43,6 +46,8 @@ class ExamineUseCaseTest {
     private OrientPlayerSubcaseInputPort orientPlayerSubcase;
     @Mock
     private SelectTargetSubcaseInputPort<SceneId, Item> selectTargetSubcase;
+    @Mock
+    private ItemRepositoryOperationsOutputPort itemOps;
 
     @InjectMocks
     private ExamineUseCase useCase;
@@ -57,6 +62,8 @@ class ExamineUseCaseTest {
 
         verify(presenter).presentItemDescription(dagger);
         verifyNoMoreInteractions(presenter);
+        // A plain item's reveal never queries containment — no over-fetch on the common path.
+        verifyNoInteractions(itemOps);
     }
 
     @Test
@@ -69,6 +76,49 @@ class ExamineUseCaseTest {
 
         verify(presenter).presentItemDescription(dagger);
         verifyNoMoreInteractions(presenter);
+        verifyNoInteractions(itemOps);
+    }
+
+    @Test
+    void revealsAContainersContentsWhenTheResolvedItemIsAContainer() {
+        Item chest = container("itmCh3StXw7", "An oak chest.");
+        Item dagger = item("itmRt4Xw7Kq", "A rusty dagger.");
+        orientReturns("scn1");
+        when(selectTargetSubcase.playerDesignatesTarget("chest", HERE)).thenReturn(chest);
+        when(itemOps.findItemsInside(chest.getId())).thenReturn(List.of(dagger));
+
+        useCase.playerExaminesTarget("chest");
+
+        verify(presenter).presentContainerContents(chest, List.of(dagger));
+        verify(presenter, never()).presentItemDescription(any());
+        verifyNoMoreInteractions(presenter);
+    }
+
+    @Test
+    void revealsAnEmptyContainerAsTheSameStripeWithNoContents() {
+        Item chest = container("itmCh3StXw7", "An oak chest.");
+        orientReturns("scn1");
+        when(selectTargetSubcase.playerDesignatesChosenCandidate(1, List.of("itmCh3StXw7"), HERE)).thenReturn(chest);
+        when(itemOps.findItemsInside(chest.getId())).thenReturn(List.of());
+
+        useCase.playerExaminesChosenCandidate(1, List.of("itmCh3StXw7"));
+
+        verify(presenter).presentContainerContents(chest, List.of());
+        verifyNoMoreInteractions(presenter);
+    }
+
+    @Test
+    void routesAContainmentQueryFailureToTheCatchAll() {
+        Item chest = container("itmCh3StXw7", "An oak chest.");
+        orientReturns("scn1");
+        when(selectTargetSubcase.playerDesignatesTarget("chest", HERE)).thenReturn(chest);
+        PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
+        when(itemOps.findItemsInside(chest.getId())).thenThrow(boom);
+
+        useCase.playerExaminesTarget("chest");
+
+        verify(presenter).presentError(boom);
+        verify(presenter, never()).presentContainerContents(any(), any());
     }
 
     @Test
@@ -129,6 +179,16 @@ class ExamineUseCaseTest {
                 .location(new Location.OnGround(SceneId.of("scn1")))
                 .shortDescription(shortDescription)
                 .fullDescription("A longer description of the item.")
+                .build();
+    }
+
+    private static Item container(String id, String shortDescription) {
+        return Item.builder()
+                .id(ItemId.of(id))
+                .location(new Location.OnGround(SceneId.of("scn1")))
+                .shortDescription(shortDescription)
+                .fullDescription("A longer description of the container.")
+                .container(true)
                 .build();
     }
 }

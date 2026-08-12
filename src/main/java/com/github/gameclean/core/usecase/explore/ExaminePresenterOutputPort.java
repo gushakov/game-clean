@@ -3,9 +3,12 @@ package com.github.gameclean.core.usecase.explore;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
 
+import java.util.List;
+
 /**
  * Presenter (driven) output port for {@code Examine}, co-located with its use case. It carries only
- * {@code examine}'s own terminal outcome — the item's full description — plus the inherited catch-all.
+ * {@code examine}'s own terminal outcomes — the reveal of a plain item and the reveal of a container with
+ * its contents — plus the inherited catch-all.
  *
  * <p><b>The disambiguation outcomes are not here.</b> They moved to the {@code select} subcase's
  * {@link com.github.gameclean.core.usecase.select.SelectTargetPresenterOutputPort} when the dialogue was
@@ -21,4 +24,14 @@ public interface ExaminePresenterOutputPort extends ErrorHandlingPresenterOutput
 
     /** Happy path: the matched item's full description (reached by either designation — fragment or choice). */
     void presentItemDescription(Item item);
+
+    /**
+     * Happy path for a <em>container</em>: its full description together with what lies inside — the
+     * contents fetched by the use case as a query against the contained items' {@code Location.Inside}
+     * references. An empty list is the same stripe (the container reveals itself as empty; phrasing is the
+     * renderer's). It is a distinct stripe from {@link #presentItemDescription} because the <em>use case</em>
+     * decides on the domain fact ({@code Item#isContainer()}) which outcome occurred — a presenter that had
+     * to inspect the item to tell "empty container" from "not a container" would be deciding, not rendering.
+     */
+    void presentContainerContents(Item container, List<Item> contents);
 }

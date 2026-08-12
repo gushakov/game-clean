@@ -598,10 +598,47 @@ decision already existed from #66):
   natural home is a future revive use case that resets the player *and* de-aggros the world; #66/#87 non-goal).
   The #66 `isDead()` quiet-stripe guard stays as defense-in-depth. New DB / manual HP+`hostile` reset for now.
 
-Tests: 474 unit (Surefire, DB-free) + 25 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Containers` vertical **complete** (issue #90) — items that hold other items: authored containment seeded
+at init, `examine` reveals a container's contents, and `take` refuses anchored items (a portable container
+is an explicit authored fact):
+
+- **Domain** — `Location` gains its predicted third sealed case `Inside(ItemId container)`: containment is
+  a location fact on the *contained* item; the container owns no collection ("the contents of C" is a
+  query, like scene ground and player keeping). `Item` gains two false-default capability booleans —
+  `container` (may hold items) and `anchored` (fixed in place; `take` refuses). **No `Container` subtype.**
+  `ItemTemplate` gains both flags, an **optional** spawn rule (`null` = contained-only, never on the
+  ground), `instanceInside`, and `spawnInside(Dice, Chance, ItemId)` — one roll, the odds handed in as a
+  value (they are the container's authored fact, not the contained template's).
+- **Seed / init** — `ContainsEntry` (authoring ref + chance) + `ItemEntry.container` / `portable`
+  (nullable `Boolean` — absence must stay visible) / `contains`; reader parses `container:`/`portable:`/
+  `contains:`. `InitializeGame`: the gate builds containment odds up front, rejects `contains` on a
+  non-container, and resolves portability (`anchored = portable != null ? !portable : container` — plain
+  items portable, containers anchored unless authored `portable: true`); new inter-template checkpoint
+  `presentItemContainmentTargetInvalid` (every `contains` ref must resolve to a **non-container** authored
+  item — no authored nesting, which also closes the template-cycle/unbounded-recursion hazard); fill rolls
+  run per spawned container instance, inside the existing spawn-if-none guard (no new tx shape).
+  **Cardinality routes are independent**: `spawn.max` bounds only its own rule's ground tries; containment
+  rolls never debit the contained template's rule (semantics pinned in the `scenes.yaml` items comment).
+- **Persistence** — Flyway V13 (`item.container`) + V14 (`item.anchored`); the V6
+  `(location_kind, location_ref)` pair absorbed the new case as `CONTAINED` + container-id ref with **no
+  location DDL** — `CompositeDbConverter`'s exhaustive switches extended (the compile-error-on-new-case
+  guarantee fired as designed); `findItemsInside(ItemId)` on the item port over the same derived query.
+  Ground listing excludes contained items for free (kind-filtered).
+- **Examine / Take** — `ExamineUseCase` holds its first persistence port (the containment query); the
+  reveal is two stripes decided in the use case on the domain fact — `presentContainerContents(item,
+  contents)` (empty = "It is empty.") vs `presentItemDescription` — so the presenter renders without
+  inspecting. `Take` gains the refusal stripe `presentItemAnchored` at the head of the shared write tail,
+  before any transaction; anchored items stay designatable (the player tries and is told).
+- **Worlds** — `scenes.yaml`: oak chest in scn1 (contains itm1 @ 1/45; `portable` unauthored → anchored,
+  so `take chest` is refused); `scenes2.yaml`: barnacled sea chest (`portable: true`) always holding the
+  contained-only whale tooth — the guaranteed container test surface (`examine chest` / `take chest`).
+
+Tests: 496 unit (Surefire, DB-free) + 26 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
-over carried items (needs a composite ground∪keeping provisioner), **player revive/respawn + NPC de-aggro**
+over carried items (needs a composite ground∪keeping provisioner), **take from a container** (the
+contained items' consumer beyond `examine`; container capacity — the first genuine container↔contents
+invariant — waits for it, design-notes §2), **player revive/respawn + NPC de-aggro**
 (#87 step 1 ended the session on death; boot-with-dead-player and reviving a fresh incarnation without a
 still-`hostile` NPC attacking it are the deferred next slice), the outbox **event spine** (both
 tickers still poll; NPC retaliation is a persisted *stance* polled by the tick, not an event — the spine's

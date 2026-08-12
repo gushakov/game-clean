@@ -26,10 +26,13 @@ import java.util.List;
  * a valid item, so the only thing left is to move the item and persist it.
  *
  * <p><b>The write tail, shared by both interactions.</b> Once {@code select} returns the resolved item, both
- * designations converge on {@link #takeResolvedItem}: the item is moved into the player's keeping
- * ({@code item.takenBy}) and saved inside one narrow {@link TransactionOperationsOutputPort#doInTransaction
- * read-write transaction}, with the success presented only <em>after commit</em> so the player is never told
- * the item is theirs before the move is durable.
+ * designations converge on {@link #takeResolvedItem}. Its opening checkpoint is the <b>anchored refusal</b>:
+ * an item fixed where it stands (an anchored chest, say) is designatable — the player may try — but the take
+ * is refused as a presented business outcome ({@code presentItemAnchored}), decided here on the domain fact
+ * before any transaction opens, exactly as {@code examine} branches on {@code isContainer()}. Past that gate
+ * the item is moved into the player's keeping ({@code item.takenBy}) and saved inside one narrow
+ * {@link TransactionOperationsOutputPort#doInTransaction read-write transaction}, with the success presented
+ * only <em>after commit</em> so the player is never told the item is theirs before the move is durable.
  *
  * <p><b>Concurrency is closed authoritatively here.</b> A ground item is contested, so the transaction uses
  * the {@code (action, onLockDetected)} overload: the item's optimistic-locking version makes the
@@ -80,11 +83,18 @@ public class TakeUseCase implements TakeInputPort {
     }
 
     /**
-     * The shared write tail: move the resolved item into the holder's keeping and persist it in one narrow
-     * transaction, presenting success after commit and a lost concurrent race via {@code onLockDetected}. Void
-     * and terminal — it ends in a presentation on every path, so callers do nothing after it.
+     * The shared write tail: refuse an anchored item, otherwise move the resolved item into the holder's
+     * keeping and persist it in one narrow transaction, presenting success after commit and a lost concurrent
+     * race via {@code onLockDetected}. Void and terminal — it ends in a presentation on every path, so
+     * callers do nothing after it.
      */
     private void takeResolvedItem(PlayerId holder, Item item) {
+        // Checkpoint — an anchored item is fixed where it stands: a business refusal, presented and done,
+        // before any write or transaction. The use case decides on the domain fact; the presenter renders.
+        if (item.isAnchored()) {
+            presenter.presentItemAnchored(item);
+            return;
+        }
         Item taken = item.takenBy(holder);
         txOps.doInTransaction(
                 () -> {
