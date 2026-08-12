@@ -9,10 +9,11 @@ A small, text-based single-player RPG you play in your terminal — and, more to
 point, a **working laboratory for the Clean DDD methodology** in a domain that is
 rich enough to be interesting.
 
-You walk through a connected graph of scenes (`look`, `move north`), items spawn
-into the world at startup by chance, and the whole thing runs as one console
-process. It's deliberately playful. The game is the excuse; the architecture is the
-subject.
+You walk through a connected graph of scenes (`look`, `move north`), items and NPCs
+spawn into the world at startup by chance, chests hold treasure, NPCs wander off on
+their own — and fight back if you `hit` them — and the whole thing runs as one
+console process. It's deliberately playful. The game is the excuse; the
+architecture is the subject.
 
 ---
 
@@ -58,7 +59,8 @@ kept as provenance, not a runnable dependency.)
 ## How it was built
 
 Effectively all of the code here is **vibe-coded in collaboration with Claude**
-(Anthropic's Claude Opus 4.8, driven from Claude Desktop) — but under **close,
+(Anthropic's Claude — Opus 4.8 at first, joined along the way by Opus 5 and
+Fable 5, driven from Claude Desktop and Claude Code) — but under **close,
 deliberate human supervision**. Every slice was designed in conversation first and reviewed
 before it landed; nothing was merged on autopilot. That working style is itself
 part of what the project demonstrates: a methodology-disciplined human-AI pairing,
@@ -147,8 +149,8 @@ forwarded to the application.
 
 ```
 core/                       framework-free: the heart of the application
-  model/{aggregate}/        aggregate roots + value objects (scene, player, item, dice, id)
-  port/{operation}/         output ports (persistence, transaction, seed, …)
+  model/{aggregate}/        aggregate roots + value objects (scene, player, item, npc, combat, dice, …)
+  port/{operation}/         output ports (persistence, transaction, seed, npc commands, …)
   usecase/{goal}/           use cases + their input/presenter ports; subcases as peers
 infrastructure/             adapters + Spring wiring
   persistence/              Spring Data JDBC repos, DB entities, MapStruct mappers
@@ -157,9 +159,17 @@ infrastructure/             adapters + Spring wiring
   transaction/
 ```
 
-Built so far: game initialization, the interactive terminal shell, and the `look`,
-`move`, and item-spawning verticals. Not yet: NPCs, `look <target>` / `take`, and
-asynchronous/event processing. See `.claude/memory/project-context.md` for the live
+Built so far: game initialization and the interactive terminal shell; the `look`,
+`move` and `examine` verticals (with menu-based disambiguation of ambiguous
+targets); the inventory goals `take`, `drop` and `inventory`; **containers** —
+authored containment (`examine` a chest to see inside), with anchored-vs-portable
+chests an explicit authored fact; a game calendar and clock (`time`), with
+dawn/dusk announced by a background ticker; **NPCs** that spawn, wander on their
+own tick, and — once provoked with `hit` — strike back through a command channel,
+up to ending the session on the player's death; and a **blackjack mini-game**
+(`play`) as an ephemeral, never-persisted conversation. Not yet: taking items
+*from* a container, `look <exit>`, player revive/respawn, and the
+asynchronous/event spine. See `.claude/memory/project-context.md` for the live
 status.
 
 ---
