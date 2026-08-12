@@ -46,6 +46,13 @@ below cite these where they produce new evidence.
    the author is most curious about.
 4. **Subcases for shared logic.** When and how must subcases (helpers vs terminal
    subcases) be introduced to factor logic shared across use cases?
+5. **The methodology as the human-AI alignment layer.** The rationale for Clean DDD —
+   letting *humans* align code with the problem space through explicit use cases over
+   DDD models — appears to be the very rationale that makes an *LLM* collaborator
+   effective on this codebase. Where exactly does the doctrine convert semantic
+   correctness into syntactic/structural checkability, and where does it still lean
+   on human dialectic and executable tests? (Surfaced by the containers vertical, #90;
+   doctrine in §13.)
 
 ---
 
@@ -2853,6 +2860,77 @@ best-case worry was real. (Promotion candidate, flagged not promoted: *mental-mo
 architectural consequence, not a talent — a procedure given one home shaped like a procedure is recognizable
 to its actor and needs no guard matrix; audit alignment as a representation chain (mental model → spec →
 interactions → tests → affordance), and check the vocabulary boundary against the hexagon boundary.*)
+
+## 13. The methodology as the human-AI alignment layer
+
+This section names `[thread #5]`, surfaced when the containers vertical (#90) — a 37-file slice spanning
+every ring — landed essentially without runtime surprises, authored largely by an LLM under close human
+review. Either the model out-performs its reputation, or the doctrine does something identifiable. The claim
+here: identifiable — and it is the *same* thing the doctrine was already doing for humans. Nothing below was
+designed for AI; the dial was turned to its limit and the design held.
+
+**The LLM is the limiting case of the returning maintainer.** Clean DDD's target reader was always the
+maintainer who arrives without the original context — six months later, or newly hired. An LLM arrives with
+*zero* context, every session, by construction (patched by these memory files). Whatever recovers intent from
+artifacts for the human — use cases mirroring the Cockburn spec, screaming packages, presenter methods that
+name their outcome — is life support for the LLM; and these notes cache the one thing code underdetermines,
+the rationale. The collaborator is not a new kind of reader; it is the reader the methodology assumed, at
+maximum amnesia.
+
+**The load-bearing mechanism: aligning "plausible" with "correct".** `[thread #5]` An LLM's native operation
+is generating the continuation that looks right given its context. In most codebases plausible and correct
+diverge — the plausible completion forgets the transaction boundary, presents twice, mutates shared state.
+This codebase is engineered so the locally-plausible continuation *is* the correct one (the checkpoint shape,
+the presenter grammar, always-valid construction, one-stripe-one-presentation), and where style cannot
+guarantee, structure enforces. Rice's theorem — every non-trivial *semantic* property of arbitrary programs
+is undecidable — is why this must be construction, not verification: the doctrine simply never writes
+arbitrary programs. Semantic properties are converted, one by one, into syntactic or structural facts: an
+invalid aggregate is *inexpressible* (always-valid); a missing persistence case is a *compile error* (the
+sealed `Location`'s exhaustive switch — fired literally when `Inside` arrived, §2); a layering violation
+*fails the build* (ArchUnit); the largest class of enterprise runtime error — ORM session and lifecycle — is
+*deleted as a category* (no ORM); wiring is one statically-typed file (the composition root). What remains
+irreducibly semantic — the statics-to-runtime seams: MapStruct generation, derived-query resolution, YAML
+parsing, schema drift — is exactly where the round-trip ITs sit. "Correct without running the app" is
+therefore mislabelled: it is *targeted* execution at the seams plus purity between them, which makes
+whole-app execution nearly redundant.
+
+**Runtime errors are only the detectable residue — the Ubiquitous Language guards the silent kind.**
+`[thread #5]` A crash is the good failure mode: loud, located, cheap. The failure to fear is legal-but-wrong
+— code that runs, presents, persists, and silently means the wrong thing — and structure alone does not
+prevent it. Identifiers are the densest conditioning signal an LLM generates from:
+`presentErrorWhenExitTargetUnknown` carries its specification in its name, so every usage site restates the
+requirement in-context. Rename it `err4` and every structural guarantee survives, while errors migrate into
+the silent category nothing catches. The UL also removes the analysis→implementation translation step —
+Evans' original argument — which the LLM re-performs from scratch every session, and which is a known place
+to hallucinate a mapping: when the request says "examine a container and see its contents" and the code
+already says `Examine`, `Item`, `Location.Inside`, the requirement arrives nearly pre-compiled. Granular
+ports compound this: a use case's constructor is a one-line spec of its footprint, and a port method with its
+failure-currency javadoc is a contract too narrow to over-reach (ISP as documentation). Structure bounds
+*where* errors can live; language shrinks *whether* they are written at all.
+
+**The economics inversion — the strongest practical implication.** The standing objection to explicit
+architecture is ceremony, and a 37-file vertical *is* the ceremony. But ceremony's cost falls on writing,
+and its benefit on reading and verification. A human-AI pairing makes writing nearly free while verification
+— review, the executable spec, the structural gates — remains the scarce resource. So the pairing does not
+merely *benefit from* Clean DDD; it shifts the cost-benefit of explicitness itself. "Too much typing" is
+close to void as an argument against doing it right.
+
+**Confounds, kept honest.** (a) Mere *consistency* helps any sequence predictor: a rigorously uniform
+transaction-script codebase would also be extended fluently — bugs, idioms and all. The distinctive claim is
+that this uniformity is **load-bearing**: the patterns encode correctness properties, so fluent extension is
+*correct* extension, not merely consistent extension. (b) The doctrine is silent precisely at tool-level
+seams (builder-default polarity — which drove §2's `anchored`/`portable` inversion — mapper selection
+semantics, dice-script arithmetic); tests catch those, not doctrine. (c) A single disciplined author reviews
+everything; human review is part of the verification stack, and this thread's evidence cannot yet be
+separated from it. (d) Genuinely novel doctrine — container capacity's check-then-write race (§2) — is
+*flagged* by pattern-recognition but settled only by dialectic. The methodology tells the pairing where the
+problem is hard; it does not yet answer it.
+
+(Promotion candidate, flagged not promoted: *the dependency rule, always-valid construction, Ubiquitous
+Language and interaction-first use cases jointly convert semantic correctness into syntactic checkability —
+which serves a bounded-context, pattern-completing collaborator (an LLM) for the same reason it serves a
+returning human maintainer; and the pairing inverts the ceremony economics, since explicitness costs writing
+(now cheap) and pays in verification (still scarce).*)
 
 ## Non-doctrinal project decision
 
