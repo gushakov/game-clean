@@ -674,6 +674,30 @@ a domain `Dice`, both stochastic outcomes and generated identities are the model
 port; determinism is preserved by a seeded `Dice`; the discriminator is "is this part of the game or the world
 outside it," and the acid test is that no infrastructure crosses into the model as a callable.*)
 
+**Decomposition of `InitializeGame` examined and deliberately deferred — the assembly extraction is a
+pre-made decision awaiting its trigger.** `[thread #4]` At thirteen checkpoints (world → player → items →
+NPCs, each a legitimate stripe or gate) the interaction was examined for decomposition and left as is: it
+still reads top-to-bottom as the exact scenario, the mechanics already live in private statics, and doctrine
+puts no ceiling on checkpoint count. But the examination settled the *shape* of the eventual refactor, so it
+need not be re-litigated. First, the growth vector is not the goal but **per-content-kind replication**: each
+authored kind adds the same triple (construction gate → resolve-spawn-scenes → roll) plus a transaction guard
+plus a presenter stripe — and checkpoints 2–12 are pure computation touching no port, i.e. functional core
+accreting in the imperative shell. The agreed move is a **Path 1 assembly extraction**: a package-private
+assembly collaborator in the `initialize` package (not `core/model/` — it consumes the `port/seed` carriers,
+which the `core.model ↛ core.port` guard forbids the model to see, and the authored handles are deliberately
+non-identities) that returns the validated, populated in-memory world or throws **payload-carrying authoring-
+fault types** the parent catches and presents. No `SubcaseAlreadyPresented` is involved — the marker exists
+only for callees that *present*, and Path 1 helpers never do; the `buildContainments`/`buildAuthoredNpcs`
+throws of `InvalidDomainObjectError` are the in-file precedent, extended from the construction gate to the
+resolution rules. Second, the presenter port has the same disease: `presentItemSpawnSceneUnknown` /
+`presentNpcSpawnSceneUnknown` are one stripe ("an authored spawn scene doesn't resolve") distinguished by
+data, to be folded into a kind-parameterized `presentSpawnSceneUnknown(kind, map)` in the same refactor.
+Rejected alternatives, with reasons: a subcase (solves cross-use-case reuse with owned presentation — nothing
+here recurs elsewhere); splitting the interaction (the phase order is a domain precondition, and a split
+would push sequencing into `BootSequence` — the forbidden controller orchestration, settled earlier in this
+section). **Trigger: the next authored content kind.** That is when the triple replicates a third time and
+the extraction pays for itself; until then the interaction stays the honest scenario narrative.
+
 **Read-only and read-write interactions over one shared scene presentation.** `[thread #2]`
 `Look` (read-only) and `move` (read-write, the first interaction to *update* an aggregate) both
 operate *from the acting player's current scene*, reaching their outcomes by **branch-and-present**
