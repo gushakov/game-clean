@@ -86,6 +86,17 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
     void presentItemContainmentTargetInvalid(Map<String, List<String>> invalidContainmentTargetsByItem);
 
     /**
+     * Inter-template consistency failure: one or more authored NPCs declare a {@code corpse} ref that is not a
+     * valid corpse template — the referenced authoring id resolves to no authored item, or it resolves to a
+     * non-container (a corpse must be able to hold its loot), or to a template with its own ground-spawn rule
+     * (a corpse's only placement route is the death drop; a spawn rule would also lay corpses out at init).
+     * One stripe covers all flavors — the diagnostic names the offending ref, and the author inspects it —
+     * mirroring {@link #presentItemContainmentTargetInvalid}. Keyed by the NPC's authoring id, each mapped to
+     * its offending {@code corpse} ref.
+     */
+    void presentNpcCorpseRefInvalid(Map<String, String> invalidCorpseRefsByNpc);
+
+    /**
      * Validation failure while constructing value objects from authored input — a blank scene name, a
      * malformed scene / player / starting-scene id, a null field: the intra-aggregate validity gate
      * rejected an input. Used by both phases; the exception message identifies which.

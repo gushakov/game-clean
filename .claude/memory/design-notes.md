@@ -313,6 +313,35 @@ the authoring side speak positively with kind-sensitive defaults and the model s
 inverse; the seed gate is the one translation point, and the carrier keeps authored-absence visible as
 null.*)
 
+**The corpse cashes a third placement route — and the first authored handle enters the model as a handle,
+never dressed up as an identity.** `[thread #1]` The containers vertical had already created "no `spawn:`
+rule = placed by another route" for contained-only items; the corpse (#93) generalizes it: an NPC slain in
+combat leaves an anchored container item minted where it fell, so placement routes are now ground spawn,
+containment fill, and the *death drop* — and a corpse is *no new model concept at all*, just an ordinary item
+template whose capability flags happen to compose perfectly (container to hold the loot; the
+anchored-by-default polarity makes a corpse un-takeable without authoring a word). The genuinely new thing is
+`Npc.corpseRef`: authored handles had been deliberately non-identities confined to the gate, and one now
+persists on an aggregate. It stays a plain, opaque, nullable `String` — not a `CorpseRef` VO — because it
+names no existing instance (nothing exists to identify until the death mints it), the model can resolve
+nothing through it (resolution is a port concern at death time), and its only invariant is
+non-blank-if-present; an ID VO here would dress a foreign key in domain clothes. On the presentation side the
+corpse *folds into* `presentNpcSlain(npc, Optional<Item> corpse)` as data on the one stripe rather than
+earning a second stripe — the deliberate contrast with `examine`'s two-stripe container reveal: slaying is
+*one* outcome with an authored-absence datum (the use case still decided, by choosing what to pass), whereas
+reveal-contents vs describe-item are two different goals of examining. Only the corpse crosses to the
+presenter, never the rolled loot — what lies on the body stays unspoken until examined.
+
+**The anticipated `InitializeGame` extraction trigger was dodged, not fired — a new authored *rule* is not a
+new authored *kind*.** `[thread #4]` The assembly extraction had been parked with "trigger: the next authored
+content kind" (§4), and the corpse looked like that kind arriving. It wasn't: corpse authoring rides the
+existing item kind (a corpse template passes the item gate untouched) and adds one *cross-kind reference
+checkpoint* — npc `corpse:` must resolve to an authored container without a spawn rule — exactly the shape of
+the containment-target check, not a replication of the per-kind (construction gate → resolve-spawn-scenes →
+roll) triple. One map-returning helper plus one presenter stripe; the triple count stayed at two, so the
+extraction stays deferred and the trigger stays armed for a kind that actually replicates it. The discipline
+worth keeping: re-derive whether a pre-decided refactor's *named trigger* actually fired, rather than firing
+it on surface resemblance.
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -525,6 +554,49 @@ surface the Demeter option as *considered-and-declined* rather than silently def
 the same flag-it-even-if-rejected discipline applied to Boot-4 quirks. (Not a promotion candidate on its own —
 it is the presenter-boundary corollary of §10's LoD rule.)
 
+**A second valid-out flavor: valid by provenance *through a gate that re-runs* — the corpse blueprint.**
+`[thread #2]` The calendar port returns a valid model because its adapter constructs and fail-fasts at boot;
+the corpse-blueprint port (#93) — the first *runtime* consumer of authored world data — is valid-out for a
+subtler reason: its validity gate lives in a *different interaction*. `InitializeGame` re-checks every
+authored corpse ref on every boot (its gate checkpoints run before the idempotency guards, so a pre-seeded
+world still re-validates), presenting authoring faults there; by the time a death pulls a blueprint the
+authoring is valid by provenance, and the adapter may construct real `ItemTemplate`s and `Chance`s. What can
+still fail at death time is therefore never "invalid authored input" but **drift** — a persisted `corpse_ref`
+against a since-edited seed — an integrity fault in the port's own error, propagating to `presentError` with
+the *no-half-death* rule: the blueprint is pulled before the transaction opens, so a failed pull fails the
+whole strike and nothing is written. Two sharpenings fall out. *One file, two currencies:* the same YAML
+behind the same adapter now serves invalid-capable `*Entry` carriers to the boot gate and valid models to the
+death pull — provenance, not the adapter, the file, or the hexagon side, decides the currency (the §3 rule,
+now demonstrated within a single class). *A different contract is a new port, not a new method:* the runtime
+need did not widen the seed port ("the whole authored world, once, invalid-capable") but got its own narrow
+one ("one minting recipe, on demand, valid") — output-port granularity following the *contract*, not the data
+source.
+
+**A cache below the currency translation is an adapter detail; a cache that moves the currency or the failure
+routing is a §3 decision — the seed memoizer vs. the calendar.** `[thread #2]` The memoized seed (#95) and the
+cached calendar look like one pattern — a driven adapter holding a parsed authored resource — and are
+architecturally two. The calendar's eager fail-fast cache *is* the design: it changed the port's currency
+(carrier → valid model) and moved invalidity from a presented outcome to a boot fault — the documented
+cached-as-config deviation (§11). The seed memoizer changes neither: both ports keep their currencies, a broken
+seed still surfaces through `loadGameSeed` under the boot use case's checkpoint as a *presented* outcome, and
+the memoizing accessor throws raw so each port method still wraps into its own error — "one file, two
+currencies" survives the cache. The litmus that generalizes: **does the cache change what crosses the port, or
+where invalidity surfaces?** No → an implementation detail, decided freely inside the adapter (lazy, sitting
+*below* the error translation). Yes → the §3 deviation, taken consciously. Two corollaries. *Motive:* the
+memoizer was justified by provenance, not performance — it turned "the seed is assumed unedited after boot"
+(an assumption doing load-bearing work in the valid-by-provenance-through-a-re-running-gate argument above)
+into "one parse per run" (an invariant); a cache that merely saves milliseconds on a rare path stays unwritten
+under emergence. *ISP side:* the shared snapshot is the cohesion payoff of one adapter serving several ports
+over one resource — split the adapter per port and you either parse twice or mint a third holder collaborator;
+this realizes the persistence module's "single adapter class: cross-cutting concerns applied once" rationale on
+a source adapter, while port granularity keeps following the contract, not the data source (previous
+paragraph). The license is narrow, not general: adapter state stays a smell except as a write-once snapshot of
+an immutable resource held in immutable carriers — `volatile` for safe publication, no locking (a racy
+duplicate parse is benign), failures never cached so a retry stays live. (Promotion candidate, flagged not
+promoted: *a driven-adapter cache is architecture-invisible iff it sits below the port's error translation and
+changes neither the boundary currency nor where invalidity surfaces — test any cache proposal against those
+two invariants, and justify it by provenance-tightening, not throughput*.)
+
 ## 4. Use cases as first-class interactions
 
 **Interaction shape (the world-construction phase).** The actor is the *system at startup*.
@@ -673,6 +745,30 @@ never *one role split in two ports*; they were two concerns mis-filed as ports, 
 a domain `Dice`, both stochastic outcomes and generated identities are the model's own — neither is an output
 port; determinism is preserved by a seeded `Dice`; the discriminator is "is this part of the game or the world
 outside it," and the acid test is that no infrastructure crosses into the model as a callable.*)
+
+**Decomposition of `InitializeGame` examined and deliberately deferred — the assembly extraction is a
+pre-made decision awaiting its trigger.** `[thread #4]` At thirteen checkpoints (world → player → items →
+NPCs, each a legitimate stripe or gate) the interaction was examined for decomposition and left as is: it
+still reads top-to-bottom as the exact scenario, the mechanics already live in private statics, and doctrine
+puts no ceiling on checkpoint count. But the examination settled the *shape* of the eventual refactor, so it
+need not be re-litigated. First, the growth vector is not the goal but **per-content-kind replication**: each
+authored kind adds the same triple (construction gate → resolve-spawn-scenes → roll) plus a transaction guard
+plus a presenter stripe — and checkpoints 2–12 are pure computation touching no port, i.e. functional core
+accreting in the imperative shell. The agreed move is a **Path 1 assembly extraction**: a package-private
+assembly collaborator in the `initialize` package (not `core/model/` — it consumes the `port/seed` carriers,
+which the `core.model ↛ core.port` guard forbids the model to see, and the authored handles are deliberately
+non-identities) that returns the validated, populated in-memory world or throws **payload-carrying authoring-
+fault types** the parent catches and presents. No `SubcaseAlreadyPresented` is involved — the marker exists
+only for callees that *present*, and Path 1 helpers never do; the `buildContainments`/`buildAuthoredNpcs`
+throws of `InvalidDomainObjectError` are the in-file precedent, extended from the construction gate to the
+resolution rules. Second, the presenter port has the same disease: `presentItemSpawnSceneUnknown` /
+`presentNpcSpawnSceneUnknown` are one stripe ("an authored spawn scene doesn't resolve") distinguished by
+data, to be folded into a kind-parameterized `presentSpawnSceneUnknown(kind, map)` in the same refactor.
+Rejected alternatives, with reasons: a subcase (solves cross-use-case reuse with owned presentation — nothing
+here recurs elsewhere); splitting the interaction (the phase order is a domain precondition, and a split
+would push sequencing into `BootSequence` — the forbidden controller orchestration, settled earlier in this
+section). **Trigger: the next authored content kind.** That is when the triple replicates a third time and
+the extraction pays for itself; until then the interaction stays the honest scenario narrative.
 
 **Read-only and read-write interactions over one shared scene presentation.** `[thread #2]`
 `Look` (read-only) and `move` (read-write, the first interaction to *update* an aggregate) both
@@ -1448,7 +1544,25 @@ outright (`Npc`). The trigger to add `Npc.@Version` is named and deferred by eme
 able to affect an NPC** (take-from, attack, trade), which is exactly what introduces the second writer a lock
 guards against, and is the same event that turns NPC behaviour from polling into the §8 event spine. Carrying
 a version now would be speculation against an interaction that does not exist; the plain-transaction unit test
-(mirroring `DropUseCaseTest`) pins that a lock loss is unreachable rather than merely absent.
+(mirroring `DropUseCaseTest`) pins that a lock loss is unreachable rather than merely absent. (*Since cashed
+verbatim by #66:* the `hit` vertical made the player that second writer, and the version arrived with it —
+see §2's "combat cashes the last two deferrals" — so this paragraph stands as the record of the deferral
+reasoning, its trigger having fired exactly as named.)
+
+**A version-checked *delete* joins the guarded-write family — the race outcome must not depend on the write's
+SQL verb.** `[thread #3]` A slaying (#93) replaces the NPC row with its corpse: one atomic unit holds the
+delete and the corpse + loot inserts, so a death never commits without its corpse nor a corpse without its
+death — the one-outcome-one-unit rule with a *removal* inside it for the first time. The subtle requirement
+is that the delete carries the same optimistic version check as the save: a naive delete-by-id would let a
+strike slay an NPC that a concurrent wander had already moved past — a race the *versioned save* would have
+lost (`presentNpcGotAway`) — so the loser's fate would silently differ depending on whether the lethal write
+happened to be an UPDATE or a DELETE. Spring Data JDBC's `delete(aggregate)` honors `@Version`
+(`DELETE … WHERE id = ? AND version = ?`), pinned against real Postgres. The accepted trade: the
+spawn-idempotency guard counts rows, so a world whose *every* NPC has been slain reads not-yet-spawned and
+the next boot re-spawns fresh instances while their predecessors' corpses accumulate. Accepted rather than
+minting a separate world-was-seeded marker, because the guard's purpose is preventing a duplicate *living*
+population, not remembering history — and the corpses themselves are the visible record. The trade is pinned
+in an IT, so it reads as doctrine, not as a bug awaiting discovery.
 
 ## 6. The composition root — the framework held at arm's length
 

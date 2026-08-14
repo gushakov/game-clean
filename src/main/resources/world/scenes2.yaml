@@ -233,6 +233,36 @@ items:
       A whale tooth etched with a tiny, patient scene: a three-masted ship going
       down by the bow while small boats pull away.
 
+  # Death drops (see npcs.corpse below) — minted only when their NPC is slain; no `spawn`
+  # rule, anchored by the container default. Two corpse flavors for testing:
+  #   - `hit fishwife` until slain -> her corpse drops CERTAINLY holding the gutting-knife
+  #     (`examine corpse` reveals it — the guaranteed looted-corpse surface)
+  #   - `hit lamplighter` until slain -> his corpse holds nothing (`examine` says it is empty)
+  #   - the watchman authors NO corpse — slain, he simply vanishes from the steps
+  - id: itm8
+    shortDescription: The corpse of a hunched fishwife.
+    fullDescription: >
+      The fishwife lies in her stiff oilskins, finally facing away from the water.
+      Her hands are curled as though still working a catch.
+    container: true
+    contains:
+      - item: itm9         # her gutting-knife stays with the body ...
+        chance: 1/1        # ... certainly, once per slaying
+
+  # Contained-only: exists solely through the fishwife's corpse above.
+  - id: itm9
+    shortDescription: A well-worn gutting-knife.
+    fullDescription: >
+      A short curved blade thinned by decades of whetstone, its wooden grip worn to
+      the shape of one particular hand.
+
+  - id: itm10
+    shortDescription: The corpse of a blind lamplighter.
+    fullDescription: >
+      The lamplighter lies gaunt and still, tarred pole beside him. Whatever tune he
+      hummed, the tide answers it alone now. He carried nothing else.
+    container: true
+
 # Authored NPCs — like the items, tuned so you actually see them without hunting. All three
 # spawn *certainly* (chance 1/1, max 1) into the starting scene scn1, so a fresh game
 # lists them under "Also here:" the moment you `look`. Each then wanders on the NPC ticker,
@@ -251,6 +281,7 @@ npcs:
     moveChance: 1/30       # wanders fairly often (~every 30s at the 1s tick)
     attackChance: 1/3      # gutting-knife handy — hits back hard once provoked (~every ~3s)
     hitPoints: 15          # health pool it spawns at; a strike does 1..10 damage
+    corpse: itm8           # slain, she certainly leaves her knife on the body (see items)
     spawn:
       scenes: scn1
       chance: 1/1          # certain to spawn
@@ -264,6 +295,7 @@ npcs:
     moveChance: 1/50       # wanders, but lingers longer (~every 50s)
     attackChance: 1/6      # frail and blind — flails back only now and then once provoked
     hitPoints: 12          # health pool it spawns at; a strike does 1..10 damage
+    corpse: itm10          # slain, he leaves an empty-handed corpse (see items)
     spawn:
       scenes: scn1
       chance: 1/1
@@ -277,6 +309,7 @@ npcs:
     moveChance: 1/200      # moves very rarely — all but rooted to the spot (~every few minutes)
     attackChance: 1/4      # stolid but stubborn — swings steadily once roused
     hitPoints: 18          # health pool it spawns at; a strike does 1..10 damage
+    # no `corpse:` — slain, the watchman leaves nothing behind (the corpse-less path)
     spawn:
       scenes: scn1
       chance: 1/1

@@ -46,19 +46,20 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 
 - `core/` — framework-free. `model/{aggregate}/` (aggregate roots + VOs, shared — `scene/`, `player/`
   (the `Player` aggregate — position + `HitPoints` + optimistic-locking `version` since #66 step 2),
-  `item/`, `npc/` (the `Npc` aggregate + `NpcId`/`NpcTemplate`; carries a `hostile` stance + authored `attackChance` since #66 step 2), `combat/` (the shared `HitPoints` gauge VO — current/max + clamp-at-zero damage, held by both `Npc` and `Player`), `spawn/` (the shared `SpawnRule` VO, used by item and npc templates), `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
+  `item/`, `npc/` (the `Npc` aggregate + `NpcId`/`NpcTemplate`; carries a `hostile` stance + authored `attackChance` since #66 step 2, and a nullable opaque `corpseRef` authored handle since #93), `combat/` (the shared `HitPoints` gauge VO — current/max + clamp-at-zero damage, held by both `Npc` and `Player`), `spawn/` (the shared `SpawnRule` VO, used by item and npc templates), `calendar/`, `clock/`, `daytime/` (`DayPhase`/`DayPhaseSchedule` VOs + the `DayPhaseLog` singleton aggregate),
   `dice/` (the `Dice` domain capability — interface + `AbstractDice`/`SystemDice`/`SeededDice` impls — and the `Chance` VO it rolls; design-notes §4),
   `designation/` (the `Designatable` capability interface — the two facts the `select` dialogue asks of a candidate, implemented by `Item`; #67),
   `blackjack/` (the cards **generic subdomain** as pure VOs — `Suit`/`Rank`/`Card`/`Hand`/`Deck`/`BlackjackRound`/`RoundOutcome`; ArchUnit-confined to itself + `dice/` + the `model/` root + JDK/Lombok — a simulated module boundary, so the package can never name a `PlayerId`; #72),
   `id/` (the `Ids` helper — the model's single knower of the generated-id-body alphabet+length; `ItemId.mint(Dice)` rolls bodies through it, design-notes §2/§4/#53)) plus the `model/` root holding the always-valid construction gate's failure type
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
+  `port/corpse/` (the corpse-blueprint source port — `CorpseBlueprintSourceOperationsOutputPort.loadCorpseBlueprint(ref)` returning the **valid-out** `CorpseBlueprint` carrier + its own error; the first runtime consumer of authored world data, #93),
   `port/npccommands/` (the NPC command channel's driven port — `NpcCommandsOutputPort.dispatchStrike`/`dispatchWander`; the port methods ARE the core-side command vocabulary, #66),
   `port/seed/`, `port/calendar/` (calendar-source port + error), `port/daytime/`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -633,14 +634,47 @@ is an explicit authored fact):
   so `take chest` is refused); `scenes2.yaml`: barnacled sea chest (`portable: true`) always holding the
   contained-only whale tooth — the guaranteed container test surface (`examine chest` / `take chest`).
 
-Tests: 496 unit (Surefire, DB-free) + 26 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`NPC corpse` vertical **complete** (issue #93) — a slain NPC leaves a corpse: an anchored container item
+minted where it fell, holding rolled loot; the death drop is the third placement route (ground spawn,
+containment fill, death drop):
+
+- **Domain** — `Npc`/`NpcTemplate` gain a nullable opaque `corpseRef` (the first authored handle persisted on
+  an aggregate — a plain `String`, non-blank-if-present, copied onto spawned instances; deliberately not an ID
+  VO, design-notes §2); `ItemTemplate.spawnsOnGround()` names the no-spawn-rule fact.
+- **Authoring** — a corpse template is an ordinary `items:` entry: `container: true`, **no** `spawn:` rule,
+  optional `contains:` loot (rolled once per slaying); anchored by the container polarity default. NPCs
+  reference it via an optional `corpse: <ref>` (absent = leaves no corpse). `scenes.yaml`: the wanderer's
+  corpse may hold the silver ring (1/2); `scenes2.yaml`: fishwife → corpse certainly holding a gutting-knife,
+  lamplighter → empty corpse, watchman → no corpse.
+- **Gate** — new `InitializeGame` checkpoint 12: every `corpse:` ref must resolve to an authored container
+  without a ground-spawn rule → `presentNpcCorpseRefInvalid(Map<npcRef, corpseRef>)`. Runs every boot, which
+  is what makes the runtime port valid-by-provenance. (The pre-decided assembly extraction stayed deferred —
+  a new authored *rule* is not a new authored *kind*, design-notes §2.)
+- **Port / adapter** — `core/port/corpse/`: `loadCorpseBlueprint(ref)` returns the valid-out `CorpseBlueprint`
+  (corpse `ItemTemplate` + `(ItemTemplate, Chance)` loot pairs; templates carry no ground-spawn rule);
+  `YamlGameSeedSource` implements it as its second port (the `YamlCalendarSource` precedent), re-reading the
+  seed per death and throwing `CorpseBlueprintSourceOperationsError` on drift (edited-seed vs persisted ref —
+  an integrity fault, design-notes §3).
+- **FightNpc slay branch** — blueprint pull + loot rolls outside the tx; one transaction holds the
+  **version-checked `deleteNpc`** (the codebase's first delete — Spring Data JDBC `delete(aggregate)` honors
+  `@Version`, so a lost race still presents `presentNpcGotAway`) + the corpse/loot `saveItem`s;
+  `presentNpcSlain(npc, Optional<Item> corpse)` folds the corpse into the slain stripe (loot never crosses —
+  hidden until examined). A blueprint failure fails the whole strike to `presentError` (no half-death).
+- **Persistence** — Flyway `V15__npc_corpse_ref.sql` (nullable `corpse_ref` varchar); mapper maps it by name.
+  **Known consequence** (pinned in `NpcRoundTripIT` + port javadoc): all NPCs slain → `npcsAlreadySpawned()`
+  false → the next boot re-spawns fresh instances; corpses accumulate (design-notes §5).
+
+Tests: 516 unit (Surefire, DB-free) + 28 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **take from a container** (the
-contained items' consumer beyond `examine`; container capacity — the first genuine container↔contents
-invariant — waits for it, design-notes §2), **player revive/respawn + NPC de-aggro**
+contained items' consumer beyond `examine`; now urgent — corpse loot (#93) is visible but unreachable
+without it; container capacity — the first genuine container↔contents invariant — waits for it,
+design-notes §2), **player revive/respawn + NPC de-aggro**
 (#87 step 1 ended the session on death; boot-with-dead-player and reviving a fresh incarnation without a
-still-`hostile` NPC attacking it are the deferred next slice), the outbox **event spine** (both
-tickers still poll; NPC retaliation is a persisted *stance* polled by the tick, not an event — the spine's
-first customer stays a discrete fact like an on-death effect or witness propagation), blackjack stakes
-(the trigger that would mint the round aggregate — see design-notes §9).
+still-`hostile` NPC attacking it are the deferred next slice), **corpse decay** (corpses accumulate
+forever — a future decay ticker is a natural `[thread #3]` customer), the outbox **event spine** (both
+tickers still poll; NPC retaliation is a persisted *stance* polled by the tick, not an event — corpse
+minting stayed inline in #93 because it must be atomic with the death; the spine's first customer stays a
+discrete fact wanting *decoupling*, like accumulating on-death effects or witness propagation), blackjack
+stakes (the trigger that would mint the round aggregate — see design-notes §9).

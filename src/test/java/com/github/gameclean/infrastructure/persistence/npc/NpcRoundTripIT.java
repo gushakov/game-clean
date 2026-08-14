@@ -24,12 +24,13 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
  * text column); the {@code @DataJdbcTest} slice rolls each test back.
  *
  * <p>It exercises what spawning, autonomous movement, and {@code hit} need end to end: an NPC inserts and is
- * found by its scene and among all NPCs (its move-chance and hit-point columns surviving the round-trip);
- * wandering moves it and updates the same row in place; a dead NPC (zero hit points) stays in the table but
- * vanishes from both reads; and the optimistic lock has <b>teeth</b> — a second write carrying a version the
- * store has moved past is rejected with {@link OptimisticLockingError} rather than silently overwriting, which
- * is what stops the player's {@code hit} and the ticker both winning a race. The MapStruct mapper is pulled in
- * via {@code @Import}.
+ * found by its scene and among all NPCs (its move-chance, hit-point and corpse-ref columns surviving the
+ * round-trip); wandering moves it and updates the same row in place; a zero-hit-point row vanishes from both
+ * reads (defense in depth — a slaying deletes the row outright, #93); a slaying's {@code deleteNpc} removes
+ * the row; and the optimistic lock has <b>teeth</b> on both writes — a save <em>or a delete</em> carrying a
+ * version the store has moved past is rejected with {@link OptimisticLockingError} rather than silently
+ * winning, which is what stops the player's {@code hit} and the ticker both winning a race. The MapStruct
+ * mapper is pulled in via {@code @Import}.
  */
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -57,11 +58,13 @@ class NpcRoundTripIT extends AbstractPostgresIT {
                 .satisfies(npc -> {
                     assertThat(npc.getId()).isEqualTo(NpcId.of("npc1"));
                     assertThat(npc.getCurrentScene()).isEqualTo(HERE);
-                    // The move-chance, attack-chance, hostile-stance and hit-point columns survive the round-trip.
+                    // Move-chance, attack-chance, hostile-stance, hit-point and corpse-ref columns survive
+                    // the round-trip.
                     assertThat(npc.getMoveChance()).isEqualTo(new Chance(1, 4));
                     assertThat(npc.getAttackChance()).isEqualTo(new Chance(1, 3));
                     assertThat(npc.isHostile()).isFalse();
                     assertThat(npc.getHitPoints()).isEqualTo(HitPoints.full(10));
+                    assertThat(npc.getCorpseRef()).isEqualTo("itm5");
                 });
     }
 
@@ -83,19 +86,50 @@ class NpcRoundTripIT extends AbstractPostgresIT {
     }
 
     @Test
-    void a_dead_npc_stays_in_the_table_but_vanishes_from_both_reads() {
+    void a_zero_hit_point_row_vanishes_from_both_reads() {
         SpringNpcRepositoryAdapter adapter = new SpringNpcRepositoryAdapter(repository, mapper);
         adapter.saveNpc(npc("npc1", HERE));
         Npc alive = adapter.findNpcsInScene(HERE).getFirst();   // carries the post-insert version
 
+        // A slaying deletes the row outright (#93); saving a dead NPC pins the defense-in-depth filter.
         adapter.saveNpc(alive.takeDamage(10));   // to zero hit points
 
-        // Gone from listings and targeting ...
+        // Gone from listings and targeting, though the row itself is still there.
         assertThat(adapter.findNpcsInScene(HERE)).isEmpty();
         assertThat(adapter.findAllNpcs()).isEmpty();
-        // ... but the row persists (corpse deferred), so the world still counts as seeded.
         assertThat(repository.count()).isEqualTo(1);
         assertThat(adapter.npcsAlreadySpawned()).isTrue();
+    }
+
+    @Test
+    void deleteNpc_removes_the_row_so_the_world_no_longer_counts_as_spawned() {
+        SpringNpcRepositoryAdapter adapter = new SpringNpcRepositoryAdapter(repository, mapper);
+        adapter.saveNpc(npc("npc1", HERE));
+        Npc loaded = adapter.findNpcsInScene(HERE).getFirst();   // carries the post-insert version
+
+        adapter.deleteNpc(loaded.takeDamage(10));   // the slaying deletes the (now dead) NPC
+
+        assertThat(repository.count()).isZero();
+        assertThat(adapter.findNpcsInScene(HERE)).isEmpty();
+        // The documented consequence of deleting the slain: a world whose every NPC is slain reads as
+        // not-yet-spawned again, so the next boot re-spawns fresh instances.
+        assertThat(adapter.npcsAlreadySpawned()).isFalse();
+    }
+
+    @Test
+    void deleteNpc_rejects_a_stale_delete_with_an_optimistic_locking_error() {
+        SpringNpcRepositoryAdapter adapter = new SpringNpcRepositoryAdapter(repository, mapper);
+        adapter.saveNpc(npc("npc1", HERE));
+        Npc loaded = adapter.findNpcsInScene(HERE).getFirst();   // captures the current version
+
+        // Another writer (a wander, a counterstrike execution) moves the stored version past `loaded` ...
+        adapter.saveNpc(loaded.moveTo(SceneId.of("scn2")));
+
+        // ... so the lethal strike's delete, still carrying the original version, must lose the race — the
+        // row survives (the NPC "got away").
+        assertThatExceptionOfType(OptimisticLockingError.class)
+                .isThrownBy(() -> adapter.deleteNpc(loaded.takeDamage(10)));
+        assertThat(repository.count()).isEqualTo(1);
     }
 
     @Test
@@ -129,6 +163,7 @@ class NpcRoundTripIT extends AbstractPostgresIT {
                 .moveChance(new Chance(1, 4))
                 .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
+                .corpseRef("itm5")
                 .build();
     }
 }

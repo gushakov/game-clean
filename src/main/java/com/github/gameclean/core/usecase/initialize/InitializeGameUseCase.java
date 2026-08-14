@@ -209,11 +209,23 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 12 — roll and place the NPC instances, outside the transaction (a pure in-memory
+            // Checkpoint 12 — inter-template rule: every authored corpse ref resolves to an authored item
+            // that is a container (a corpse holds its loot) and has no ground-spawn rule (the death drop is a
+            // corpse's only placement route — a spawn rule would also lay corpses out at init). Resolved
+            // against the authored item set in memory and reported as a meaningful domain outcome, like the
+            // containment-target check. This gate runs on every boot, which is what lets the corpse-blueprint
+            // port hand back valid-by-provenance templates at death time.
+            Map<String, String> invalidCorpseRefs = findInvalidCorpseRefs(authoredNpcs, authoredItems);
+            if (!invalidCorpseRefs.isEmpty()) {
+                presenter.presentNpcCorpseRefInvalid(invalidCorpseRefs);
+                return;
+            }
+
+            // Checkpoint 13 — roll and place the NPC instances, outside the transaction (a pure in-memory
             // construction with no persistence side effect, like item spawning).
             List<Npc> spawnedNpcs = spawnNpcs(authoredNpcs);
 
-            // Checkpoint 13 — one outcome, one atomic unit. A single transaction seeds the world if it is
+            // Checkpoint 14 — one outcome, one atomic unit. A single transaction seeds the world if it is
             // still empty, creates the player if none exists yet, spawns items if none were spawned yet, spawns
             // NPCs if none were spawned yet, creates the world clock at time zero if none exists yet, and seeds
             // the day-phase log at its sentinel if none exists yet; holding all these read-then-write guards in
@@ -429,10 +441,32 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             Chance attackChance =
                     new Chance(entry.getAttackChanceNumerator(), entry.getAttackChanceDenominator());
             NpcTemplate template = new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(),
-                    rule, moveChance, attackChance, entry.getHitPoints());
+                    rule, moveChance, attackChance, entry.getHitPoints(), entry.getCorpse());
             authored.add(new AuthoredNpc(entry.getId(), template));
         }
         return authored;
+    }
+
+    /**
+     * The inter-template corpse-ref rule: a present ref must resolve to an authored item that is a container
+     * and never ground-spawns. Keyed by the NPC's authoring id, mapped to its offending ref — one ref per NPC,
+     * so a flat map (unlike the containment check's ref lists).
+     */
+    private static Map<String, String> findInvalidCorpseRefs(List<AuthoredNpc> authoredNpcs,
+                                                             List<AuthoredItem> authoredItems) {
+        Map<String, AuthoredItem> byAuthoredId = mapByAuthoredId(authoredItems);
+        Map<String, String> invalid = new LinkedHashMap<>();
+        for (AuthoredNpc npc : authoredNpcs) {
+            String ref = npc.corpseRef();
+            if (ref == null) {
+                continue;   // authored absence — the NPC leaves no corpse
+            }
+            AuthoredItem target = byAuthoredId.get(ref);
+            if (target == null || !target.isContainer() || target.spawnsOnGround()) {
+                invalid.put(npc.getAuthoredId(), ref);
+            }
+        }
+        return invalid;
     }
 
     private static Map<String, List<SceneId>> findUnknownNpcSpawnScenes(List<AuthoredNpc> authoredNpcs,
@@ -478,6 +512,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             return template.isContainer();
         }
 
+        boolean spawnsOnGround() {
+            return template.spawnsOnGround();
+        }
+
         List<SceneId> candidateScenesNotIn(Set<SceneId> knownSceneIds) {
             return template.candidateScenesNotIn(knownSceneIds);
         }
@@ -514,6 +552,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
     private static class AuthoredNpc {
         String authoredId;
         NpcTemplate template;
+
+        String corpseRef() {
+            return template.getCorpseRef();
+        }
 
         List<SceneId> candidateScenesNotIn(Set<SceneId> knownSceneIds) {
             return template.candidateScenesNotIn(knownSceneIds);

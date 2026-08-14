@@ -3,6 +3,10 @@ package com.github.gameclean.core.usecase.combat;
 import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.Dice;
+import com.github.gameclean.core.model.dice.ScriptedDice;
+import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.item.ItemTemplate;
+import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
@@ -11,6 +15,10 @@ import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
+import com.github.gameclean.core.port.corpse.CorpseBlueprint;
+import com.github.gameclean.core.port.corpse.CorpseBlueprintSourceOperationsError;
+import com.github.gameclean.core.port.corpse.CorpseBlueprintSourceOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
@@ -36,6 +44,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -50,6 +59,13 @@ import static org.mockito.Mockito.when;
  * {@code Dice} yields the damage, the use case lowers the NPC, provokes a survivor, and persists. It presents
  * once on every path — struck / slain after commit, "got away" on a lost lock race, {@code presentError}
  * otherwise — and a subcase's {@link SubcaseAlreadyPresented} is swallowed.
+ *
+ * <p><b>A slaying replaces the NPC with its corpse (#93).</b> The lethal-strike tests pin the death-drop
+ * mechanics: the version-checked delete plus the corpse and rolled-loot inserts in one transaction, the corpse
+ * folded into the slain presentation (empty for an NPC authored without one), a blueprint failure failing the
+ * whole strike (no half-death), and a lost delete race presenting "got away". The corpse-minting tests build
+ * the use case by hand with a {@link ScriptedDice} — the mint rolls real id glyphs and loot odds, which a
+ * Mockito {@code Dice} cannot answer.
  *
  * <p><b>NPC strikes back.</b> {@code npcStrikesPlayer} re-validates the policy's decision at execution: NPC
  * present and alive, player present, co-located. Any miss is the quiet {@code presentNothingHappened}; a landed
@@ -74,12 +90,22 @@ class FightNpcUseCaseTest {
     @Mock
     private PlayerOperationsOutputPort playerOps;
     @Mock
+    private ItemRepositoryOperationsOutputPort itemOps;
+    @Mock
+    private CorpseBlueprintSourceOperationsOutputPort corpseBlueprintSourceOps;
+    @Mock
     private TransactionOperationsOutputPort txOps;
     @Mock
     private Dice dice;
 
     @InjectMocks
     private FightNpcUseCase useCase;
+
+    /** The corpse-minting tests need real dice (id glyphs, loot odds) — same mocks, a scripted die. */
+    private FightNpcUseCase useCaseWith(ScriptedDice scriptedDice) {
+        return new FightNpcUseCase(presenter, orientPlayerSubcase, selectTargetSubcase, npcOps,
+                playerRepositoryOps, playerOps, itemOps, corpseBlueprintSourceOps, txOps, scriptedDice);
+    }
 
     // --- player strikes NPC ------------------------------------------------------------------------
 
@@ -100,7 +126,7 @@ class FightNpcUseCaseTest {
         assertThat(saved.isHostile()).isTrue();
         // ... and the struck outcome (with the damage dealt) is presented only after the write commits.
         verify(presenter).presentNpcStruck(saved, 4);
-        verify(presenter, never()).presentNpcSlain(any());
+        verify(presenter, never()).presentNpcSlain(any(), any());
         verify(presenter, never()).presentNpcGotAway(any());
     }
 
@@ -122,20 +148,118 @@ class FightNpcUseCaseTest {
     }
 
     @Test
-    void presentsNpcSlainWhenTheStrikeDepletesHitPointsAndDoesNotProvokeTheDead() {
+    void aLethalStrikeDeletesTheCorpselessNpcAndPresentsSlainWithNoCorpse() {
         orientedAtScn1();
-        Npc goblin = npc("npc1", 3, HERE);
+        Npc goblin = npc("npc1", 3, HERE);   // no authored corpseRef — the NPC leaves nothing behind
         when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(goblin);
         when(dice.rollDie(10)).thenReturn(9);   // overkill floors at zero — dead
         runLockAwareTransactionAndFireAfterCommit(txOps);
 
         useCase.playerHitsTarget("hooded");
 
-        Npc saved = capturedSavedNpc();
-        assertThat(saved.isDead()).isTrue();
-        assertThat(saved.isHostile()).isFalse();   // a slain NPC is not provoked (it won't fight from the grave)
-        verify(presenter).presentNpcSlain(saved);
+        // The row is deleted (not saved dead), no blueprint is pulled, no item is written ...
+        Npc deleted = capturedDeletedNpc();
+        assertThat(deleted.isDead()).isTrue();
+        assertThat(deleted.isHostile()).isFalse();   // a slain NPC is not provoked (it won't fight from the grave)
+        verify(npcOps, never()).saveNpc(any());
+        verifyNoInteractions(corpseBlueprintSourceOps, itemOps);
+        // ... and the slain outcome carries an empty corpse.
+        verify(presenter).presentNpcSlain(deleted, Optional.empty());
         verify(presenter, never()).presentNpcStruck(any(), anyInt());
+    }
+
+    @Test
+    void aLethalStrikeMintsTheCorpseAndItsRolledLootInTheSameTransactionAsTheDelete() {
+        orientedAtScn1();
+        Npc wanderer = npc("npc1", 3, HERE).withCorpseRef("itm5");
+        when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(wanderer);
+        when(corpseBlueprintSourceOps.loadCorpseBlueprint("itm5")).thenReturn(blueprintWithRing());
+        runLockAwareTransactionAndFireAfterCommit(txOps);
+        // Damage 9 (lethal on 3 hp), then the corpse id's 8 glyphs (all '0'), then the loot roll hits, then
+        // the loot id's 8 glyphs (all '1') — the mint consumes real entropy, so the dice are scripted.
+        ScriptedDice scripted = new ScriptedDice()
+                .willRollDie(9)
+                .willPick(0, 0, 0, 0, 0, 0, 0, 0)
+                .willRoll(true)
+                .willPick(1, 1, 1, 1, 1, 1, 1, 1);
+
+        useCaseWith(scripted).playerHitsTarget("hooded");
+
+        // The NPC row goes and the remains arrive in the same transaction: the corpse on the ground where the
+        // NPC fell, the rolled loot inside the corpse (referencing it by id).
+        Npc deleted = capturedDeletedNpc();
+        assertThat(deleted.isDead()).isTrue();
+        List<Item> savedItems = capturedSavedItems(2);
+        Item corpse = savedItems.getFirst();
+        assertThat(corpse.getShortDescription()).isEqualTo("The corpse of a hooded wanderer.");
+        assertThat(corpse.isContainer()).isTrue();
+        assertThat(corpse.isAnchored()).isTrue();
+        assertThat(corpse.getLocation()).isEqualTo(new Location.OnGround(HERE));
+        Item loot = savedItems.get(1);
+        assertThat(loot.getShortDescription()).isEqualTo("A tarnished silver ring.");
+        assertThat(loot.getLocation()).isEqualTo(new Location.Inside(corpse.getId()));
+        // The slain outcome folds the corpse in — and only the corpse, never the loot (hidden until examined).
+        verify(presenter).presentNpcSlain(deleted, Optional.of(corpse));
+    }
+
+    @Test
+    void aMissedLootRollLeavesTheCorpseEmpty() {
+        orientedAtScn1();
+        Npc wanderer = npc("npc1", 3, HERE).withCorpseRef("itm5");
+        when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(wanderer);
+        when(corpseBlueprintSourceOps.loadCorpseBlueprint("itm5")).thenReturn(blueprintWithRing());
+        runLockAwareTransactionAndFireAfterCommit(txOps);
+        // Lethal damage, corpse id glyphs, then the loot roll MISSES — no loot id is ever minted.
+        ScriptedDice scripted = new ScriptedDice()
+                .willRollDie(9)
+                .willPick(0, 0, 0, 0, 0, 0, 0, 0)
+                .willRoll(false);
+
+        useCaseWith(scripted).playerHitsTarget("hooded");
+
+        List<Item> savedItems = capturedSavedItems(1);
+        Item corpse = savedItems.getFirst();
+        assertThat(corpse.isContainer()).isTrue();
+        Npc deleted = capturedDeletedNpc();
+        verify(presenter).presentNpcSlain(deleted, Optional.of(corpse));
+    }
+
+    @Test
+    void aBlueprintFailureFailsTheWholeStrikeBeforeAnythingIsWritten() {
+        orientedAtScn1();
+        Npc wanderer = npc("npc1", 3, HERE).withCorpseRef("itm5");
+        when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(wanderer);
+        when(dice.rollDie(10)).thenReturn(9);
+        // Drift: the persisted ref no longer resolves against the (edited) seed — an integrity fault.
+        CorpseBlueprintSourceOperationsError drift =
+                new CorpseBlueprintSourceOperationsError("corpse ref 'itm5' resolves to no authored item");
+        when(corpseBlueprintSourceOps.loadCorpseBlueprint("itm5")).thenThrow(drift);
+
+        useCase.playerHitsTarget("hooded");
+
+        // No half-death: the strike fails whole — nothing deleted, nothing saved, the catch-all presents.
+        verify(presenter).presentError(drift);
+        verifyNoInteractions(txOps, itemOps);
+        verify(npcOps, never()).deleteNpc(any());
+        verify(npcOps, never()).saveNpc(any());
+        verify(presenter, never()).presentNpcSlain(any(), any());
+    }
+
+    @Test
+    void presentsNpcGotAwayWhenTheLethalDeleteLosesTheRace() {
+        orientedAtScn1();
+        Npc goblin = npc("npc1", 3, HERE);
+        when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(goblin);
+        when(dice.rollDie(10)).thenReturn(9);
+        // The wander/attack policy's execution committed first — the version-checked delete loses.
+        doThrow(new OptimisticLockingError("stale version")).when(npcOps).deleteNpc(any());
+        runLockAwareTransactionDetectingLock(txOps);
+
+        useCase.playerHitsTarget("hooded");
+
+        verify(presenter).presentNpcGotAway(NpcId.of("npc1"));
+        verify(presenter, never()).presentNpcSlain(any(), any());
+        verify(presenter, never()).presentError(any());
     }
 
     @Test
@@ -151,7 +275,7 @@ class FightNpcUseCaseTest {
 
         verify(presenter).presentNpcGotAway(NpcId.of("npc1"));
         verify(presenter, never()).presentNpcStruck(any(), anyInt());
-        verify(presenter, never()).presentNpcSlain(any());
+        verify(presenter, never()).presentNpcSlain(any(), any());
         verify(presenter, never()).presentError(any());
     }
 
@@ -306,6 +430,27 @@ class FightNpcUseCaseTest {
         ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
         verify(npcOps).saveNpc(saved.capture());
         return saved.getValue();
+    }
+
+    private Npc capturedDeletedNpc() {
+        ArgumentCaptor<Npc> deleted = ArgumentCaptor.forClass(Npc.class);
+        verify(npcOps).deleteNpc(deleted.capture());
+        return deleted.getValue();
+    }
+
+    private List<Item> capturedSavedItems(int expectedCount) {
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps, times(expectedCount)).saveItem(saved.capture());
+        return saved.getAllValues();
+    }
+
+    /** The wanderer's authored corpse recipe: an anchored container that may hold the silver ring at 1/2. */
+    private static CorpseBlueprint blueprintWithRing() {
+        ItemTemplate corpse = new ItemTemplate("The corpse of a hooded wanderer.",
+                "The wanderer lies where it fell.", true, true, null);
+        ItemTemplate ring = new ItemTemplate("A tarnished silver ring.",
+                "A slim band of tarnished silver.", false, false, null);
+        return new CorpseBlueprint(corpse, List.of(new CorpseBlueprint.Loot(ring, new Chance(1, 2))));
     }
 
     private Player capturedSavedPlayer() {

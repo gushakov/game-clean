@@ -62,7 +62,7 @@ class GameSeedYamlReaderTest {
     void readsAuthoredItemsWithTheirSpawnRulesSplittingTheAuthoringSyntax() {
         List<ItemEntry> items = readSeed().getItems();
 
-        assertThat(items).extracting(ItemEntry::getId).containsExactly("itm1", "itm2", "itm3", "itm4");
+        assertThat(items).extracting(ItemEntry::getId).containsExactly("itm1", "itm2", "itm3", "itm4", "itm5");
 
         ItemEntry dagger = items.getFirst();
         assertThat(dagger.getShortDescription()).isEqualTo("A rusty dagger.");
@@ -92,6 +92,24 @@ class GameSeedYamlReaderTest {
         assertThat(dagger.isContainer()).isFalse();
         assertThat(dagger.getContains()).isNull();
         assertThat(dagger.getPortable()).isNull();
+    }
+
+    @Test
+    void readsTheAuthoredCorpseRefOnNpcsDefaultingToAbsence() {
+        GameSeed seed = readSeed();
+
+        // npc1 (the hooded wanderer) authors `corpse: itm5` — carried through as the raw authoring handle.
+        assertThat(seed.getNpcs()).singleElement()
+                .satisfies(npc -> assertThat(npc.getCorpse()).isEqualTo("itm5"));
+
+        // The corpse template itself is an ordinary items entry: a container with NO spawn rule (the death
+        // drop is its only placement route) and no `portable` (a container defaults to anchored).
+        ItemEntry corpse = seed.getItems().get(4);
+        assertThat(corpse.getId()).isEqualTo("itm5");
+        assertThat(corpse.isContainer()).isTrue();
+        assertThat(corpse.getSpawn()).isNull();
+        assertThat(corpse.getPortable()).isNull();
+        assertThat(corpse.getContains()).containsExactly(new ContainsEntry("itm2", 1, 2));
     }
 
     @Test

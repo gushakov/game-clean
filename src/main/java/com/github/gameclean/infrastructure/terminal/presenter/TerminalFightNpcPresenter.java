@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal.presenter;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
@@ -21,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Secondary (driven) adapter rendering the {@code FightNpc} use case's outcomes to the shared JLine console.
@@ -64,8 +66,8 @@ public class TerminalFightNpcPresenter
     }
 
     @Override
-    public void presentNpcSlain(Npc npc) {
-        npcRenderer.renderNpcSlain(npc);
+    public void presentNpcSlain(Npc npc, Optional<Item> corpse) {
+        npcRenderer.renderNpcSlain(npc, corpse);
     }
 
     @Override
