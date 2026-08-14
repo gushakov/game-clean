@@ -1,9 +1,12 @@
 package com.github.gameclean.core.usecase.combat;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
+
+import java.util.Optional;
 
 /**
  * Presenter (driven) output port for {@code FightNpc}, co-located with its use case. It carries the combat
@@ -14,9 +17,11 @@ import com.github.gameclean.core.port.ErrorHandlingPresenterOutputPort;
  *
  * <p><b>Player-initiated stripes.</b> A landed player strike splits by whether it killed:
  * {@link #presentNpcStruck(Npc, int)} carries the surviving (post-damage, now-hostile) NPC and the damage;
- * {@link #presentNpcSlain(Npc)} is the kill. {@link #presentNpcGotAway(NpcId)} is the write-side lost race —
- * the NPC was read as present but a concurrent write (a wander, another strike) committed first — the twin of
- * {@code select}'s read-side {@code presentTargetNoLongerAvailable}.
+ * {@link #presentNpcSlain(Npc, Optional)} is the kill, carrying the corpse minted where the NPC fell (empty
+ * for an NPC authored to leave none — the corpse announcement folds into the slain outcome rather than
+ * earning its own stripe, since one strike reaches one presentation). {@link #presentNpcGotAway(NpcId)} is the
+ * write-side lost race — the NPC was read as present but a concurrent write (a wander, another strike)
+ * committed first — the twin of {@code select}'s read-side {@code presentTargetNoLongerAvailable}.
  *
  * <p><b>NPC-initiated stripes.</b> A provoked NPC's counterstrike splits the same way:
  * {@link #presentNpcStruckPlayer(Npc, int, Player)} carries the striking NPC, the damage, and the surviving
@@ -35,8 +40,13 @@ public interface FightNpcPresenterOutputPort extends ErrorHandlingPresenterOutpu
     /** Player's happy path: the NPC was struck for {@code damage} and survived (now hostile). */
     void presentNpcStruck(Npc npc, int damage);
 
-    /** Player's strike was lethal: the NPC's hit points reached zero and it is dead. */
-    void presentNpcSlain(Npc npc);
+    /**
+     * Player's strike was lethal: the NPC's hit points reached zero, its row is gone, and — when the NPC was
+     * authored to leave one — its {@code corpse} (an anchored container item) now lies where it fell, minted
+     * and persisted in the same transaction as the death. Only the corpse itself crosses here, never the loot
+     * rolled inside it: what lies on the body stays hidden until the player examines the corpse.
+     */
+    void presentNpcSlain(Npc npc, Optional<Item> corpse);
 
     /**
      * The player's strike lost a concurrent race: the NPC was present when selected but another writer committed

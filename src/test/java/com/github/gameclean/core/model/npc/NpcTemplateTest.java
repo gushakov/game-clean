@@ -30,41 +30,62 @@ class NpcTemplateTest {
     private static NpcTemplate template(int numerator, int denominator, int maxTries, String... candidateScenes) {
         SpawnRule rule = new SpawnRule(new Chance(numerator, denominator), maxTries,
                 Arrays.stream(candidateScenes).map(SceneId::of).toList());
-        return new NpcTemplate(SHORT, FULL, rule, MOVE, ATTACK, MAX_HP);
+        return new NpcTemplate(SHORT, FULL, rule, MOVE, ATTACK, MAX_HP, null);
     }
 
     @Test
     void rejects_a_blank_short_description() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate("  ", FULL, rule, MOVE, ATTACK, MAX_HP));
+                .isThrownBy(() -> new NpcTemplate("  ", FULL, rule, MOVE, ATTACK, MAX_HP, null));
     }
 
     @Test
     void rejects_a_null_spawn_rule() {
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, null, MOVE, ATTACK, MAX_HP));
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, null, MOVE, ATTACK, MAX_HP, null));
     }
 
     @Test
     void rejects_a_null_move_chance() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, null, ATTACK, MAX_HP));
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, null, ATTACK, MAX_HP, null));
     }
 
     @Test
     void rejects_a_null_attack_chance() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, MOVE, null, MAX_HP));
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, MOVE, null, MAX_HP, null));
     }
 
     @Test
     void rejects_a_non_positive_max_hit_points() {
         SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, MOVE, ATTACK, 0));
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, MOVE, ATTACK, 0, null));
+    }
+
+    @Test
+    void rejects_a_blank_corpse_ref_but_accepts_an_absent_one() {
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
+        // Authored absence (null) is valid — the NPC leaves no corpse (covered by every other fixture here);
+        // a present ref must carry content.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> new NpcTemplate(SHORT, FULL, rule, MOVE, ATTACK, MAX_HP, "  "));
+    }
+
+    @Test
+    void copies_the_corpse_ref_onto_every_spawned_instance() {
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
+        NpcTemplate template = new NpcTemplate(SHORT, FULL, rule, MOVE, ATTACK, MAX_HP, "itm5");
+        ScriptedDice dice = new ScriptedDice().willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        List<Npc> spawned = template.spawnInto(dice);
+
+        assertThat(spawned).singleElement()
+                .satisfies(npc -> assertThat(npc.getCorpseRef()).isEqualTo("itm5"));
     }
 
     @Test

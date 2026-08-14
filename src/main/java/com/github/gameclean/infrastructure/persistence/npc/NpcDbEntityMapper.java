@@ -17,8 +17,9 @@ import org.mapstruct.Mapping;
  * {@link CompositeDbConverter}. Re-wrapping runs each value object's own validation, so a malformed stored
  * value surfaces as a domain error rather than slipping through. {@code moveChance}, {@code attackChance},
  * {@code hostile} and {@code hitPoints} all match by name, so they need no {@code @Mapping} at all; only the
- * {@code currentScene ↔ currentSceneId} name mismatch is declared. The {@code version} maps straight through
- * (by name) in both directions.
+ * {@code currentScene ↔ currentSceneId} name mismatch is declared. The {@code version} and the opaque
+ * {@code corpseRef} authored handle (a plain string on both sides) map straight through (by name) in both
+ * directions.
  */
 @Mapper(componentModel = "spring")
 public interface NpcDbEntityMapper extends ScalarConverter, CompositeDbConverter {

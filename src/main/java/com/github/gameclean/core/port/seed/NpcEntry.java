@@ -22,6 +22,11 @@ import lombok.Value;
  * spawns at (its max, and its initial current); the {@link com.github.gameclean.core.model.combat.HitPoints}
  * value object is likewise built inside the use case.
  *
+ * <p>{@code corpse} is the authored handle of the item template minted as this NPC's corpse when an instance
+ * is slain (#93) — {@code null} when unauthored (the NPC leaves no corpse; authored absence, like an absent
+ * {@code spawn}). Whether it resolves — to an authored <em>container</em> without a ground-spawn rule — is an
+ * inter-template rule the use-case gate checks, exactly like containment targets.
+ *
  * <p>Lombok {@code @Value} (not a Java record), matching the shape used across the codebase.
  */
 @Value
@@ -36,4 +41,5 @@ public class NpcEntry {
     int attackChanceNumerator;
     int attackChanceDenominator;
     int hitPoints;
+    String corpse;
 }

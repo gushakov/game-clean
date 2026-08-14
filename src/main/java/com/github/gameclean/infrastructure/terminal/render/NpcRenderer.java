@@ -1,5 +1,6 @@
 package com.github.gameclean.infrastructure.terminal.render;
 
+import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
@@ -13,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Renders NPC-facing output — the <em>asynchronous</em> narration of NPC movements the player can witness, and
@@ -79,10 +81,17 @@ public class NpcRenderer {
         console.write(sb);
     }
 
-    /** Confirmation of a lethal strike: the NPC is down. */
-    public void renderNpcSlain(Npc npc) {
+    /**
+     * Confirmation of a lethal strike: the NPC is down, and — when it was authored to leave one — its corpse
+     * now lies in the scene (an anchored container the player can {@code examine}; what may lie on the body
+     * stays unspoken until then). The use case decided whether a corpse exists by choosing what to pass; this
+     * renderer only phrases it.
+     */
+    public void renderNpcSlain(Npc npc, Optional<Item> corpse) {
         AttributedStringBuilder sb = new AttributedStringBuilder();
         sb.style(SLAIN).append("You strike down %s.".formatted(bareName(npc.getShortDescription())));
+        corpse.ifPresent(remains ->
+                sb.append(" %s lies at your feet.".formatted(bareName(remains.getShortDescription()))));
         console.write(sb);
     }
 

@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
 import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.mockito.ArgumentMatchers.any;
@@ -512,6 +513,78 @@ class InitializeGameUseCaseTest {
         verifyNothingInitialized();
     }
 
+    // --- corpse refs resolve to valid corpse templates (issue #93) -------------------------------
+
+    @Test
+    void spawnsAnNpcCarryingItsValidCorpseRef() {
+        // itm5 is a proper corpse template: a container with no ground-spawn rule.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(corpseItem("itm5")), List.of(npcWithCorpse("npc1", "itm5", "scn1"))));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        // The corpse template never rolls (no spawn rule); the NPC rolls: hit, scene pick, 8 id glyphs.
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionAndFireAfterCommit(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
+        verify(npcOps).saveNpc(saved.capture());
+        assertThat(saved.getValue().getCorpseRef()).isEqualTo("itm5");
+        // The corpse template itself spawned nothing at init — the death drop is its only placement route.
+        verify(itemOps, never()).saveItem(any());
+    }
+
+    @Test
+    void rejectsACorpseRefThatDoesNotResolveAndDoesNotInitialize() {
+        // No authored item is named itm9 — the ref dangles.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(corpseItem("itm5")), List.of(npcWithCorpse("npc1", "itm9", "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        assertCorpseRefRejected("npc1", "itm9");
+    }
+
+    @Test
+    void rejectsACorpseRefToANonContainerAndDoesNotInitialize() {
+        // A corpse must be able to hold its loot — a plain (non-container) template does not qualify.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(containedOnlyItem("itm9")), List.of(npcWithCorpse("npc1", "itm9", "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        assertCorpseRefRejected("npc1", "itm9");
+    }
+
+    @Test
+    void rejectsACorpseRefToAGroundSpawningContainerAndDoesNotInitialize() {
+        // A container with its own spawn rule would ALSO lie around at init — the death drop must be the
+        // corpse's only placement route.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(containerItem("itm4", List.of(), 1, 1, 1, "scn1")),
+                List.of(npcWithCorpse("npc1", "itm4", "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        // The item-spawn rolls (checkpoint 9) run before the corpse-ref checkpoint — script the chest's
+        // single try to miss, so no id glyphs are pulled and nothing spawns.
+        dice.willRoll(false);
+
+        useCase.systemInitializesGame();
+
+        assertCorpseRefRejected("npc1", "itm4");
+    }
+
+    private void assertCorpseRefRejected(String expectedNpcId, String expectedRef) {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentNpcCorpseRefInvalid(captor.capture());
+        assertThat(captor.getValue()).containsExactly(entry(expectedNpcId, expectedRef));
+        verifyNothingInitialized();
+    }
+
     // --- authored mini-games pass the gate onto the scene aggregate -----------------------------
 
     @Test
@@ -664,11 +737,29 @@ class InitializeGameUseCaseTest {
         return new GameSeed(scenes, startingSceneId, 30, List.of(), List.of(npcs));
     }
 
+    /** A seed carrying both authored items and NPCs — what the corpse-ref checkpoint resolves across. */
+    private static GameSeed seedWithItemsAndNpcs(List<SceneEntry> scenes, String startingSceneId,
+                                                 List<ItemEntry> items, List<NpcEntry> npcs) {
+        return new GameSeed(scenes, startingSceneId, 30, items, npcs);
+    }
+
+    /** A corpse template: a container with no ground-spawn rule — placed only by the death drop. */
+    private static ItemEntry corpseItem(String id) {
+        return new ItemEntry(id, "The corpse of a hooded wanderer.", "The wanderer lies where it fell.",
+                true, null, null, null);
+    }
+
     private static NpcEntry npc(String id, int moveNumerator, int moveDenominator,
                                 int chanceNumerator, int chanceDenominator, int max, String... candidateScenes) {
         return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
                 new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max),
-                moveNumerator, moveDenominator, 1, 3, 10);
+                moveNumerator, moveDenominator, 1, 3, 10, null);
+    }
+
+    /** An always-spawning NPC (one try, certain) declaring the given corpse ref. */
+    private static NpcEntry npcWithCorpse(String id, String corpseRef, String... candidateScenes) {
+        return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
+                new SpawnEntry(List.of(candidateScenes), 1, 1, 1), 1, 4, 1, 3, 10, corpseRef);
     }
 
     private static List<SceneEntry> twoConnectedScenes() {

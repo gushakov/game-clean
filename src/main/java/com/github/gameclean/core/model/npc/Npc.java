@@ -55,6 +55,13 @@ import java.util.Objects;
  * answers {@link #matches(String)} and {@link #hasIdToken(String)} — the first non-item consumer of the
  * generic select subcase.
  *
+ * <p><b>The corpse ref is an authored handle, deliberately opaque (#93).</b> {@link #corpseRef} names the
+ * authored item template minted as this NPC's corpse when it is slain — {@code null} when the NPC leaves no
+ * corpse (authored absence). It is the first authored handle to enter the model: not a domain identity (no
+ * corpse <em>instance</em> exists until the death mints one), not resolvable in-model (resolution happens
+ * through the corpse-blueprint port at death time), so it stays a plain, opaque {@code String} rather than
+ * an id value object — the gate asks only that a present ref is non-blank.
+ *
  * <p>Equality is by identity (id) only — two NPCs are the same NPC when their ids match; the version and hit
  * points are naturally outside value equality.
  */
@@ -76,12 +83,15 @@ public class Npc implements Designatable {
     /** Whether this NPC is in a hostile stance toward the player (struck and fighting back), re-derived each tick. */
     boolean hostile;
 
+    /** Authored handle of the item template minted as this NPC's corpse when slain — null when it leaves none. */
+    String corpseRef;
+
     /** Optimistic-locking token — opaque to the domain, managed by persistence, not part of value equality. */
     long version;
 
     @Builder
     public Npc(NpcId id, SceneId currentScene, String shortDescription, String fullDescription, Chance moveChance,
-               Chance attackChance, HitPoints hitPoints, boolean hostile, long version) {
+               Chance attackChance, HitPoints hitPoints, boolean hostile, String corpseRef, long version) {
         this.id = DomainValidation.requireNonNull(id, "npc id must not be null");
         this.currentScene = DomainValidation.requireNonNull(currentScene, "npc current scene must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
@@ -90,6 +100,11 @@ public class Npc implements Designatable {
         this.attackChance = DomainValidation.requireNonNull(attackChance, "npc attack chance must not be null");
         this.hitPoints = DomainValidation.requireNonNull(hitPoints, "npc hit points must not be null");
         this.hostile = hostile;
+        // Authored absence is a valid state (the NPC leaves no corpse); a present ref must carry content.
+        if (corpseRef != null && corpseRef.strip().isEmpty()) {
+            throw new InvalidDomainObjectError("npc corpse ref must not be blank when present");
+        }
+        this.corpseRef = corpseRef;
         if (version < 0) {
             throw new InvalidDomainObjectError("npc version must not be negative, got " + version);
         }

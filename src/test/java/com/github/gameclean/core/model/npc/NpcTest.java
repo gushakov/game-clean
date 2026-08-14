@@ -160,6 +160,43 @@ class NpcTest {
     }
 
     @Test
+    void rejects_a_blank_corpse_ref_but_accepts_an_absent_one() {
+        // Authored absence (null) is a valid state — the NPC leaves no corpse; the builder default covers it.
+        assertThat(npc("scn1").getCorpseRef()).isNull();
+
+        // A present ref must carry content — blank is invalid authored input at the construction gate.
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> Npc.builder()
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
+                .hitPoints(HitPoints.full(10))
+                .corpseRef("   ")
+                .build());
+    }
+
+    @Test
+    void corpse_ref_is_carried_forward_by_copy_on_write() {
+        Npc wanderer = Npc.builder()
+                .id(NpcId.of("npc1"))
+                .currentScene(SceneId.of("scn1"))
+                .shortDescription("A hooded wanderer.")
+                .fullDescription("A cloaked figure.")
+                .moveChance(new Chance(1, 4))
+                .attackChance(new Chance(1, 3))
+                .hitPoints(HitPoints.full(10))
+                .corpseRef("itm5")
+                .build();
+
+        // The authored handle survives every state change — the slaying reads it off the post-damage copy.
+        assertThat(wanderer.takeDamage(4).getCorpseRef()).isEqualTo("itm5");
+        assertThat(wanderer.provoked().getCorpseRef()).isEqualTo("itm5");
+        assertThat(wanderer.moveTo(SceneId.of("scn2")).getCorpseRef()).isEqualTo("itm5");
+    }
+
+    @Test
     void equality_is_by_id_ignoring_position() {
         Npc atGate = npc("scn1");
         Npc moved = atGate.moveTo(SceneId.of("scn2"));   // same id, different scene

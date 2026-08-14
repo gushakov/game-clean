@@ -156,7 +156,10 @@ public class GameSeedYamlReader {
                 moveChance[1],
                 attackChance[0],
                 attackChance[1],
-                asInt(node.get("hitPoints"), "npc hit points"));
+                asInt(node.get("hitPoints"), "npc hit points"),
+                // The corpse ref stays null when unauthored (the NPC leaves no corpse — authored absence,
+                // like an absent spawn); whether it resolves is the use-case gate's business.
+                asString(node.get("corpse")));
     }
 
     private static SpawnEntry toSpawnEntry(Map<String, Object> node) {
