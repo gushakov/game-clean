@@ -572,6 +572,31 @@ need did not widen the seed port ("the whole authored world, once, invalid-capab
 one ("one minting recipe, on demand, valid") — output-port granularity following the *contract*, not the data
 source.
 
+**A cache below the currency translation is an adapter detail; a cache that moves the currency or the failure
+routing is a §3 decision — the seed memoizer vs. the calendar.** `[thread #2]` The memoized seed (#95) and the
+cached calendar look like one pattern — a driven adapter holding a parsed authored resource — and are
+architecturally two. The calendar's eager fail-fast cache *is* the design: it changed the port's currency
+(carrier → valid model) and moved invalidity from a presented outcome to a boot fault — the documented
+cached-as-config deviation (§11). The seed memoizer changes neither: both ports keep their currencies, a broken
+seed still surfaces through `loadGameSeed` under the boot use case's checkpoint as a *presented* outcome, and
+the memoizing accessor throws raw so each port method still wraps into its own error — "one file, two
+currencies" survives the cache. The litmus that generalizes: **does the cache change what crosses the port, or
+where invalidity surfaces?** No → an implementation detail, decided freely inside the adapter (lazy, sitting
+*below* the error translation). Yes → the §3 deviation, taken consciously. Two corollaries. *Motive:* the
+memoizer was justified by provenance, not performance — it turned "the seed is assumed unedited after boot"
+(an assumption doing load-bearing work in the valid-by-provenance-through-a-re-running-gate argument above)
+into "one parse per run" (an invariant); a cache that merely saves milliseconds on a rare path stays unwritten
+under emergence. *ISP side:* the shared snapshot is the cohesion payoff of one adapter serving several ports
+over one resource — split the adapter per port and you either parse twice or mint a third holder collaborator;
+this realizes the persistence module's "single adapter class: cross-cutting concerns applied once" rationale on
+a source adapter, while port granularity keeps following the contract, not the data source (previous
+paragraph). The license is narrow, not general: adapter state stays a smell except as a write-once snapshot of
+an immutable resource held in immutable carriers — `volatile` for safe publication, no locking (a racy
+duplicate parse is benign), failures never cached so a retry stays live. (Promotion candidate, flagged not
+promoted: *a driven-adapter cache is architecture-invisible iff it sits below the port's error translation and
+changes neither the boundary currency nor where invalidity surfaces — test any cache proposal against those
+two invariants, and justify it by provenance-tightening, not throughput*.)
+
 ## 4. Use cases as first-class interactions
 
 **Interaction shape (the world-construction phase).** The actor is the *system at startup*.

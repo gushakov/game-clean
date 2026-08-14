@@ -14,6 +14,7 @@ import com.github.gameclean.infrastructure.GameConfigurationProperties;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.experimental.NonFinal;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -55,8 +56,17 @@ import java.util.Optional;
  * {@link CorpseBlueprintSourceOperationsError}, never a presented outcome. The blueprint's templates carry
  * <b>no ground-spawn rule</b> (a blueprint is a minting recipe for one death); the corpse's {@code anchored}
  * fact resolves by the same kind-sensitive polarity the gate applies (a container is anchored unless authored
- * {@code portable: true}). The seed is re-read per pull — deaths are rare, the file is small, and the adapter
- * stays stateless; the seed is assumed unedited after boot.
+ * {@code portable: true}).
+ *
+ * <p><b>One parse per run (#95).</b> The seed is parsed once and memoized — lazily, in a {@code volatile}
+ * field shared by both ports — so the death-time blueprint is assembled from the very parse the boot gate
+ * validated: what was "the seed is assumed unedited after boot" is now an invariant. Lazy, not eager, on
+ * purpose: the first parse still happens inside {@link #loadGameSeed()} under the boot use case's checkpoint,
+ * so a broken seed stays a <em>presented</em> outcome — the calendar's fail-fast boot-fault deviation is
+ * deliberately not taken here. The memoizer sits <em>below</em> each port's error translation (the accessor
+ * throws raw, each method wraps into its own currency), and a failed parse is never cached — the next pull
+ * retries. {@code volatile} is safe publication for a future consumer pulling from another thread (today both
+ * pulls ride the boot thread); no locking, because a racy duplicate parse of the immutable carriers is benign.
  */
 @Component
 @RequiredArgsConstructor
@@ -68,14 +78,21 @@ public class YamlGameSeedSource
     GameSeedYamlReader reader;
     GameConfigurationProperties properties;
 
+    /**
+     * The one-parse-per-run snapshot both ports serve from. Written at most once per successful parse (a
+     * failed parse leaves it {@code null}, so the next pull retries); {@code volatile} for safe publication
+     * across threads, with no locking — a racy duplicate parse of the immutable carriers is benign.
+     */
+    @NonFinal
+    volatile GameSeed authoredSeed;
+
     @Override
     public GameSeed loadGameSeed() {
         Resource seed = properties.getWorld().getSeedLocation();
-        String startingSceneId = properties.getPlayer().getStartingSceneId();
-        int playerMaxHitPoints = properties.getPlayer().getMaxHitPoints();
-        log.info("[GameSeed] Loading the authored seed from {} with starting scene {}", seed, startingSceneId);
-        try (InputStream in = seed.getInputStream()) {
-            return reader.read(in, startingSceneId, playerMaxHitPoints);
+        log.info("[GameSeed] Loading the authored seed from {} with starting scene {}", seed,
+                properties.getPlayer().getStartingSceneId());
+        try {
+            return authoredSeed();
         } catch (IOException | RuntimeException e) {
             throw new GameSeedSourceOperationsError(
                     "could not read or parse the game seed from %s".formatted(seed), e);
@@ -86,10 +103,8 @@ public class YamlGameSeedSource
     public CorpseBlueprint loadCorpseBlueprint(String corpseRef) {
         Resource seed = properties.getWorld().getSeedLocation();
         log.debug("[GameSeed] Loading the corpse blueprint '{}' from {}", corpseRef, seed);
-        try (InputStream in = seed.getInputStream()) {
-            GameSeed gameSeed = reader.read(in, properties.getPlayer().getStartingSceneId(),
-                    properties.getPlayer().getMaxHitPoints());
-            return assembleBlueprint(corpseRef, gameSeed.getItems(), seed);
+        try {
+            return assembleBlueprint(corpseRef, authoredSeed().getItems(), seed);
         } catch (CorpseBlueprintSourceOperationsError e) {
             throw e;   // already the port's currency — never double-wrapped
         } catch (IOException | RuntimeException e) {
@@ -98,6 +113,25 @@ public class YamlGameSeedSource
             // time, since the initialization gate validated the same authoring at boot.
             throw new CorpseBlueprintSourceOperationsError(
                     "could not read or assemble the corpse blueprint '%s' from %s".formatted(corpseRef, seed), e);
+        }
+    }
+
+    /**
+     * Serves the memoized snapshot, parsing it on first pull — whichever port asks first materializes it.
+     * Throws raw ({@link IOException} or the reader's runtime failures): the currency translation stays in
+     * the port methods above, preserving one file, two currencies.
+     */
+    private GameSeed authoredSeed() throws IOException {
+        GameSeed cached = authoredSeed;
+        if (cached != null) {
+            return cached;
+        }
+        Resource seed = properties.getWorld().getSeedLocation();
+        try (InputStream in = seed.getInputStream()) {
+            GameSeed parsed = reader.read(in, properties.getPlayer().getStartingSceneId(),
+                    properties.getPlayer().getMaxHitPoints());
+            authoredSeed = parsed;
+            return parsed;
         }
     }
 
