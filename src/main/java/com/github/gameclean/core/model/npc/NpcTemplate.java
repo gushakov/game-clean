@@ -26,6 +26,11 @@ import java.util.Set;
  * rather than only when an instance is finally built, is the point: an invalid template is rejected up front,
  * independent of how the random spawn rolls fall, closing the gap where an invalid template might otherwise
  * never be exercised.
+ *
+ * <p>The optional {@code corpseRef} (authored absence when {@code null}) is the authored handle of the item
+ * template minted as an instance's corpse when it is slain; it is copied onto every spawned instance like the
+ * descriptions. Whether it <em>resolves</em> — to an authored container without a ground-spawn rule — is an
+ * inter-template rule the use-case gate checks, exactly like containment targets.
  */
 @Value
 public class NpcTemplate {
@@ -37,8 +42,11 @@ public class NpcTemplate {
     Chance attackChance;
     int maxHitPoints;
 
+    /** Authored handle of the corpse item template minted when an instance is slain — null when it leaves none. */
+    String corpseRef;
+
     public NpcTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule, Chance moveChance,
-                       Chance attackChance, int maxHitPoints) {
+                       Chance attackChance, int maxHitPoints, String corpseRef) {
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
         this.fullDescription = requireNonBlank(fullDescription, "npc full description");
         this.spawnRule = DomainValidation.requireNonNull(spawnRule, "npc spawn rule must not be null");
@@ -48,13 +56,19 @@ public class NpcTemplate {
             throw new InvalidDomainObjectError("npc max hit points must be strictly positive, got " + maxHitPoints);
         }
         this.maxHitPoints = maxHitPoints;
+        // Authored absence is a valid state (the NPC leaves no corpse); a present ref must carry content.
+        if (corpseRef != null && corpseRef.strip().isEmpty()) {
+            throw new InvalidDomainObjectError("npc corpse ref must not be blank when present");
+        }
+        this.corpseRef = corpseRef;
     }
 
     /**
      * Builds one NPC instance of this template at the given scene, stamped with the given freshly generated id.
-     * The descriptions, move chance and attack chance are copied onto the instance — instances hold their own
-     * state and do not reference the template. The instance spawns at full health ({@link HitPoints#full(int)}
-     * of {@link #maxHitPoints}), <em>non-hostile</em>, and version {@code 0} (a new, not-yet-persisted row).
+     * The descriptions, move chance, attack chance and corpse ref are copied onto the instance — instances hold
+     * their own state and do not reference the template. The instance spawns at full health
+     * ({@link HitPoints#full(int)} of {@link #maxHitPoints}), <em>non-hostile</em>, and version {@code 0} (a
+     * new, not-yet-persisted row).
      */
     public Npc instanceAt(NpcId id, SceneId currentScene) {
         return Npc.builder()
@@ -66,6 +80,7 @@ public class NpcTemplate {
                 .attackChance(attackChance)
                 .hitPoints(HitPoints.full(maxHitPoints))
                 .hostile(false)
+                .corpseRef(corpseRef)
                 .version(0)
                 .build();
     }

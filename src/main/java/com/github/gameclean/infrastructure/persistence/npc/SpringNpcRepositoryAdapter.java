@@ -37,9 +37,11 @@ import java.util.Optional;
  * translated to the core's {@link OptimisticLockingError} so the transaction adapter can fire an
  * {@code onLockDetected} reaction (the loser's "the target got away").
  *
- * <p>The two reads return <b>living</b> NPCs only (hit points {@code > 0}): a dead NPC stays in the table but
- * is gone from listings and targeting. {@link #npcsAlreadySpawned()} counts <em>all</em> rows on purpose — a
- * world that spawned NPCs is already seeded even if they have since died, so a restart never re-rolls them.
+ * <p>The reads return <b>living</b> NPCs only (hit points {@code > 0}) as defense in depth — a slaying
+ * {@linkplain #deleteNpc(Npc) deletes} the row outright (the corpse item takes over the scene presence, #93),
+ * so a zero-hit-point row should not normally exist. {@link #npcsAlreadySpawned()} counts all remaining rows;
+ * see the port for the accepted consequence of deleting the slain (a world whose every NPC has been slain
+ * re-spawns on the next boot).
  */
 @Component
 @RequiredArgsConstructor
@@ -94,6 +96,24 @@ public class SpringNpcRepositoryAdapter implements NpcRepositoryOperationsOutput
                     "Npc %s was modified concurrently (stale version)".formatted(npc.getId().asString()), e);
         } catch (DataAccessException e) {
             throw new PersistenceOperationsError("Cannot save npc %s".formatted(npc.getId().asString()), e);
+        }
+    }
+
+    @Override
+    public void deleteNpc(Npc npc) {
+        try {
+            // Spring Data JDBC's delete(aggregate) is version-checked when the entity carries @Version:
+            // it issues DELETE ... WHERE id = ? AND version = ? and raises OptimisticLockingFailureException
+            // when no row matches — exactly the guarded write a slaying needs (the lethal strike races the
+            // wandering/attacking policy's executions like any other NPC write).
+            repository.delete(mapper.toDbEntity(npc));
+            log.debug("[Persistence] Deleted npc {} (version {}, slain in scene {})",
+                    npc.getId().asString(), npc.getVersion(), npc.getCurrentScene().asString());
+        } catch (OptimisticLockingFailureException e) {
+            throw new OptimisticLockingError(
+                    "Npc %s was modified concurrently (stale version)".formatted(npc.getId().asString()), e);
+        } catch (DataAccessException e) {
+            throw new PersistenceOperationsError("Cannot delete npc %s".formatted(npc.getId().asString()), e);
         }
     }
 

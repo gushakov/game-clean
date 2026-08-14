@@ -313,6 +313,35 @@ the authoring side speak positively with kind-sensitive defaults and the model s
 inverse; the seed gate is the one translation point, and the carrier keeps authored-absence visible as
 null.*)
 
+**The corpse cashes a third placement route — and the first authored handle enters the model as a handle,
+never dressed up as an identity.** `[thread #1]` The containers vertical had already created "no `spawn:`
+rule = placed by another route" for contained-only items; the corpse (#93) generalizes it: an NPC slain in
+combat leaves an anchored container item minted where it fell, so placement routes are now ground spawn,
+containment fill, and the *death drop* — and a corpse is *no new model concept at all*, just an ordinary item
+template whose capability flags happen to compose perfectly (container to hold the loot; the
+anchored-by-default polarity makes a corpse un-takeable without authoring a word). The genuinely new thing is
+`Npc.corpseRef`: authored handles had been deliberately non-identities confined to the gate, and one now
+persists on an aggregate. It stays a plain, opaque, nullable `String` — not a `CorpseRef` VO — because it
+names no existing instance (nothing exists to identify until the death mints it), the model can resolve
+nothing through it (resolution is a port concern at death time), and its only invariant is
+non-blank-if-present; an ID VO here would dress a foreign key in domain clothes. On the presentation side the
+corpse *folds into* `presentNpcSlain(npc, Optional<Item> corpse)` as data on the one stripe rather than
+earning a second stripe — the deliberate contrast with `examine`'s two-stripe container reveal: slaying is
+*one* outcome with an authored-absence datum (the use case still decided, by choosing what to pass), whereas
+reveal-contents vs describe-item are two different goals of examining. Only the corpse crosses to the
+presenter, never the rolled loot — what lies on the body stays unspoken until examined.
+
+**The anticipated `InitializeGame` extraction trigger was dodged, not fired — a new authored *rule* is not a
+new authored *kind*.** `[thread #4]` The assembly extraction had been parked with "trigger: the next authored
+content kind" (§4), and the corpse looked like that kind arriving. It wasn't: corpse authoring rides the
+existing item kind (a corpse template passes the item gate untouched) and adds one *cross-kind reference
+checkpoint* — npc `corpse:` must resolve to an authored container without a spawn rule — exactly the shape of
+the containment-target check, not a replication of the per-kind (construction gate → resolve-spawn-scenes →
+roll) triple. One map-returning helper plus one presenter stripe; the triple count stayed at two, so the
+extraction stays deferred and the trigger stays armed for a kind that actually replicates it. The discipline
+worth keeping: re-derive whether a pre-decided refactor's *named trigger* actually fired, rather than firing
+it on surface resemblance.
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -524,6 +553,24 @@ through getter chains** — that is the Demeter violation that bites (`customer.
 surface the Demeter option as *considered-and-declined* rather than silently defaulting to the carve-out side —
 the same flag-it-even-if-rejected discipline applied to Boot-4 quirks. (Not a promotion candidate on its own —
 it is the presenter-boundary corollary of §10's LoD rule.)
+
+**A second valid-out flavor: valid by provenance *through a gate that re-runs* — the corpse blueprint.**
+`[thread #2]` The calendar port returns a valid model because its adapter constructs and fail-fasts at boot;
+the corpse-blueprint port (#93) — the first *runtime* consumer of authored world data — is valid-out for a
+subtler reason: its validity gate lives in a *different interaction*. `InitializeGame` re-checks every
+authored corpse ref on every boot (its gate checkpoints run before the idempotency guards, so a pre-seeded
+world still re-validates), presenting authoring faults there; by the time a death pulls a blueprint the
+authoring is valid by provenance, and the adapter may construct real `ItemTemplate`s and `Chance`s. What can
+still fail at death time is therefore never "invalid authored input" but **drift** — a persisted `corpse_ref`
+against a since-edited seed — an integrity fault in the port's own error, propagating to `presentError` with
+the *no-half-death* rule: the blueprint is pulled before the transaction opens, so a failed pull fails the
+whole strike and nothing is written. Two sharpenings fall out. *One file, two currencies:* the same YAML
+behind the same adapter now serves invalid-capable `*Entry` carriers to the boot gate and valid models to the
+death pull — provenance, not the adapter, the file, or the hexagon side, decides the currency (the §3 rule,
+now demonstrated within a single class). *A different contract is a new port, not a new method:* the runtime
+need did not widen the seed port ("the whole authored world, once, invalid-capable") but got its own narrow
+one ("one minting recipe, on demand, valid") — output-port granularity following the *contract*, not the data
+source.
 
 ## 4. Use cases as first-class interactions
 
@@ -1472,7 +1519,25 @@ outright (`Npc`). The trigger to add `Npc.@Version` is named and deferred by eme
 able to affect an NPC** (take-from, attack, trade), which is exactly what introduces the second writer a lock
 guards against, and is the same event that turns NPC behaviour from polling into the §8 event spine. Carrying
 a version now would be speculation against an interaction that does not exist; the plain-transaction unit test
-(mirroring `DropUseCaseTest`) pins that a lock loss is unreachable rather than merely absent.
+(mirroring `DropUseCaseTest`) pins that a lock loss is unreachable rather than merely absent. (*Since cashed
+verbatim by #66:* the `hit` vertical made the player that second writer, and the version arrived with it —
+see §2's "combat cashes the last two deferrals" — so this paragraph stands as the record of the deferral
+reasoning, its trigger having fired exactly as named.)
+
+**A version-checked *delete* joins the guarded-write family — the race outcome must not depend on the write's
+SQL verb.** `[thread #3]` A slaying (#93) replaces the NPC row with its corpse: one atomic unit holds the
+delete and the corpse + loot inserts, so a death never commits without its corpse nor a corpse without its
+death — the one-outcome-one-unit rule with a *removal* inside it for the first time. The subtle requirement
+is that the delete carries the same optimistic version check as the save: a naive delete-by-id would let a
+strike slay an NPC that a concurrent wander had already moved past — a race the *versioned save* would have
+lost (`presentNpcGotAway`) — so the loser's fate would silently differ depending on whether the lethal write
+happened to be an UPDATE or a DELETE. Spring Data JDBC's `delete(aggregate)` honors `@Version`
+(`DELETE … WHERE id = ? AND version = ?`), pinned against real Postgres. The accepted trade: the
+spawn-idempotency guard counts rows, so a world whose *every* NPC has been slain reads not-yet-spawned and
+the next boot re-spawns fresh instances while their predecessors' corpses accumulate. Accepted rather than
+minting a separate world-was-seeded marker, because the guard's purpose is preventing a duplicate *living*
+population, not remembering history — and the corpses themselves are the visible record. The trade is pinned
+in an IT, so it reads as doctrine, not as a bug awaiting discovery.
 
 ## 6. The composition root — the framework held at arm's length
 

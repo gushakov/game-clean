@@ -142,6 +142,16 @@ public class ItemTemplate {
     }
 
     /**
+     * Whether this template ever places instances onto the ground by itself — {@code true} exactly when it
+     * carries a {@link SpawnRule}. A template without one appears only through another placement route (a
+     * container's containment roll, or a death drop), which is why the corpse-ref gate asks this: a corpse
+     * template must <em>not</em> spawn on its own.
+     */
+    public boolean spawnsOnGround() {
+        return spawnRule != null;
+    }
+
+    /**
      * This template's candidate spawn scenes that are not among the given known scene ids — empty when the
      * template carries no spawn rule (a contained-only item references no scenes). Delegates to the
      * {@link SpawnRule}, so a caller asks the template rather than reaching through it into the rule (Law of

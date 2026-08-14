@@ -59,6 +59,10 @@ public class NpcDbEntity {
     @Column("hostile")
     private boolean hostile;
 
+    /** Authored handle of the corpse item template minted when this NPC is slain — null when it leaves none. */
+    @Column("corpse_ref")
+    private String corpseRef;
+
     @Embedded.Nullable
     private HitPointsDbEntity hitPoints;
 }

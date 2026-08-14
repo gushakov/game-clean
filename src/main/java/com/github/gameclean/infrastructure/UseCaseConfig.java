@@ -3,6 +3,7 @@ package com.github.gameclean.infrastructure;
 import com.github.gameclean.core.model.dice.SystemDice;
 import com.github.gameclean.core.port.calendar.CalendarSourceOperationsOutputPort;
 import com.github.gameclean.core.port.clock.GameTimeSourceOutputPort;
+import com.github.gameclean.core.port.corpse.CorpseBlueprintSourceOperationsOutputPort;
 import com.github.gameclean.core.port.daytime.DayPhaseScheduleSourceOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.DayPhaseLogRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.GameClockRepositoryOperationsOutputPort;
@@ -227,19 +228,24 @@ public class UseCaseConfig {
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
             SceneRepositoryOperationsOutputPort sceneOps,
             NpcRepositoryOperationsOutputPort npcOps,
+            ItemRepositoryOperationsOutputPort itemOps,
+            CorpseBlueprintSourceOperationsOutputPort corpseBlueprintSourceOps,
             TransactionOperationsOutputPort txOps) {
         // One presenter instance, shared with the orient and the scene-sourced NPC select subcases (as take does
         // with items), so every outcome — both actors' strikes, got-away, the orient not-founds, the
         // disambiguation outcomes — reaches the same one. This bean is pulled by BOTH the console (player hits)
         // and the NPC command session (npcStrikesPlayer), each getting a fresh prototype. On a lethal
-        // counterstrike the presenter announces game-over and latches the GameLifecycle. Dice is a domain
-        // collaborator (a fresh SystemDice, like the ticker).
+        // counterstrike the presenter announces game-over and latches the GameLifecycle. A lethal player strike
+        // pulls the slain NPC's corpse blueprint (served by the YAML seed adapter) and writes the corpse + loot
+        // through the item port in the same transaction as the delete. Dice is a domain collaborator (a fresh
+        // SystemDice, like the ticker).
         TerminalFightNpcPresenter presenter =
                 new TerminalFightNpcPresenter(orientRenderer, npcRenderer, console, affordanceContext, gameLifecycle);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneNpcSubcase select = new SelectSceneNpcSubcase(presenter, npcOps);
         return new FightNpcUseCase(
-                presenter, orient, select, npcOps, playerRepositoryOps, playerOps, txOps, new SystemDice());
+                presenter, orient, select, npcOps, playerRepositoryOps, playerOps, itemOps,
+                corpseBlueprintSourceOps, txOps, new SystemDice());
     }
 
     @Bean

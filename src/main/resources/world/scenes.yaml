@@ -69,13 +69,20 @@ scenes:
 # container itself (no authored nesting). The `spawn` rule is optional: an item
 # without one never spawns onto the ground and appears only inside containers.
 #
-# The two placement routes are INDEPENDENT. `spawn.max` bounds only the ground-spawn
+# The placement routes are INDEPENDENT. `spawn.max` bounds only the ground-spawn
 # tries of its own rule; containment rolls never count against the contained item's
 # spawn rule (nor vice versa). A template's total world population is therefore its
 # ground placements (at most `spawn.max`) PLUS at most one instance per `contains`
 # entry per spawned container instance — e.g. up to 3 ground daggers plus 1 more per
 # chest below. Cardinality is authored where the placement is authored: the spawn
 # rule owns the ground, each container's `contains` entry owns that container.
+#
+# A third placement route is the DEATH DROP: an item referenced by an NPC's `corpse:`
+# (below) is minted when that NPC is slain — one instance per slaying, its `contains`
+# rolled per corpse like any container fill. A corpse template must be a container
+# and must NOT author a `spawn` rule (it would also lie around at init); left
+# unauthored `portable`, it defaults to anchored like any container, so a corpse
+# cannot be carried off.
 #
 # Portability (`portable`, optional): whether `take` may carry the item off. Defaults
 # are kind-sensitive — a plain item is portable unless authored `portable: false`; a
@@ -127,13 +134,32 @@ items:
       chance: 1/1
       max: 1
 
+  # Death drop: no `spawn` rule and referenced by no `contains` — it is minted only when
+  # the hooded wanderer is slain (see npcs.corpse below). A container (its loot lies on
+  # the body); `portable` unauthored, so it is anchored — a corpse cannot be carried off.
+  - id: itm5
+    shortDescription: The corpse of a hooded wanderer.
+    fullDescription: >
+      The wanderer lies where it fell, its travel-worn cloak settled over it like a
+      shroud. Whatever drove it around these ruins has finally let it rest.
+    container: true
+    contains:
+      - item: itm2         # the tarnished silver ring may be on the body
+        chance: 1/2        # rolled once per slaying
+
 # Authored NPCs. Each is a *template*: its `spawn` rule places 0..max instances into
 # randomly chosen candidate scenes (one chance roll per try), exactly like items.
 # Spawned NPCs then wander on a background metronome that fires every second — each tick,
 # `moveChance` decides whether the NPC steps to a random adjacent scene, so it is the
 # per-tick odds (1/40 ≈ a move every ~40s). Instances are minted fresh generated ids at
 # seed time; the `id` here is only an authoring handle. Spawning is idempotent — a restart
-# never re-rolls, and NPCs resume from their last position.
+# never re-rolls, and NPCs resume from their last position. (One deliberate exception:
+# slain NPCs are DELETED — their corpses remain — so a world whose every NPC has been
+# slain re-spawns fresh instances on the next boot; the fallen's corpses accumulate.)
+#
+# `corpse:` (optional) names the item template minted as this NPC's corpse when an
+# instance is slain — one corpse per slaying, dropped in the scene where it fell, its
+# `contains` rolled there and then. Unauthored = the NPC leaves no corpse.
 npcs:
   - id: npc1
     shortDescription: A hooded wanderer.
@@ -143,6 +169,7 @@ npcs:
     moveChance: 1/40       # per-tick odds of wandering (~a move every 40s at the 1s tick)
     attackChance: 1/3      # once provoked, per-tick odds of striking back (~a blow every ~3s)
     hitPoints: 20          # health pool it spawns at; a strike does 1..10 damage
+    corpse: itm5           # slain, it leaves the wanderer's corpse (see items)
     spawn:
       scenes: scn1         # scenes where the NPC can spawn
       chance: 1/1          # chance of spawning on each try

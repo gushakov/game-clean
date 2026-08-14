@@ -1,12 +1,17 @@
 package com.github.gameclean.core.usecase.combat;
 
 import com.github.gameclean.core.model.dice.Dice;
+import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
+import com.github.gameclean.core.port.corpse.CorpseBlueprint;
+import com.github.gameclean.core.port.corpse.CorpseBlueprintSourceOperationsOutputPort;
+import com.github.gameclean.core.port.persistence.ItemRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.NpcRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
@@ -18,6 +23,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,6 +40,15 @@ import java.util.Optional;
  * valid NPC, so it rolls damage, lowers the NPC copy-on-write, provokes the survivor into the hostile stance,
  * and persists. The struck-vs-slain stripe is chosen from the post-damage NPC ({@code struck.isDead()}); a
  * survivor is {@linkplain Npc#provoked() provoked} so the animate policy will re-derive its counterattack.
+ *
+ * <p><b>A slaying replaces the NPC with its corpse (#93).</b> When the strike kills and the NPC carries a
+ * {@code corpseRef}, the blueprint is pulled through the corpse-blueprint port and the corpse — an anchored
+ * container item minted where the NPC fell — plus its rolled loot are built <em>outside</em> the transaction
+ * (a read and pure entropy, like the damage roll); one transaction then atomically deletes the NPC row and
+ * saves the remains, so a death never commits without its corpse nor vice versa (no half-death — a blueprint
+ * failure propagates to the catch-all and the strike does not land at all). An NPC authored without a corpse
+ * simply has its row deleted. The delete is version-checked like the save, so a lost race still presents
+ * {@code presentNpcGotAway}.
  *
  * <p><b>NPC strikes back (secondary actor).</b> {@link #npcStrikesPlayer(String)} is dispatched by the animate
  * policy as a command (never typed), so its actor is the NPC and there is no {@code orient}/{@code select}
@@ -69,6 +84,8 @@ public class FightNpcUseCase implements FightNpcInputPort {
     NpcRepositoryOperationsOutputPort npcOps;
     PlayerRepositoryOperationsOutputPort playerRepositoryOps;
     PlayerOperationsOutputPort playerOps;
+    ItemRepositoryOperationsOutputPort itemOps;
+    CorpseBlueprintSourceOperationsOutputPort corpseBlueprintSourceOps;
     TransactionOperationsOutputPort txOps;
     Dice dice;
 
@@ -161,27 +178,63 @@ public class FightNpcUseCase implements FightNpcInputPort {
 
     /**
      * The shared player-strike tail: roll the damage (outside the transaction), lower the resolved NPC
-     * copy-on-write, provoke the survivor into the hostile stance, and persist it in one narrow transaction —
-     * presenting the slain or struck outcome after commit and a lost concurrent race via {@code onLockDetected}.
-     * Void and terminal — it ends in a presentation on every path, so callers do nothing after it.
+     * copy-on-write, and persist the consequence in one narrow transaction — a survivor is provoked and saved;
+     * a slain NPC's row is atomically replaced by its minted corpse and loot. Each branch presents its outcome
+     * after commit and a lost concurrent race via {@code onLockDetected}. Void and terminal — it ends in a
+     * presentation on every path, so callers do nothing after it.
      */
     private void strikeResolvedNpc(Npc npc) {
         int damage = dice.rollDie(DAMAGE_DIE_SIDES);
-        Npc damaged = npc.takeDamage(damage);
-        // A survivor is provoked into the hostile stance so the animate policy re-derives its counterattack;
-        // a slain NPC is not provoked (it will not fight from the grave).
-        Npc struck = damaged.isDead() ? damaged : damaged.provoked();
+        Npc struck = npc.takeDamage(damage);
+
+        if (!struck.isDead()) {
+            // A survivor is provoked into the hostile stance so the animate policy re-derives its counterattack.
+            Npc provoked = struck.provoked();
+            txOps.doInTransaction(
+                    () -> {
+                        npcOps.saveNpc(provoked);
+                        txOps.doAfterCommit(() -> presenter.presentNpcStruck(provoked, damage));
+                    },
+                    () -> presenter.presentNpcGotAway(npc.getId()));
+            return;
+        }
+
+        // The strike is lethal. Mint what the death leaves behind — the corpse (when authored) and its rolled
+        // loot — outside the transaction: the blueprint pull is a read and the rolls are pure entropy, neither
+        // with a persistence effect. A blueprint failure propagates to the caller's catch-all before anything
+        // is written, so the strike fails whole (no half-death).
+        List<Item> remains = mintRemains(struck);
+        Optional<Item> corpse = remains.isEmpty() ? Optional.empty() : Optional.of(remains.getFirst());
+
+        // One atomic unit replaces the NPC with its remains: the version-checked delete (a lost race must not
+        // slay an NPC another writer has moved past) and the corpse + loot inserts commit together — a death
+        // never commits without its corpse, nor a corpse without its death.
         txOps.doInTransaction(
                 () -> {
-                    npcOps.saveNpc(struck);
-                    txOps.doAfterCommit(() -> {
-                        if (struck.isDead()) {
-                            presenter.presentNpcSlain(struck);
-                        } else {
-                            presenter.presentNpcStruck(struck, damage);
-                        }
-                    });
+                    npcOps.deleteNpc(struck);
+                    remains.forEach(itemOps::saveItem);
+                    txOps.doAfterCommit(() -> presenter.presentNpcSlain(struck, corpse));
                 },
                 () -> presenter.presentNpcGotAway(npc.getId()));
+    }
+
+    /**
+     * Builds the items a slaying leaves behind: empty for an NPC authored without a corpse; otherwise the
+     * corpse instance minted at the death scene (always first), followed by whichever loot entries' odds roll
+     * a hit — one roll per entry, each minted {@code Inside} the corpse (the containment-fill semantics,
+     * replayed at death time). Pure construction over the pulled blueprint — no persistence effect.
+     */
+    private List<Item> mintRemains(Npc slain) {
+        if (slain.getCorpseRef() == null) {
+            return List.of();
+        }
+        CorpseBlueprint blueprint = corpseBlueprintSourceOps.loadCorpseBlueprint(slain.getCorpseRef());
+        List<Item> remains = new ArrayList<>();
+        Item corpse = blueprint.getCorpseTemplate().instanceAt(ItemId.mint(dice), slain.getCurrentScene());
+        remains.add(corpse);
+        for (CorpseBlueprint.Loot loot : blueprint.getLoot()) {
+            loot.getTemplate().spawnInside(dice, loot.getChance(), corpse.getId()).ifPresent(remains::add);
+        }
+        return remains;
     }
 }
