@@ -652,9 +652,11 @@ containment fill, death drop):
   a new authored *rule* is not a new authored *kind*, design-notes §2.)
 - **Port / adapter** — `core/port/corpse/`: `loadCorpseBlueprint(ref)` returns the valid-out `CorpseBlueprint`
   (corpse `ItemTemplate` + `(ItemTemplate, Chance)` loot pairs; templates carry no ground-spawn rule);
-  `YamlGameSeedSource` implements it as its second port (the `YamlCalendarSource` precedent), re-reading the
-  seed per death and throwing `CorpseBlueprintSourceOperationsError` on drift (edited-seed vs persisted ref —
-  an integrity fault, design-notes §3).
+  `YamlGameSeedSource` implements it as its second port (the `YamlCalendarSource` precedent), serving the
+  death-time pull from the lazily memoized one-parse-per-run `GameSeed` snapshot both ports share (#95 — the
+  blueprint is assembled from the very parse the boot gate validated) and throwing
+  `CorpseBlueprintSourceOperationsError` on drift (edited-seed vs persisted ref — an integrity fault,
+  design-notes §3, incl. the adapter-cache litmus note).
 - **FightNpc slay branch** — blueprint pull + loot rolls outside the tx; one transaction holds the
   **version-checked `deleteNpc`** (the codebase's first delete — Spring Data JDBC `delete(aggregate)` honors
   `@Version`, so a lost race still presents `presentNpcGotAway`) + the corpse/loot `saveItem`s;
@@ -664,7 +666,7 @@ containment fill, death drop):
   **Known consequence** (pinned in `NpcRoundTripIT` + port javadoc): all NPCs slain → `npcsAlreadySpawned()`
   false → the next boot re-spawns fresh instances; corpses accumulate (design-notes §5).
 
-Tests: 516 unit (Surefire, DB-free) + 28 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Tests: 518 unit (Surefire, DB-free) + 28 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **take from a container** (the
