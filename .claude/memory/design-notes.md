@@ -342,6 +342,46 @@ extraction stays deferred and the trigger stays armed for a kind that actually r
 worth keeping: re-derive whether a pre-decided refactor's *named trigger* actually fired, rather than firing
 it on surface resemblance.
 
+**`ItemTemplate` is Evans' FACTORY riding a knowledge-level object — and the always-valid gate changes what
+the pattern must carry.** `[thread #1]` The identification, made precise: not GoF Factory Method — nothing
+defers creation to subclasses, and nothing ever substitutes for a kind — but Evans' FACTORY in his own
+first-choice placement, factory methods on a domain object closely involved in the creation. Within the class
+the methods split into two ranks. `instanceAt`/`instanceInside` are the textbook half: encapsulated assembly,
+no client touches `Item.builder()`, the construction knowledge lives with its owner. `spawnInto`/`spawnInside`
+are *more* than factories: a GoF factory never decides *whether* to create — it is told to — while these roll
+the rule or the odds first; policy fused with assembly, rightly, because rule and recipe share an owner ("the
+authored kind owns how it populates the world" is ubiquitous language, and the method placement is that
+sentence compiled). The canonical temptation — an `ItemSpawnService` deciding, an `ItemFactory` assembling,
+templates as data read by both — is the anemic reflex in miniature: it separates the recipe from the only
+behaviour that uses it. The deeper identification: the template is a **knowledge level** (Fowler's *Analysis
+Patterns*; Johnson & Woolf's *Type Object*) — template as knowledge level, `Item` instances as operational
+level, the factory methods as the arrow between them. Game development converged on template/instance as
+*the* item-system pattern independently of DDD — external validation that this is domain structure, not
+architecture ceremony. One deliberate deviation from Type Object proper: the canonical pattern keeps an
+instance→type reference (instance holds a template id plus deltas); ours **copies and severs** ("instances
+hold their own state and do not reference the template") because templates are transient authoring-time
+artifacts, never persisted — and the cost, seed edits not propagating to persisted instances, is precisely
+the seed/world *drift* the corpse-blueprint contract (§3) names as an integrity-fault category. Two burdens
+the canonical pattern carries fall away here. **Identity acquisition:** Vernon's `repository.nextIdentity()`
+idiom drags factories toward infrastructure — the historical reason factories drift out of the domain layer;
+`ItemId.mint(dice)` keeps minting in-model, so the #52/#53 dice reclassification is *why* this factory could
+stay in the model at all. **Invariant enforcement:** Evans assigns factories birth-time invariant duty
+("create entire aggregates as a piece, enforcing their invariants") because ORM-era constructors had to stay
+open for hydration; under always-valid construction the factory is relieved — `instanceWith` routes through
+`Item`'s validating builder, so even a buggy factory cannot mint an invalid instance. The factory contributes
+semantics and convenience; safety lives one level down, in the gate. Creation and reconstitution stay split
+exactly as Evans wants: templates create, the MapStruct mappers reconstitute — §3's provenance doctrine
+applied to object birth. The tie forward: if `ItemTemplate` is the model's factory layer, the corpse
+blueprint (§3) is a *composition of factories* whose one missing behaviour is the composition rule currently
+in `mintRemains` — its graduation, if the evidence arrives, completes a factory hierarchy the model already
+owns, one method's delta. A naming caution for the showcase: "textbook Factory pattern" invites the GoF
+substitutability connotation (factories mocked, swapped by DI), which is the one piece of textbook that does
+not apply; the honest label is *factory methods on a knowledge-level domain object*. (Promotion candidate,
+flagged not promoted: *a knowledge-level object owning its factory methods is the rich-model form of Evans'
+FACTORY — policy and assembly fuse when rule and recipe share an owner; always-valid construction relieves
+the factory of invariant duty and a domain entropy capability relieves it of identity acquisition, the two
+burdens that historically dragged factories out of the model.*)
+
 ## 3. Boundary currency: invalid-capable carrier in, valid model out
 
 This is the sharpest boundary lesson the project has produced so far, and it touches
@@ -596,6 +636,65 @@ duplicate parse is benign), failures never cached so a retry stays live. (Promot
 promoted: *a driven-adapter cache is architecture-invisible iff it sits below the port's error translation and
 changes neither the boundary currency nor where invalidity surfaces — test any cache proposal against those
 two invariants, and justify it by provenance-tightening, not throughput*.)
+
+**The carrier family named: boundary objects — Jacobson's dropped stereotype, resurfacing at the ports.**
+`[thread #2]` Stepping back from the shapes this section has accumulated, the driven-port return contract now
+shows **three currencies**: the *invalid-capable carrier* (`GameSeed`'s `*Entry`s — untrusted authored input,
+deliberately dumb, carrying possible invalidity inward for the use case to present), the *valid-out composite
+carrier* (`CorpseBlueprint` — valid by provenance, composed of real model types, yet the composite itself
+port-owned), and the *model directly* (`GameCalendar`, the persistence aggregates). The middle currency is
+the distinctive one — model-grade material at a port-side address — and deserves a family name: **boundary
+objects**, types owned by `core/port/*` that the use case and the port's adapter may hold equally, yet that
+are emphatically not models. The name is not new: Jacobson's OOSE robustness analysis had three stereotypes —
+entity, control, boundary — and the Clean DDD fusion has been systematically recovering them (entity objects
+became the model; control objects became the use cases; boundary objects are the third, resurfacing at the
+ports). Evans' closed building-block taxonomy (Entity, VO, Aggregate, Service, Factory, Repository, Event)
+has no slot for "consumer-owned contract vocabulary of an external interface", which produces the two
+canonical failure modes: **taxonomy pressure inward** — the thing is declared a VO and moved into the model,
+letting a data source's projection shape colonize the concept space (the blueprint deliberately excludes the
+loot templates' own ground-spawn rules — "a minting recipe for one death, not a world-population plan";
+importing that exclusion into the model would be exactly the colonization) — and **pressure outward**, an
+infrastructure "DTO" growing framework annotations, invisible to the use case. Nor is a boundary object a
+*layer*: the presenter side proves it by refusal — use case → presenter passes domain objects naked (the
+methodology's no-Response-Model relaxation), because immutability plus correct dependency direction make the
+model safe currency there. Martin mandates boundary wrappers at every boundary, reflexively; Evans mandates
+model everywhere (his ACL translates foreign data straight into domain objects — and validates at the edge,
+which is exactly what breaks "authored invalidity is a *presented* outcome"); Clean DDD picks the currency
+per port, by the provenance-and-purpose rule this section already owns.
+
+**The staging area: valid-out composites may graduate; invalid-capable carriers never do.** `[thread #1]`
+The middle currency is also the *unstable* one — a staging area where a contract-shaped composite waits for
+evidence that it is a concept. The graduation evidence is exactly two pressures. *Behaviour envy, read
+through the Demeter carve-out:* LoD applies to objects, not data structures — reaching through a declared
+carrier is its contract, so `blueprint.getCorpseTemplate().instanceAt(...)` in `mintRemains` is clean *as
+long as the blueprint is a carrier*; the moment the chain starts feeling dirty, the reader has begun seeing
+an object, and "is this chain LoD-dirty" and "is this carrier a proto-model" become the same question. *A
+second consumer* treating the composite as a concept rather than a delivery. Graduation is one-way (a model
+type never demotes to a carrier) and upgrades the port's return contract from the second currency to the
+third — the `GameCalendar` end state. The invalid-capable kind, by contrast, never graduates: dumbness under
+untrusted provenance is its permanent job, and the persistence module's read-model VOs prove that staying
+contract forever is an honourable end state.
+
+**The `mintRemains` verdict, recorded with its triggers.** The LoD reading of `mintRemains` suggested
+`Npc.mintRemains(Dice, CorpseBlueprint)` — and the proposal is **blocked by `core.model ↛ core.port`**, on
+purpose: the ArchUnit guard is the "carriers are not models" stance mechanized, so the migration is only
+expressible after graduation, a separate prior decision. Even after graduation `Npc` is the wrong home by the
+home test: the rule's inputs are blueprint-owned (the corpse template, the loot odds); the NPC contributes
+one value (the death scene) plus the already-consumed `corpseRef`; and the method would mint the bogus
+`npc → item` model edge the `SpawnRule` relocation to `spawn/` was performed to avoid. The natural landing
+zone is the blueprint itself — a self-executing recipe, `mint(dice, scene)`, completing the model's factory
+layer (§2's `ItemTemplate` passage). Today the evidence is not in: one consumer, one ten-line composition in
+a named private subfunction (§10's "don't fetishize extraction"). Named triggers, armed: a **second death
+cause** (a trap, poison, a guard slaying a fleeing NPC — any slaying outside `FightNpc` must replay the
+identical remains rule, and a domain rule duplicated across use cases is the strongest graduation signal the
+methodology recognizes) and **loot-from-inventory** (remains including what the NPC actually carried shifts
+input ownership and reopens the home question with `npc.remains(...)` as a real candidate rather than a
+misassignment). (Promotion candidate, flagged not promoted: *driven-port return contracts have three
+currencies — invalid-capable carrier, valid-out composite carrier (a "boundary object": Jacobson's third
+stereotype, missing from Evans' taxonomy), and the model itself — picked per port by provenance and purpose,
+never as a mandatory wrapping layer; valid-out composites are a staging area for emergent concepts,
+graduating into the model only on behaviour envy (the LoD itch on a carrier is the graduation question naming
+itself) or a second consumer, while invalid-capable carriers never graduate.*)
 
 ## 4. Use cases as first-class interactions
 
@@ -1563,6 +1662,27 @@ the next boot re-spawns fresh instances while their predecessors' corpses accumu
 minting a separate world-was-seeded marker, because the guard's purpose is preventing a duplicate *living*
 population, not remembering history — and the corpses themselves are the visible record. The trade is pinned
 in an IT, so it reads as doctrine, not as a bug awaiting discovery.
+
+**Transaction shape follows the write set; the stripe follows the domain.** `[thread #3]` (#66/#93) A
+comparative reading of `FightNpc`'s two sides pins a corollary of one-outcome-one-unit. `strikeResolvedNpc`
+forks into *two* transaction blocks — survivor (one provoked save) vs. slain (version-checked delete + corpse
+and loot inserts) — because the branches' **write sets differ**; `npcStrikesPlayer` keeps *one* block and
+chooses its stripe (player struck vs. slain) *inside* `doAfterCommit`, because both stripes share the same
+single write (`savePlayer`). Not an inconsistency: the fork point tracks where the difference lives —
+differing consequences fork the atomic unit; differing narrations of one consequence fork at presentation
+time. Each block remains its interaction's terminal act, and a stripe chosen inside the after-commit is still
+exactly one `present*` per path. The same reading also names how far the scenario-indexing of lock losses has
+come: the one detector (an optimistic version check failing) now surfaces as **four different business
+outcomes** across the codebase — `presentNpcGotAway` (the player's strike), the counterstrike's quiet
+`presentNothingHappened`, `presentNothingToAnnounce` (the watermark), `presentItemGotAway` (`take`). The
+mapping is scenario-indexed, which is the structural proof the reaction cannot live in a generic translation
+layer: an exception-to-HTTP-409 adviser sees the loss only after the interaction has unwound, when the
+scenario context (which write, which branch, dying or surviving) is gone; the `onLockDetected` handler is the
+reaction written *lexically inside* the branch whose write can lose. (Promotion candidate, flagged not
+promoted: *the transaction unit is shaped by the write set — branches whose write sets differ fork into their
+own atomic units, branches differing only in narration fork inside `doAfterCommit`; and a lock-loss reaction
+is scenario-indexed, handled lexically inside the interaction that can lose, never in a generic exception
+translator.*)
 
 ## 6. The composition root — the framework held at arm's length
 
@@ -3045,6 +3165,92 @@ Language and interaction-first use cases jointly convert semantic correctness in
 which serves a bounded-context, pattern-completing collaborator (an LLM) for the same reason it serves a
 returning human maintainer; and the pairing inverts the ceremony economics, since explicitness costs writing
 (now cheap) and pays in verification (still scarce).*)
+
+## 14. Where canonical DDD keeps the process — combat as the comparative exemplar
+
+`FightNpc` is the most sophisticated interaction so far — multi-actor (the NPC retaliating from another
+thread), multi-interaction, with a cross-aggregate atomic consequence (#93's corpse) — which makes it the
+right site for the comparative question the showcase exists to answer. Staring at `Npc` and `ItemTemplate`
+reveals nothing about how a fight happens; reading the use case top-to-bottom, stopping at the first relevant
+`return`, reveals everything. Canonical DDD (rich aggregates, thin application services) must keep that
+process *somewhere*. Where?
+
+**Four homes, honestly inventoried.** (a) **Reified as derived state** — the `Delivery` move (the
+methodology's category-error critique, temporal edition): a `Combat` aggregate, or a bank's `FundsTransfer`
+status enum, is the *minutes of the meeting* — a record of the process mutated by something else, pretending
+to be the process. (b) **Sagas / process managers** — the one honest first-class answer the canon developed
+(Axon sagas, process managers, BPMN engines; actual banks run on Camunda). It genuinely solves durability and
+long-running coordination, but writes the process *inside-out*: a state machine scattered across event
+handlers plus correlation state, unreadable top-to-bottom — to learn what happens when the NPC dies, you grep
+handlers. (c) **The de-facto answer** — fat application services everyone politely calls thin: 200-line
+methods doing what `strikeResolvedNpc` does with none of the discipline (no presenter, blanket transaction,
+leaking exceptions, no named actor), over anemic aggregates, beneath rich-model rhetoric. (d) And this design
+also has a process manager — the animate policy — reduced to its minimum (below).
+
+**The representation argument.** The saga represents the process as *data* (an event log) or as a *state
+machine* (saga states, a BPMN diagram); both must be reconstructed to answer "what happens when X". The use
+case represents the process as **control flow**: text order is scenario order, each `return` closes one
+stripe. That is the real competition — a representation choice, not a purity contest — and it is the precise
+content of the "stop at the first relevant return" reading property.
+
+**The `Combat`-aggregate thought experiment fails on four independent axes.** *Boundary:* `Player` and `Npc`
+already own their hit points and lifecycles; `Combat` either duplicates that state (two sources of truth) or
+holds their ids and enforces nothing — a correlation record wearing an aggregate costume. *The open world:*
+combat is not an enclosed episode — `move` and wander must stay possible mid-fight, so the aggregate must
+either give up its invariants or become a lock every scene-affecting interaction checks in with, serializing
+the very parallelism the design showcases (the aggregate-as-lock "solves" contention by eliminating it; the
+§5 doctrine detects it and gives the loss per-scenario meaning instead). *Initiative:* an aggregate cannot
+act; the retaliation needs a scheduler and a dispatcher outside the model in every possible design —
+canonical DDD just has no first-class name for where (§8 does: the policy and the command channel).
+*Entropy:* inject `Dice` into the aggregate, or roll outside and hand values in — at which point the rich
+aggregate has degenerated into a functional core fed values, i.e. this methodology without admitting it. What
+the model rightly keeps is the process's **residue in state** — the dispositions `hostile`, `HitPoints`,
+`provoked()` — and nothing else: §12's thesis running live (no `CombatStatus` enum anywhere, yet
+struck/provoked/slain/got-away fully enforced).
+
+**The policy is a saga reduced to memorylessness.** The animate policy carries no correlation id, no step
+counter, no process instance: intent is *re-derived from persisted stance every tick*, and the executing
+interaction *re-validates at execution* (`npcStrikesPlayer`'s presence/alive/co-location checks — the general
+shape of any decision-executed-later; a fraud re-check at clearance time is the same block). Saga state is
+replaced by re-derivation — the reconciliation-loop shape §8 records — and the substitution is available
+*because* the dispositions live in the model where the loop can re-read them. This is (d) above given its
+name: not "no process manager", but the process manager with its state dissolved into the domain.
+
+**The §12 thesis, generalized.** §12: the aggregate-as-state-machine is a compression artifact of an anemic
+application layer. The combat comparison generalizes it: **the fat aggregate is a compensation artifact of a
+distrusted application layer.** The canon says thin service, rich aggregate; the gravity of cross-aggregate
+rules, ports, and transactions says otherwise, so in practice the process lands in the service
+*unacknowledged*. Clean DDD's move is to stop being embarrassed about that gravity: name the procedure, give
+it discipline (void interactions, checkpoints, terminal presentation, a named initiating actor), and test it
+against its spec.
+
+**Consistency scoped by scenario, not by aggregate.** `[thread #3]` Vernon's one-aggregate-per-transaction
+rule is a consequence, not a principle: when the aggregate is the *only* construct that can declare "these
+commit together", a transaction cannot be allowed to span two of them, and cross-aggregate consistency is
+exiled to events and eventual consistency. Use-case-owned demarcation dissolves the premise: the slain
+branch's version-checked `Npc` delete + `Item` inserts is a **scenario invariant** ("no death without a
+corpse, no corpse without a death") declared by the layer that owns it. The canonical alternative — an
+`NpcSlain` event and a corpse-spawning handler — forces an observable half-state (a `look` between the two
+transactions sees a dead NPC and no remains) as ceremony, not choice. Eventual consistency becomes something
+chosen where genuinely wanted, not imposed by the building blocks.
+
+**Two honest bounds, so the showcase does not overclaim.** *A `Combat` aggregate could still earn
+existence* — by §12's continuation-set criterion, on evidence of episode-scoped state with real invariants:
+turn order, initiative, aggro tables, multi-NPC coordination, flee cooldowns. Combat today is memoryless
+between blows, so the aggregate would be speculation; the claim is "evidenced, never presumed", not "never".
+*And the bank analogy holds for shape, not durability:* a strike command is re-derivable from persisted
+stance (lost, it costs one round — §8's loop-is-the-retry), while a transfer leg is a fleeting fact whose
+loss is unrecoverable; §8's durability-follows-the-source rule answers differently there, and the saga's
+durability machinery is a legitimate answer to a requirement this domain lacks. The critique of the saga
+stands on readability and process representation — which is where it should stand, because on durability the
+saga wins. (Promotion candidate, flagged not promoted: *canonical DDD keeps the process as reified derived
+state, in sagas/process managers, or in fat application services pretending to be thin; the use case is the
+readable alternative — process as control flow, text order = scenario order — and a polling policy over
+persisted dispositions is a saga reduced to memorylessness; the fat aggregate is a compensation artifact of a
+distrusted application layer, and one-aggregate-per-transaction is an artifact of the aggregate being the
+only consistency-declaring construct — a first-class use case scopes the consistency unit by scenario
+outcome, with the honest bounds that episode-state invariants can still mint a process aggregate by the
+continuation-set criterion, and fleeting facts still need the saga's durability machinery.*)
 
 ## Non-doctrinal project decision
 
