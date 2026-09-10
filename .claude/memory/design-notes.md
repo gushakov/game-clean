@@ -19,6 +19,9 @@
 > - **Tie back to the open threads.** The four research questions below are the
 >   project's reason for existing; mark where a doctrine point feeds one with
 >   `[thread #N]`.
+> - Promotion markers on a doctrine point progress *flagged not promoted* → *logged as
+>   `[active]` in the methodology log* → *promoted out of this project*. The log, not this
+>   file, owns the dates.
 > - Boot-4-vs-3 gotchas → `spring-boot-4-notes.md`. Recipes / conventions →
 >   `project-context-extended.md`.
 
@@ -90,7 +93,7 @@ survive any driver (core); `Command`/`SelectCommand(ordinal)`/`AffordanceContext
 line-oriented terminal (infra). The async ticker is the standing proof — it drives a use case with *no*
 `Command` at all, so the core's input ports are already device-neutral, and importing a command vocabulary
 would break that. (Surfaced rejecting a *core* `Conversation` interface for the conversation dispatcher,
-§9.) (Promotion candidate, flagged not promoted: *the dependency rule proxies "the core is not shaped by
+§9.) (Promotion candidate — logged as `[active]` in the methodology log, not yet promoted: *the dependency rule proxies "the core is not shaped by
 any delivery mechanism"; an edge that relocation makes legal means the type is misfiled — test by "would
 it survive a second adapter?"*)
 
@@ -689,7 +692,7 @@ cause** (a trap, poison, a guard slaying a fleeing NPC — any slaying outside `
 identical remains rule, and a domain rule duplicated across use cases is the strongest graduation signal the
 methodology recognizes) and **loot-from-inventory** (remains including what the NPC actually carried shifts
 input ownership and reopens the home question with `npc.remains(...)` as a real candidate rather than a
-misassignment). (Promotion candidate, flagged not promoted: *driven-port return contracts have three
+misassignment). (Promotion candidate — logged as `[active]` in the methodology log, not yet promoted: *driven-port return contracts have three
 currencies — invalid-capable carrier, valid-out composite carrier (a "boundary object": Jacobson's third
 stereotype, missing from Evans' taxonomy), and the model itself — picked per port by provenance and purpose,
 never as a mandatory wrapping layer; valid-out composites are a staging area for emergent concepts,
@@ -739,7 +742,7 @@ The general rule now lives canonically in `clean-ddd-core` → *Unidirectional f
 *Presentation is terminal* (exactly one `present*` per run, reached as the interaction's last act;
 a `present*` relinquishes control completely rather than calling a subroutine; the use-case-side
 twin of the controller rule, which never branches on a result or chains use cases). It was
-**promoted out of this project**, so it is not restated in full here — this section keeps only
+**promoted out of this project** — the methodology log carries a retroactive pointer entry — so it is not restated in full here — this section keeps only
 game-clean's own contribution. That contribution is the *evidence*: merging world-construction and
 player-placement into one use case is what made the rule load-bearing, and it caught the concrete
 violation described above — the private phase helper that *presented* its outcome **and**
@@ -773,8 +776,8 @@ decision: the roll — the domain decision belonging to the player's goal — wo
 system interaction, leaving the asserted actor's interaction deciding nothing. The line, then:
 the causal chain an interaction may launch carries the *world's reactions* to its outcome; the
 outcome itself — everything the initiating actor needs answered to choose their next action —
-resolves synchronously within the interaction. (Promotion candidate, flagged not promoted: *an
-interaction may dispatch events for reactions, never for its own resolution — if the actor needs
+resolves synchronously within the interaction. (Promotion candidate — logged as `[active]` in the methodology
+log, not yet promoted: *an interaction may dispatch events for reactions, never for its own resolution — if the actor needs
 the result to decide their next step, it is an outcome stripe, not a reaction.*)
 
 **A third phase, and the use case turns stochastic without losing its testability.** `[thread #2]` `[thread #3]`
@@ -954,8 +957,9 @@ explicit parent catch is local, honest about control flow, and is the methodolog
 
 The methodology framed Path-1-vs-Path-2 as a choice made *per subcase*; `orient`'s finding is that for a
 **guarded prologue** the choice is naturally made *per branch* — equivalently, **a terminal (Path-2)
-subcase may return a result on its non-presenting success branch**. This is a promotion candidate for
-`subcases.md` (flagged here, not promoted from this project, per the methodology's Prompt-4 discipline).
+subcase may return a result on its non-presenting success branch**. This has since been **promoted** into
+`subcases.md` (§Mixed / guarded-prologue subcase — together with the parent-catch swallow of the marker and the
+`SubcaseAlreadyPresented` name), and the methodology log carries a retroactive pointer entry for it.
 The composition-root consequence — parent and subcase share one ad-hoc-`new`ed presenter instance — is
 in §6.
 
@@ -1124,9 +1128,9 @@ present, not the prologue they happen to share.** Sharing the *opening* (the sub
 (scene rendering) are two different axes; conflating them over-couples the third consumer the moment it shares
 the opening without the ending. The renderer side mirrors the port split (the not-found rendering extracted
 into a shared `OrientRenderer`, `presentScene` rendering left on `CurrentSceneRenderer`, a new `ItemRenderer`
-for examine), so composition tracks the interface segregation. (Promotion candidate, flagged not promoted:
-*port granularity follows distinguishable outcomes per consumer; a shared prologue is not a reason to share an
-ending.*) The re-split has since been completed by its own logic: `CurrentScenePresenterOutputPort` is
+for examine), so composition tracks the interface segregation. (Promotion candidate — logged as `[active]` in the
+methodology log, folded into the flat-presenter-ports entry, not yet promoted: *port granularity follows
+distinguishable outcomes per consumer; a shared prologue is not a reason to share an ending.*) The re-split has since been completed by its own logic: `CurrentScenePresenterOutputPort` is
 **deleted** — the `look`/`move` "shared ending" itself proved a coincidence of *rendering*, not a shared
 outcome (see *Flat presenter ports everywhere* below).
 
@@ -1153,7 +1157,8 @@ framework or service call and sheds the use-case identity the method *is*; becau
 package and the use-case class already carry the goal noun, the method is free to spell out the
 step. The name then states, right at the call site, *who acts and toward what* — the same Cockburn
 thread the package and class encode at coarser grain. (Sibling to `clean-ddd-core`'s presenter-method
-grammar; a candidate to promote there as the matching rule for input-port methods.)
+grammar; logged as `[active]` in the methodology log as the matching rule for input-port methods, not yet
+promoted.)
 
 **Express outcomes by presenting, not always by throwing.** A dangling exit target is
 handled by **branch-and-present** — a checkpoint collects the unresolved targets and calls a
@@ -1188,7 +1193,7 @@ not a presented outcome") — the rationalization-after-the-shortcut was the tel
 `presenter.presentGameNotInitialized(); return;`. **Code smell to grep:** a bare `throw new
 IllegalStateException/IllegalArgumentException(...)` or `orElseThrow(() -> new <jdk-exception>)` inside a
 `core/usecase` class — a mechanical lint that catches this without depending on reviewer vigilance. (Promotion
-candidate for `clean-ddd-core`, flagged not promoted.)
+candidate for `clean-ddd-core` — logged as `[active]` in the methodology log, not yet promoted.)
 
 **"Is the game initialized?" is not one outcome — readiness decomposes into per-aggregate clusters.**
 `[thread #2]` When the clock-readiness check arrived, the tempting generalization was a single
@@ -1217,7 +1222,8 @@ same invariants stay on separate ports: `InitializeGame` reports authoring/consi
 exit target, an unknown starting scene) to an **operator/log** audience at *build* time, while the play use
 cases report readiness gaps to a **player** audience at *play* time — same invariant guarded twice, two
 audiences, two homes; merging them would be the same overload the system-seeder's logging presenter was kept
-apart to avoid (above). (Promotion candidate, flagged not promoted.)
+apart to avoid (above). (Promotion candidate — logged as `[active]` in the methodology log, folded into the
+flat-presenter-ports entry, not yet promoted.)
 
 **The `select` subcase — sharing the *disambiguation* dialogue, orthogonally to `orient`.** `[thread #4]`
 `take`/`drop` will disambiguate a target exactly as `examine` does, so the dialogue is factored into the
@@ -1243,7 +1249,8 @@ typed to *only its own* outcome. This is the §6 composition-over-inheritance st
 a `Select extends Orient` chain would assert a false is-a (select is-not-a orient); flat composition asserts
 none. The disambiguation outcomes (`presentNoSuchTarget`, the ambiguity menu, `presentItemNoLongerHere`, the
 two selection-gate misses) moved *off* `examine`'s port *onto* the select port; `examine` keeps only its
-terminal `presentItemDescription`. (Promotion candidate, flagged not promoted: *a shared sub-dialogue
+terminal `presentItemDescription`. (Promotion candidate — logged as `[active]` in the methodology log, folded into
+the flat-presenter-ports entry, not yet promoted: *a shared sub-dialogue
 orthogonal to the shared prologue is composed beside it, not nested under it; presenter ports compose as flat
 narrow interfaces on one concrete presenter, never an inheritance chain that asserts a false is-a.*)
 
@@ -1276,8 +1283,8 @@ catch-all (faults propagate to the parent's outermost checkpoint), so the base h
 its surface; `SelectTargetPresenterOutputPort` already extended nothing. The `ErrorHandling` exception to
 "extends nothing" is principled, not residual: `presentError` *is* the use case's own outcome (its outermost
 catch), so extending the base is still declaring-own-outcomes, merely via a shared spelling of the one
-universal outcome. (Promotion candidate, flagged not promoted — supersedes the methodology's
-`subcases.md` §Presenter port inheritance: *a presenter port declares exactly what its owner presents;
+universal outcome. (Promotion candidate — logged as `[active]` in the methodology log, not yet promoted;
+supersedes the methodology's `subcases.md` §Presenter port inheritance: *a presenter port declares exactly what its owner presents;
 parent ports never extend subcase ports — the concrete presenter implements them flat, mirroring the use
 case's composition; subcase ports extend nothing, not even the catch-all base.*)
 
@@ -1397,8 +1404,9 @@ the first place two writer *kinds* collide. Yet the close is identical machinery
 (`doInTransaction(action, onLockDetected)` → `presentNpcGotAway`), and that is the point: the transactional
 idiom the item slice built for a contested *resource* carries over unchanged to a contested *actor*, so thread
 #3's "who wins the write" stays answered by the optimistic version, never a lock held across the read. Like
-`take`, there is no construction checkpoint — every input is already a domain object. (Promotion candidate,
-flagged not promoted: *the optimistic-version idiom for a contested resource generalizes without change to an
+`take`, there is no construction checkpoint — every input is already a domain object. (Promotion candidate —
+logged as `[active]` in the methodology log, folded into the detector-lens entry, not yet promoted: *the
+optimistic-version idiom for a contested resource generalizes without change to an
 aggregate contested by a background system writer; the discriminator for a select-then-mutate is not "how many
 actors" but "does a second writer touch this aggregate," and a live system writer is just the sharpest case.*)
 
@@ -1532,7 +1540,8 @@ the usual "speculative complexity" emergence warns against. This is the inverse 
 deferred for `Player`: there it would add a wasted version-read or bleed a field into the model for *no*
 simplification and no current contention. And it leaves a clean contrast in the codebase: the version-less
 `GameClock` keeps its explicit `JdbcAggregateTemplate` insert/update; the versioned `DayPhaseLog` uses
-`repository.save`. (Promotion candidate, flagged not promoted: *atomicity ≠ isolation; a transaction needs a
+`repository.save`. (Promotion candidate — logged as `[active]` in the methodology log, not yet promoted:
+*atomicity ≠ isolation; a transaction needs a
 detector — unique constraint, version, or row lock — and optimistic `@Version` on the aggregate is the
 canonical one, demarcated by the use case and reacted to as an outcome*.)
 
@@ -1614,7 +1623,8 @@ of losing**, not by the mechanism. One persistence detail the round-trip pinned:
 the version on insert** (a fresh `Item` at version 0 is stored at 1 — proven by `DayPhaseLogRoundTripIT`'s
 insert-then-update succeeding), so the `V6` backfill of pre-existing rows uses version **1**, the
 "already-persisted" state, so a `take` of a legacy item is an *update*, not a duplicate-key insert. (Promotion
-candidate, flagged not promoted: *when one player-facing outcome has both an advisory read-side detection and an
+candidate — logged as `[active]` in the methodology log, folded into the detector-lens entry, not yet promoted:
+*when one player-facing outcome has both an advisory read-side detection and an
 authoritative write-side one, keep them distinct present-methods reachable on distinct paths — collapsing them
 hides that the unique-match path has only the write-side net.*)
 
@@ -1629,7 +1639,8 @@ single-writer aggregate → plain overload and propagation (`drop`) — mirrorin
 versioned `DayPhaseLog` contrast one level up. And the decision is executable doctrine, not a comment: a
 `DropUseCaseTest` pins that an `OptimisticLockingError` reaches `presentError` and never a player outcome, so
 a future well-meaning "symmetry with take" refactor fails a test instead of silently minting a speculative
-outcome. (Promotion candidate, flagged not promoted: *adopt the lock-detected handler only where contention is
+outcome. (Promotion candidate — logged as `[active]` in the methodology log, folded into the detector-lens
+entry, not yet promoted: *adopt the lock-detected handler only where contention is
 real; a single-writer aggregate keeps the propagating default, and a unit test pinning the propagation turns
 the choice into doctrine.*)
 
@@ -1678,8 +1689,9 @@ outcomes** across the codebase — `presentNpcGotAway` (the player's strike), th
 mapping is scenario-indexed, which is the structural proof the reaction cannot live in a generic translation
 layer: an exception-to-HTTP-409 adviser sees the loss only after the interaction has unwound, when the
 scenario context (which write, which branch, dying or surviving) is gone; the `onLockDetected` handler is the
-reaction written *lexically inside* the branch whose write can lose. (Promotion candidate, flagged not
-promoted: *the transaction unit is shaped by the write set — branches whose write sets differ fork into their
+reaction written *lexically inside* the branch whose write can lose. (Promotion candidate — logged as
+`[active]` in the methodology log, folded into the detector-lens entry, not yet promoted: *the transaction unit
+is shaped by the write set — branches whose write sets differ fork into their
 own atomic units, branches differing only in narration fork inside `doAfterCommit`; and a lock-loss reaction
 is scenario-indexed, handled lexically inside the interaction that can lose, never in a generic exception
 translator.*)
@@ -2081,7 +2093,7 @@ order — and the old composite "retaliation + movements witnessed this tick" ou
 narrates its own stripe. Pacing rides the policy too: an authored `attackChance` gates the strike exactly as
 `moveChance` gates wander (the cadence paragraph below applies to it unchanged), and a hostile NPC never
 wanders — the stance pins it in the fight; its branches are *maybe strike* or *stand ground*. (Promotion
-candidate, flagged not promoted: *a use case never calls a use case — one actor's decided action reaches
+candidate — logged as `[active]` in the methodology log, not yet promoted: *a use case never calls a use case — one actor's decided action reaches
 another interaction as a command dispatched out a driven port and back in through a driving adapter; commands
 carry decided actions (one addressee, imperative, decided upstream), events carry facts (zero-to-many
 observers); the command vocabulary is infrastructure, the driven port's methods are the core-side
@@ -2239,8 +2251,8 @@ categorically different: `AffordanceContext` feeds back *conversational-interpre
 next line), `GameLifecycle` feeds back a *session-lifecycle control signal* (whether there is a next line at
 all). Framed in delivery terms, `GameLifecycle` is the console's hand-built **session-termination hook** — the
 thing a servlet container or TUI framework owns and hides, made explicit here precisely because the console
-"internalized its own dispatch loop" (above): own the loop, own the signal that stops it. (Promotion candidate,
-flagged not promoted: *a driven→driving back-channel — a dumb resource the presenter writes and the loop reads
+"internalized its own dispatch loop" (above): own the loop, own the signal that stops it. (Promotion candidate —
+logged as `[active]` in the methodology log, not yet promoted: *a driven→driving back-channel — a dumb resource the presenter writes and the loop reads
 next turn — is how one-way flow lets output influence the next input without a return value; conversational
 routing state and session-lifecycle control are two things it can carry.*)
 
@@ -2261,8 +2273,9 @@ modal), so it is delivery, not domain — which is exactly why it is *not* a dom
 survives any driver, §4), and why "the console loop should stop" stays distinct from a future domain
 `GameSession`-status. The decision to end stayed in the use case (it chose the slain stripe, terminal by the
 game's rules); the presenter only *propagates* that outcome to session state, and the console owns the
-loop-break — humble presenter, loop control in the driving adapter, as with `bye`. (Promotion candidate, flagged
-not promoted: *test a candidate for reuse of an existing mechanism by "would it survive that mechanism's
+loop-break — humble presenter, loop control in the driving adapter, as with `bye`. (Promotion candidate — logged
+as `[active]` in the methodology log, folded into the second-adapter-test entry, not yet promoted: *test a
+candidate for reuse of an existing mechanism by "would it survive that mechanism's
 invariants?" — the sibling of the second-adapter test; opposite thread/lifecycle/routing contracts mean a new
 holder, not a new enum constant.*)
 
