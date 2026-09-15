@@ -20,8 +20,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Verifies {@link TransactionOperationsOutputPort} against the real Dockerized Postgres. Uses
  * {@code @SpringBootTest} (not a {@code @DataJdbcTest} slice) on purpose: there is no test-managed
  * rollback wrapping each method, so the programmatic transactions genuinely commit and roll back —
- * which is exactly what the after-commit / after-rollback hooks and the rollback-discards-writes
- * guarantee need in order to be observable.
+ * which is exactly what the after-commit hook and the rollback-discards-writes guarantee need in order
+ * to be observable.
+ *
+ * <p>The port has no after-rollback hook to exercise: Spring implements one only as
+ * {@code afterCompletion(STATUS_ROLLED_BACK)}, whose {@code catch (Throwable)} would swallow a failing
+ * action, so the method was retired rather than kept un-fail-loud. Rollback-side presentation happens from
+ * an ordinary {@code catch} outside {@code doInTransaction} instead.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class TransactionOperationsIT extends AbstractPostgresIT {
@@ -44,32 +49,36 @@ class TransactionOperationsIT extends AbstractPostgresIT {
     }
 
     @Test
-    void runsAfterCommitButNotAfterRollbackWhenTheTransactionCommits() {
+    void runsAfterCommitWhenTheTransactionCommits() {
         AtomicBoolean committed = new AtomicBoolean(false);
-        AtomicBoolean rolledBack = new AtomicBoolean(false);
 
-        txOps.doInTransaction(false, () -> {
-            txOps.doAfterCommit(() -> committed.set(true));
-            txOps.doAfterRollback(() -> rolledBack.set(true));
-        });
+        txOps.doInTransaction(false, () -> txOps.doAfterCommit(() -> committed.set(true)));
 
         assertThat(committed).as("after-commit hook fired").isTrue();
-        assertThat(rolledBack).as("after-rollback hook did not fire").isFalse();
     }
 
     @Test
-    void runsAfterRollbackButNotAfterCommitWhenTheActionThrows() {
+    void doesNotRunAfterCommitWhenTheActionThrows() {
         AtomicBoolean committed = new AtomicBoolean(false);
-        AtomicBoolean rolledBack = new AtomicBoolean(false);
 
         assertThatThrownBy(() -> txOps.doInTransaction(false, () -> {
             txOps.doAfterCommit(() -> committed.set(true));
-            txOps.doAfterRollback(() -> rolledBack.set(true));
             throw new IllegalStateException("boom");
         })).isInstanceOf(IllegalStateException.class);
 
-        assertThat(rolledBack).as("after-rollback hook fired").isTrue();
-        assertThat(committed).as("after-commit hook did not fire").isFalse();
+        assertThat(committed).as("after-commit hook did not fire on a rolled-back transaction").isFalse();
+    }
+
+    @Test
+    void propagatesAThrowingAfterCommitActionOverTheRealTransactionManager() {
+        IllegalStateException fromDeferredAction = new IllegalStateException("presenter blew up after commit");
+
+        // The fail-loud contract against the real manager: a deferred action that throws must reach the
+        // caller of doInTransaction rather than being logged and swallowed, and must arrive as itself —
+        // not wrapped in TransactionOperationsError, since it is no failure of the demarcation machinery.
+        assertThatThrownBy(() -> txOps.doInTransaction(false, () -> txOps.doAfterCommit(() -> {
+            throw fromDeferredAction;
+        }))).isSameAs(fromDeferredAction);
     }
 
     @Test
@@ -79,15 +88,12 @@ class TransactionOperationsIT extends AbstractPostgresIT {
     }
 
     @Test
-    void runsAfterCommitImmediatelyAndAfterRollbackAsNoOpOutsideAnyTransaction() {
+    void runsAfterCommitImmediatelyOutsideAnyTransaction() {
         AtomicBoolean committed = new AtomicBoolean(false);
-        AtomicBoolean rolledBack = new AtomicBoolean(false);
 
         txOps.doAfterCommit(() -> committed.set(true));
-        txOps.doAfterRollback(() -> rolledBack.set(true));
 
         assertThat(committed).as("after-commit runs immediately with no active transaction").isTrue();
-        assertThat(rolledBack).as("after-rollback is a no-op with no active transaction").isFalse();
     }
 
     @Test

@@ -1417,17 +1417,60 @@ actors" but "does a second writer touch this aggregate," and a live system write
 Validation and reads run **outside** the transaction; only persistence (and, later, event
 dispatch) runs **inside** `doInTransaction`; presentation runs in `doAfterCommit`, so the
 actor is never told "success" before the commit actually happens. The port is a lean
-four-method canon over plain `Runnable`/`Supplier`; `doAfterCommit` runs immediately when no
-transaction is active, while `doAfterRollback` is a no-op outside one (nothing rolled back to
-react to) — an asymmetry that follows from the semantics, not an oversight.
+three-method canon over plain `Runnable`/`Supplier`; `doAfterCommit` runs immediately when no
+transaction is active, there being nothing to wait for.
 
-**Departure from the reference (cargo-clean is the *legacy* shape).** Three deliberate
+**Departure from the reference (cargo-clean is the *legacy* shape).** Four deliberate
 cuts: (1) no `*WithResult` after-commit/rollback variants — their `AtomicReference` is read
 before the callback fills it, and presenter calls are `void` anyway; (2) no `rollback()`
 method — failure is expressed by *throwing*, caught at the use case's single outermost
 checkpoint, and an imperative `rollback()` would bypass that path; (3) no `CacheManager`
 coupling — game-clean has no cache, so the `CacheInvalidationOnRollback` seam is introduced
-only if/when one appears (YAGNI).
+only if/when one appears (YAGNI); (4) no `doAfterRollback` at all — see the fail-loud
+paragraph below, which retired it.
+
+**The deferred hook must fail loudly — and the port keeps no hook that cannot.** `[thread #3]`
+`doAfterCommit` is implemented with Spring's `TransactionSynchronization.afterCommit()`, **never**
+`afterCompletion(STATUS_COMMITTED)`. The two read as interchangeable and are not: Spring runs
+`afterCompletion(int)` callbacks inside a `catch (Throwable)` that logs at ERROR and carries on, so a
+presenter that throws there is a *log line* and nothing more while the caller sees a normal return —
+the actor is told nothing at all. `afterCommit()` has no such catch. Because `TransactionTemplate`
+commits *outside* its own try block, the exception leaves `execute()` raw, misses the adapter's
+deliberately narrow `TransactionException` catch (a port error is not a `TransactionException` — the
+narrowness above is what lets it through, not an accident) and reaches the use case's outermost
+checkpoint. This makes the deferred-presentation guarantee **two-sided**: the actor is never told
+"success" *before* the commit, *and* never told "success" when the deferred act *itself* failed.
+
+The rule generalizes past the one method: **the port offers no hook whose failure the machinery can
+swallow.** Both branches of `doAfterCommit` therefore share one contract — the no-transaction branch
+runs the action inline, so whatever it throws, the caller sees. Applying that test to
+`doAfterRollback` **retired it**: Spring offers no `afterRollback()` at all, only
+`afterCompletion(STATUS_ROLLED_BACK)`, the very form just ruled out, so the method could not be made
+to honour the contract. It had no production caller — every rollback-side presentation here already
+happens from an ordinary `catch` *outside* `doInTransaction`, where the thrown error carries the
+context the presentation needs. Keeping an un-fail-loud hook for a use it did not have would have
+been the worse of the two asymmetries.
+
+**Two consequences accepted knowingly.** First, **statement order inside a deferred block is
+load-bearing**: callbacks queued behind a throwing one are skipped, so when a block both signals an
+external system and presents, the signal goes first — a throwing presenter must not skip it, and a
+rejected signal must skip the success message rather than be followed by one. Second, a throwing
+presenter now produces a `presentError` *after* a partially rendered success, which brushes against
+§4's *presentation is terminal*. That is the right trade rather than a violation: the alternative is
+not "one clean presentation" but *silence* — the actor left believing nothing happened while the
+transaction committed. The invariant governs the paths an interaction *chooses*; a presenter blowing
+up mid-render is a defect, and the catch-all's job is exactly to surface defects.
+
+**Why the hazard survived an otherwise well-tested adapter — the double matters.** The unit tests
+drove a real `TransactionTemplate` over a **mocked** `PlatformTransactionManager`, which never
+initializes `TransactionSynchronizationManager` and so **never fires synchronizations at all**: every
+after-commit assertion was vacuous, and swapping the two hook forms changed nothing. The fix is a
+minimal *real* `AbstractPlatformTransactionManager` with no-op resources, which supplies the genuine
+synchronization lifecycle. Verified by reverting the adapter to `afterCompletion` and watching exactly
+the two transaction-branch tests go red (the immediate-branch one correctly stayed green — it never
+reaches a synchronization). The general lesson, worth carrying: **a swallowing hook makes its own
+tests pass**, because test doubles usually run deferred callbacks inline and so assert semantics
+production does not have. When double and production diverge, production is the side that is wrong.
 
 **A domain contract bent to fit the transaction mechanism — knowingly.** Spring's
 `TransactionTemplate` callback cannot throw checked exceptions and rolls back only on

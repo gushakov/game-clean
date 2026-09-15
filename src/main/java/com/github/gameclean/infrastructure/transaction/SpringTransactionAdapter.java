@@ -40,9 +40,24 @@ import java.util.function.Supplier;
  * on rather than in either port's own (design-notes §5). With a {@code null} handler the overload is a plain
  * read-write transaction and the error propagates as usual.
  *
- * <p>After-commit / after-rollback hooks register a {@link TransactionSynchronization} and fire on
- * the matching completion status. With no transaction active, {@code doAfterCommit} runs immediately
- * (nothing to wait for) and {@code doAfterRollback} is a no-op (nothing rolled back).
+ * <p>The after-commit hook registers a {@link TransactionSynchronization} overriding {@code afterCommit()}
+ * — <em>never</em> {@code afterCompletion(STATUS_COMMITTED)}. The two look interchangeable and are not:
+ * Spring runs {@code afterCompletion(int)} callbacks inside a {@code catch (Throwable)} that logs at ERROR
+ * and carries on, so a failing presenter would be a log line and nothing more while the caller saw a normal
+ * return. {@code afterCommit()} has no such catch — the exception propagates to the caller of
+ * {@code commit()} (the transaction staying committed) and the callbacks queued behind the throwing one are
+ * skipped. Since {@link TransactionTemplate} commits <em>outside</em> its own try block, that exception
+ * leaves {@code execute()} raw, misses the narrow {@code TransactionException} catch above (a port error is
+ * not a {@code TransactionException}) and reaches the use case's outermost checkpoint; in a joined
+ * transaction it surfaces from the <em>outermost</em> {@code doInTransaction}, not from the inner one that
+ * registered the callback. With no transaction active the action simply runs immediately, so both branches
+ * share one contract — whatever the action throws, the caller sees. This is what makes the deferred
+ * presentation guarantee two-sided (design-notes §5).
+ *
+ * <p>There is deliberately no after-rollback hook: Spring offers no {@code afterRollback()} at all, only
+ * {@code afterCompletion(STATUS_ROLLED_BACK)} — the swallowing form just ruled out. Rollback-side
+ * presentation is done instead from an ordinary {@code catch} <em>outside</em> {@code doInTransaction},
+ * where the thrown error carries the context the presentation needs.
  *
  * <p>No cache concern is wired here: the project has no caching layer, so there is nothing to
  * invalidate on rollback. Should one appear, the methodology's {@code CacheInvalidationOnRollback}
@@ -104,29 +119,9 @@ public class SpringTransactionAdapter implements TransactionOperationsOutputPort
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
-            public void afterCompletion(int status) {
-                if (status == STATUS_COMMITTED) {
-                    log.debug("[Transaction] Running action after commit");
-                    action.run();
-                }
-            }
-        });
-    }
-
-    @Override
-    public void doAfterRollback(Runnable action) {
-        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-            // No transaction means no rollback to react to — deliberately a no-op.
-            log.debug("[Transaction] No active transaction; doAfterRollback is a no-op");
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status == STATUS_ROLLED_BACK) {
-                    log.debug("[Transaction] Running action after rollback");
-                    action.run();
-                }
+            public void afterCommit() {
+                log.debug("[Transaction] Running action after commit");
+                action.run();
             }
         });
     }
