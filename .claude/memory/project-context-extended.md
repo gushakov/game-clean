@@ -105,18 +105,25 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
 
 ## Transactions (explicit demarcation, no blanket `@Transactional`)
 
-`core/port/transaction/TransactionOperationsOutputPort` — lean 4-method canon over plain
+`core/port/transaction/TransactionOperationsOutputPort` — lean 3-method canon over plain
 `Runnable`/`Supplier`: `doInTransaction(readOnly, …)`, `doInTransactionWithResult(readOnly, …)`,
-`doAfterCommit(…)`, `doAfterRollback(…)` (+ no-readOnly `default` overloads). Usage rule: validation
+`doAfterCommit(…)` (+ no-readOnly `default` overloads, and the lock-aware
+`doInTransaction(action, onLockDetected)`). Usage rule: validation
 and reads run **outside** the transaction; only persistence (later, event dispatch) runs **inside**;
 present in `doAfterCommit` (never before commit). Failure is expressed by **throwing** (unchecked) —
 caught at the use case's outermost checkpoint; there is deliberately no `rollback()`.
 
 - Adapter — `infrastructure/transaction/SpringTransactionAdapter` (plain Lombok class, not
   component-scanned), backed by Spring `TransactionTemplate` + `TransactionSynchronizationManager`.
-  `doAfterCommit` runs immediately when no tx is active; `doAfterRollback` is a **no-op** when none
-  is active. **No cache coupling** (project has no cache); the methodology's
-  `CacheInvalidationOnRollback` seam is added only when a cache appears.
+  `doAfterCommit` runs immediately when no tx is active. **No cache coupling** (project has no cache);
+  the methodology's `CacheInvalidationOnRollback` seam is added only when a cache appears.
+- The after-commit hook is registered as `afterCommit()`, **never** `afterCompletion(STATUS_COMMITTED)`
+  — the latter's `catch (Throwable)` turns a failing presenter into a log line. Whatever the deferred
+  action throws, the caller sees (both branches). `doAfterRollback` was **retired** for failing that
+  same test: Spring has no `afterRollback()` hook, only the swallowing form (issue #99, design-notes §5).
+  Pinned by `SpringTransactionAdapterTest.AfterCommitFailsLoudly`, which drives a minimal real
+  `AbstractPlatformTransactionManager` — a **mocked** `PlatformTransactionManager` never fires
+  synchronizations at all, so after-commit assertions over one are vacuous.
 - Demarcation faults have their own currency — a begin/commit/unexpected-rollback failure surfaces as a Spring
   `TransactionException`, which the two `doInTransaction*` methods catch **narrowly** (`TransactionException`,
   never `Exception`) and wrap into `core/port/transaction/TransactionOperationsError` (unchecked, mirroring

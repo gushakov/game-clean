@@ -79,13 +79,21 @@ public interface TransactionOperationsOutputPort {
     /**
      * Registers {@code action} to run after the current transaction commits. If no transaction is
      * active, runs it immediately (there is nothing to wait for).
+     *
+     * <p><b>The hook fails loudly — whatever the action throws, the caller sees.</b> Both branches share
+     * that one contract: the immediate branch throws from this very call, and the deferred branch throws
+     * from the enclosing {@link #doInTransaction(boolean, Runnable)} (the transaction having *committed*),
+     * where the use case's outermost checkpoint catches it. This is deliberately <em>not</em> a
+     * fire-and-forget notification: it is what makes the deferred-presentation guarantee two-sided — the
+     * actor is never told "success" before the commit, <em>and</em> never told "success" when the deferred
+     * act itself failed.
+     *
+     * <p>Consequences the caller must accept. Callbacks queued behind a throwing one are skipped, so when a
+     * deferred block both signals an external system and presents, <b>statement order is load-bearing</b>:
+     * the signal goes first, so a throwing presenter cannot skip it and a rejected signal skips the success
+     * message rather than being followed by one. And because the error unwinds to the outermost checkpoint,
+     * a throwing presenter can produce a {@code presentError} <em>after</em> a partially rendered success —
+     * accepted knowingly, the alternative being a silent log line (design-notes §5).
      */
     void doAfterCommit(Runnable action);
-
-    /**
-     * Registers {@code action} to run after the current transaction rolls back. If no transaction is
-     * active, this is a no-op — there was no rollback to react to (a validation error before
-     * {@code doInTransaction} should present the failure directly).
-     */
-    void doAfterRollback(Runnable action);
 }
