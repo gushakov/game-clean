@@ -1160,6 +1160,65 @@ thread the package and class encode at coarser grain. (Sibling to `clean-ddd-cor
 grammar; logged as `[active]` in the methodology log as the matching rule for input-port methods, not yet
 promoted.)
 
+**Lineage — the use case is the GRASP use-case controller, turned inside out.** `[thread #4]` The construct this
+section rests on — one class receiving every actor-initiated step of one user goal, beyond the delivery mechanism —
+has a pedigree worth naming: Jacobson's *control object* (OOSE's boundary/entity/control split, typically one per
+use case) → Larman's GRASP **use-case (session) controller** → Martin's *Interactor*, which credits Jacobson's BCE.
+Larman's is the closest precedent because it sits inside a full analysis-to-code chain: use-case text → a **system
+sequence diagram** per scenario (the system as a black box, actors sending it *system events* in time order) → one
+**system operation** per event (together, the system's public interface) → **operation contracts** (preconditions
+assumed; postconditions stated as past-tense state changes — instance created or deleted, attribute set,
+association formed) → interaction diagrams rooted at the controller. His Controller pattern routes *all* system
+events of one use case to one controller placed beyond the UI (a GUI or web controller is a UI object, not a GRASP
+controller); the controller *delegates* rather than works (the "bloated controller" is his anti-pattern); events are
+named by intent, not input device (`enterItem`, not `scan`), and carry primitive parameters the controller resolves
+into model objects. Four of this project's rules are his almost verbatim: the delivery mechanism delegates to an
+entry point beyond it and decides nothing (§9's thin controller); grouping per use case; intent naming (the
+paragraph above, and §1's "would it survive a second adapter?" test); primitives inward (`playerHitsTarget`
+building its `NpcId` is `enterItem` resolving an `itemID`).
+
+Where it departs is the doctrine — five divergences, each a position this file argues elsewhere:
+
+- **State.** Larman's session controller is *stateful* so it can reject out-of-sequence events (his example:
+  `makePayment` before `endSale`) — the controller is exactly where §12's guard matrix would live. Here the use case
+  is a stateless prototype; between-interaction state is persisted or relayed as a value (the blackjack round), an
+  out-of-turn attempt re-validates domain facts and *presents* "not now", and unreachable combinations sit behind
+  tripwired routing guarantees. §12 is, in effect, the rebuttal of the stateful session controller — and the
+  stateless form is the one that survives what a single-user desktop session never faced: a second thread (the NPC
+  ticker) and a second adapter. `[thread #3]`
+- **Where the procedure lives.** Larman's procedure is readable in the *design artifact* (the interaction
+  diagram); Expert and Creator then scatter it across domain classes in code (`Sale.makeLineItem`, …) — the DCI
+  complaint in concrete form. Here the method body *is* the interaction diagram, and Expert is confined to
+  *computation* in the functional core (§10): it still decides where arithmetic goes, no longer where sequencing
+  goes.
+- **Output.** His system operations may return, and the UI queries domain objects or observes them (the `Sale`
+  total notifying its frame via Observer). `void` plus a presenter — continuation-passing, the caller unable to
+  branch on an outcome it never receives — is Martin's addition, not Larman's.
+- **Preconditions.** A contract's precondition is assumed (design by contract: a violation is a caller bug). Here
+  it is split — attemptable → a presented extension stripe; unreachable → a tripwire (§12's three categories).
+- **Actors.** An SSD draws the system as a black box, so an agent *inside* it is not an actor: Larman would draw
+  `Time → System: tick()` and treat everything after as internal collaboration. Making `npcStrikesPlayer` a system
+  operation is therefore a **design decision**, which the command channel (§8) makes true by routing the NPC's
+  decision out a driven port and back in through a driving adapter. The NPC's actor status is *constructed, not
+  discovered* — the right construction, since it buys the NPC the player's interaction discipline, but one a
+  showcase reader should see framed as such.
+
+**Two artifacts worth borrowing back.** The **SSD** is the missing link in §12's alignment chain (mental model →
+spec → interactions → tests → affordance): between spec and input port sits "which actor sends which system event,
+in what order" — for `FightNpc`, three arrows from two lifelines; cheap, code-free, and it makes a multi-actor
+grouping visible at a glance. The **contract postcondition** is the checklist for the one-outcome-one-unit write
+set (§5): the slain outcome's postconditions — the `Npc` deleted, a corpse `Item` created at its scene, loot
+`Item`s created `Inside` it — *are* its transaction. And postconditions expose what scenario-scoped demarcation
+hides: a second cause of NPC death would need its own contract listing the same postconditions, so "no death
+without a corpse" surfaces as a postcondition *shared across operations* — a world invariant, visible before the
+second cause's transaction is written rather than after it forgets the corpse. `[thread #3]` (Promotion candidate,
+flagged not promoted: *the Clean DDD use case descends from Jacobson's control object via Larman's GRASP use-case
+controller to Martin's Interactor; it keeps Larman's per-use-case routing, intent naming and primitive parameters,
+and inverts the rest — stateless instead of a stateful session (out-of-sequence events become presented stripes,
+not controller guards), the procedure in the method body instead of scattered by Expert, void-plus-presenter
+instead of returns; an SSD links spec to input port, and a postcondition shared by several system operations flags
+a world invariant that scenario-scoped demarcation would otherwise restate per cause.*)
+
 **Express outcomes by presenting, not always by throwing.** A dangling exit target is
 handled by **branch-and-present** — a checkpoint collects the unresolved targets and calls a
 dedicated presenter method — rather than minting a thrown domain-error type. It is lighter,
