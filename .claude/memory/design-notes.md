@@ -3339,6 +3339,41 @@ rules, ports, and transactions says otherwise, so in practice the process lands 
 it discipline (void interactions, checkpoints, terminal presentation, a named initiating actor), and test it
 against its spec.
 
+**The distrust was rational — the compensation has a history, and its premise has expired.** The thesis above
+is not a charge of ideology against the canon. When the Blue Book appeared, the era's use-case class *was* the EJB
+stateless session bean — the J2EE Session Facade over anemic entity beans, DTOs everywhere (the pattern catalog's
+first edition even called them "Value Objects"), transactions declared per method — and it was bound to its
+container: no dependency injection into a plain core, mocking in its infancy, so the only way to verify the
+application layer was to deploy it. A layer verifiable only by deployment *deserves* distrust, and moving the
+defense into the model — the one place a plain unit test could reach — was the sound response, not a doctrinal
+error. What followed compounded it. The POJO reaction (Spring, Hibernate, the anemic-model critique) discarded
+the use-case layer along with EJB, because it *looked like* the facade; the enterprise-patterns taxonomy offered
+Transaction Script *or* Domain Model, framing procedure as the simple-domain choice and leaving no name for
+procedural orchestration over a rich functional core; and the ORM's Unit of Work erased the procedure's own
+text — the save step dissolved into dirty checking, the transaction boundary into an annotation (§5's explicit
+demarcation had nowhere left to live). Every condition that made the application layer untestable is now gone —
+a framework-free core, constructor injection, mocked ports, ArchUnit gates — so the move above is *available*,
+not merely argued for; the compensation outlived its cause as doctrine.
+
+Two refinements keep this honest. **One force survives: distribution.** A procedure cannot hold a transaction
+across services, so where aggregates live in different stores, aggregate-local consistency plus events is a
+requirement, not a compensation — the same bound "consistency scoped by scenario" (below) draws at the single
+transactional resource. **And the revival came back at the wrong grain.** When the procedure returned —
+hexagonal ports, the Clean Architecture interactor, CQRS command handlers — it returned as a single-method
+`execute()` or one handler per command: Larman's *system operation*, not Cockburn's *user goal* (§4's lineage).
+The goal level — several interactions under one goal, several actors, the outcome stripes — never came back, and
+it is the piece this project restores. `[thread #5]` Finally, the doctrine was *thinkable* in the late 1990s but
+not *affordable*: always-valid immutable VOs meant hand-written `equals`/`hashCode`/withers against a JavaBeans
+convention that demanded no-arg constructors and setters, `doInTransaction(() -> …)` meant anonymous inner
+classes, and §13's compile-time exhaustiveness waited for sealed types. §13's economics inversion therefore has a
+pre-LLM first half — modern Java, Lombok, Mockito, ArchUnit, Testcontainers — which the human-AI pairing
+completes. (Promotion candidate, flagged not promoted: *the canon's fat aggregate was a rational compensation for
+an application layer that could not be tested in isolation (the EJB session facade); the POJO reaction discarded
+the use-case layer with EJB, the Transaction-Script-vs-Domain-Model taxonomy left procedural orchestration over a
+functional core unnamed, and the ORM's Unit of Work erased the procedure's text; the testability premise has
+expired, distribution is the one force that still binds, and the procedure's revival returned at the
+system-operation grain, leaving the user-goal grain unrestored.*)
+
 **Consistency scoped by scenario, not by aggregate.** `[thread #3]` Vernon's one-aggregate-per-transaction
 rule is a consequence, not a principle: when the aggregate is the *only* construct that can declare "these
 commit together", a transaction cannot be allowed to span two of them, and cross-aggregate consistency is
