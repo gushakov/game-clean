@@ -1219,6 +1219,46 @@ not controller guards), the procedure in the method body instead of scattered by
 instead of returns; an SSD links spec to input port, and a postcondition shared by several system operations flags
 a world invariant that scenario-scoped demarcation would otherwise restate per cause.*)
 
+**Lineage, continued — the critiques of dispersal, and the tell-don't-ask ancestry of the presenter.** `[thread #4]`
+The Larman paragraphs above ground the *controller* half of the doctrine; two further lines ground the rest.
+**Dispersal was criticized from inside the object tradition, though never against GRASP by name.** Jacobson himself
+(with Ng, *Aspect-Oriented Software Development with Use Cases*) named the cost of use-case realization in AOP terms:
+a use case realized as an object collaboration is *scattered* across many classes, and each class *tangles*
+fragments of many use cases — the founder of use cases conceding that the realization step dissolves them. His
+remedy (use-case modules woven by aspects) was too heavy to spread; Use-Case 2.0's slices are its lighter heir.
+Wirfs-Brock and McKean's control styles (*Object Design*) flag *dispersed* control — logic spread thin, the big
+picture invisible — while warning equally against *centralized* control's god object. In their vocabulary Clean DDD
+is **centralized sequencing over delegated computation**, the compromise they circled without naming; §10's
+functional core is what keeps the centralized shell from becoming the god object. Larman's own Expert carries
+contraindications (Expert would have `Sale` persist itself) and the Pure Fabrication escape valve — a use-case
+controller is itself a fabrication, merely kept thin. DCI (Reenskaug, Coplien) states the result — the algorithm is
+readable nowhere in class-oriented code — and gives it a Context; Evans' *Services* chapter concedes that forcing
+an operation onto an entity that is not its natural home distorts the model; Martin makes the split structural
+(application-specific rules in the interactor, enterprise-wide rules in entities).
+
+**The presenter descends from tell-don't-ask, not from the use-case tradition.** No critique targeted Larman's
+returning controller, but four principles converge against it. *Tell, Don't Ask* (Sharp; Hunt and Thomas): code
+that gets information and then decides is procedural — a UI asking the controller for a result and deciding what to
+show is that shape at the architectural boundary, and the presenter port is the principle applied there.
+*Command–Query Separation* (Meyer): a `void` interaction is a pure command; one that writes and returns its outcome
+is both. The **London school** of TDD (Freeman and Pryce, *Growing Object-Oriented Software, Guided by Tests*; "Mock
+Roles, not Objects") is the closest precedent for the whole presenter discipline — `void` methods, collaborators
+notified through listener roles whose methods name outcomes, mocks as the tool for designing those roles; the
+captor-based interaction tests (`testing.md`) are that school's technique. The exact difference is instructive: the
+London-school listener already coarsened notification from property changes to *outcomes* — the step Larman's
+`Sale`→UI Observer lacked — but typically kept the *domain object* as the notifier. Clean DDD also relocates the
+notifier from the domain object to the *interaction*; the two moves together turn Observer into a presenter port.
+The *humble* half comes from the humble-object line (Feathers' "Humble Dialog Box", Fowler's Passive View,
+Meszaros' Humble Object). And the counter-tradition is reconciled rather than rejected: functional programming's
+*return values, stay pure* holds **inside the functional core** (§10 — Bernhardt's functional core returns values),
+tell-don't-ask holds **at the boundary** — each school applied at the layer where its argument is strongest.
+(Citations in this and the Larman paragraphs are from memory, not checked against the texts — verify before
+quoting. Promotion candidate, flagged not promoted: *dispersal of use-case logic was criticized within the object
+tradition itself — Jacobson's scattering and tangling, Wirfs-Brock's dispersed control, DCI — and Clean DDD is
+centralized sequencing over delegated computation; the presenter port descends from tell-don't-ask, CQS and the
+London school's outcome-named listener roles, relocating the notifier from the domain object to the interaction;
+return values stay in the functional core, tell-don't-ask governs the boundary.*)
+
 **Express outcomes by presenting, not always by throwing.** A dangling exit target is
 handled by **branch-and-present** — a checkpoint collects the unresolved targets and calls a
 dedicated presenter method — rather than minting a thrown domain-error type. It is lighter,
