@@ -41,6 +41,10 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
 - `.claude/` is versioned (machine-local `settings.local.json` excluded); keep
   committed content institution-neutral and free of machine setup.
 - Standard flow otherwise: `claude/<issue>_*` branch from `dev`, PR `--base dev`.
+- Release = PR `dev` → `main` (merge commit). **After each release is merged, back-merge
+  `origin/main` into `dev` and push** — otherwise every GitHub merge commit shows up as
+  "in `main`, not in `dev`" in branch comparisons, though the trees are identical. When
+  `dev` has no new commits it is a plain fast-forward.
 
 ## Package layout (Clean DDD)
 
