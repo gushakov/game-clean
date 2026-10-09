@@ -1,0 +1,66 @@
+@startuml npc-strikes-player
+title The provoked NPC strikes back
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam linetype polyline
+skinparam defaultTextAlignment center
+skinparam ArrowFontSize 11
+skinparam PortFontSize 10
+skinparam nodesep 25
+skinparam ranksep 70
+skinparam HexagonBorderColor #8A6D00
+skinparam HexagonBorderThickness 2
+skinparam component {
+  BackgroundColor<<usecase>> #E3F2FD
+  BorderColor<<usecase>> #1565C0
+  BackgroundColor<<primary>> #E8F5E9
+  BorderColor<<primary>> #2E7D32
+  BackgroundColor<<secondary>> #FCE4EC
+  BorderColor<<secondary>> #AD1457
+  BackgroundColor<<channel>> #F3E5F5
+  BorderColor<<channel>> #6A1B9A
+}
+
+component "NpcActivityTicker\n<size:10>scheduler metronome — system actor</size>" as ticker <<primary>>
+component "NpcCommandSession\n<size:10>channel subscriber — NPC actor</size>" as cmdSession <<primary>>
+
+hexagon "core" as hex #FFFBE6 {
+  portin "AnimateNpcsInputPort" as animateIn
+  portin "FightNpcInputPort" as fightIn
+
+  component "AnimateNpcsUseCase\n<size:10>read-only policy:</size>\n<size:10>decide → dispatch, never execute</size>" as animate <<usecase>>
+  component "FightNpcUseCase\n<size:10>npcStrikesPlayer</size>\n<size:10>(NPC as secondary actor)</size>" as fight <<usecase>>
+
+  portout "NpcCommandsOutputPort" as cmdOut
+  portout "PlayerRepositoryOperationsOutputPort" as playerRepoOut
+
+  note as noDirectCall
+    <b>No edge between these two.</b>
+    AnimateNpcs never calls FightNpc.
+    The decision exits through NpcCommandsOutputPort
+    and re-enters through FightNpcInputPort.
+  end note
+  animate .[norank]. noDirectCall
+  noDirectCall .[norank]. fight
+
+}
+
+component "SpringNpcCommandDispatchAdapter" as dispatchAdapter <<secondary>>
+component "npcCommandChannel\n<size:10>Spring Integration DirectChannel</size>\n<size:10>(synchronous, in-band)</size>" as channel <<channel>>
+component "SpringPlayerRepositoryAdapter" as playerRepo <<secondary>>
+database "PostgreSQL\n<size:10>player row =</size>\n<size:10>the shared state</size>" as db
+
+ticker -[#B71C1C,bold]-> animateIn : <color:#B71C1C>1. tick: systemAdvancesNpcs()
+animateIn -[#B71C1C,bold]-> animate
+animate -[#B71C1C,bold]-> cmdOut : <color:#B71C1C>2. hostile NPC → dispatchStrike(npcId)
+cmdOut -[#B71C1C,bold]-> dispatchAdapter
+dispatchAdapter -[#B71C1C,bold]-> channel : <color:#B71C1C>3. send(StrikePlayer)
+channel -[#B71C1C,bold,norank]-> cmdSession : <color:#B71C1C>4. handleMessage(StrikePlayer)
+cmdSession -[#B71C1C,bold]-> fightIn : <color:#B71C1C>5. npcStrikesPlayer(npcId)
+fightIn -[#B71C1C,bold]-> fight
+fight -[#B71C1C,bold]-> playerRepoOut : <color:#B71C1C>6. savePlayer(struck)
+playerRepoOut -[#B71C1C,bold]-> playerRepo
+playerRepo -[#B71C1C,bold]-> db : <color:#B71C1C>7. player row: hit points lowered
+
+@enduml
