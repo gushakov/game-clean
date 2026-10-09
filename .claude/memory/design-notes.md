@@ -1160,6 +1160,105 @@ thread the package and class encode at coarser grain. (Sibling to `clean-ddd-cor
 grammar; logged as `[active]` in the methodology log as the matching rule for input-port methods, not yet
 promoted.)
 
+**Lineage — the use case is the GRASP use-case controller, turned inside out.** `[thread #4]` The construct this
+section rests on — one class receiving every actor-initiated step of one user goal, beyond the delivery mechanism —
+has a pedigree worth naming: Jacobson's *control object* (OOSE's boundary/entity/control split, typically one per
+use case) → Larman's GRASP **use-case (session) controller** → Martin's *Interactor*, which credits Jacobson's BCE.
+Larman's is the closest precedent because it sits inside a full analysis-to-code chain: use-case text → a **system
+sequence diagram** per scenario (the system as a black box, actors sending it *system events* in time order) → one
+**system operation** per event (together, the system's public interface) → **operation contracts** (preconditions
+assumed; postconditions stated as past-tense state changes — instance created or deleted, attribute set,
+association formed) → interaction diagrams rooted at the controller. His Controller pattern routes *all* system
+events of one use case to one controller placed beyond the UI (a GUI or web controller is a UI object, not a GRASP
+controller); the controller *delegates* rather than works (the "bloated controller" is his anti-pattern); events are
+named by intent, not input device (`enterItem`, not `scan`), and carry primitive parameters the controller resolves
+into model objects. Four of this project's rules are his almost verbatim: the delivery mechanism delegates to an
+entry point beyond it and decides nothing (§9's thin controller); grouping per use case; intent naming (the
+paragraph above, and §1's "would it survive a second adapter?" test); primitives inward (`playerHitsTarget`
+building its `NpcId` is `enterItem` resolving an `itemID`).
+
+Where it departs is the doctrine — five divergences, each a position this file argues elsewhere:
+
+- **State.** Larman's session controller is *stateful* so it can reject out-of-sequence events (his example:
+  `makePayment` before `endSale`) — the controller is exactly where §12's guard matrix would live. Here the use case
+  is a stateless prototype; between-interaction state is persisted or relayed as a value (the blackjack round), an
+  out-of-turn attempt re-validates domain facts and *presents* "not now", and unreachable combinations sit behind
+  tripwired routing guarantees. §12 is, in effect, the rebuttal of the stateful session controller — and the
+  stateless form is the one that survives what a single-user desktop session never faced: a second thread (the NPC
+  ticker) and a second adapter. `[thread #3]`
+- **Where the procedure lives.** Larman's procedure is readable in the *design artifact* (the interaction
+  diagram); Expert and Creator then scatter it across domain classes in code (`Sale.makeLineItem`, …) — the DCI
+  complaint in concrete form. Here the method body *is* the interaction diagram, and Expert is confined to
+  *computation* in the functional core (§10): it still decides where arithmetic goes, no longer where sequencing
+  goes.
+- **Output.** His system operations may return, and the UI queries domain objects or observes them (the `Sale`
+  total notifying its frame via Observer). `void` plus a presenter — continuation-passing, the caller unable to
+  branch on an outcome it never receives — is Martin's addition, not Larman's.
+- **Preconditions.** A contract's precondition is assumed (design by contract: a violation is a caller bug). Here
+  it is split — attemptable → a presented extension stripe; unreachable → a tripwire (§12's three categories).
+- **Actors.** An SSD draws the system as a black box, so an agent *inside* it is not an actor: Larman would draw
+  `Time → System: tick()` and treat everything after as internal collaboration. Making `npcStrikesPlayer` a system
+  operation is therefore a **design decision**, which the command channel (§8) makes true by routing the NPC's
+  decision out a driven port and back in through a driving adapter. The NPC's actor status is *constructed, not
+  discovered* — the right construction, since it buys the NPC the player's interaction discipline, but one a
+  showcase reader should see framed as such.
+
+**Two artifacts worth borrowing back.** The **SSD** is the missing link in §12's alignment chain (mental model →
+spec → interactions → tests → affordance): between spec and input port sits "which actor sends which system event,
+in what order" — for `FightNpc`, three arrows from two lifelines; cheap, code-free, and it makes a multi-actor
+grouping visible at a glance. The **contract postcondition** is the checklist for the one-outcome-one-unit write
+set (§5): the slain outcome's postconditions — the `Npc` deleted, a corpse `Item` created at its scene, loot
+`Item`s created `Inside` it — *are* its transaction. And postconditions expose what scenario-scoped demarcation
+hides: a second cause of NPC death would need its own contract listing the same postconditions, so "no death
+without a corpse" surfaces as a postcondition *shared across operations* — a world invariant, visible before the
+second cause's transaction is written rather than after it forgets the corpse. `[thread #3]` (Promotion candidate,
+flagged not promoted: *the Clean DDD use case descends from Jacobson's control object via Larman's GRASP use-case
+controller to Martin's Interactor; it keeps Larman's per-use-case routing, intent naming and primitive parameters,
+and inverts the rest — stateless instead of a stateful session (out-of-sequence events become presented stripes,
+not controller guards), the procedure in the method body instead of scattered by Expert, void-plus-presenter
+instead of returns; an SSD links spec to input port, and a postcondition shared by several system operations flags
+a world invariant that scenario-scoped demarcation would otherwise restate per cause.*)
+
+**Lineage, continued — the critiques of dispersal, and the tell-don't-ask ancestry of the presenter.** `[thread #4]`
+The Larman paragraphs above ground the *controller* half of the doctrine; two further lines ground the rest.
+**Dispersal was criticized from inside the object tradition, though never against GRASP by name.** Jacobson himself
+(with Ng, *Aspect-Oriented Software Development with Use Cases*) named the cost of use-case realization in AOP terms:
+a use case realized as an object collaboration is *scattered* across many classes, and each class *tangles*
+fragments of many use cases — the founder of use cases conceding that the realization step dissolves them. His
+remedy (use-case modules woven by aspects) was too heavy to spread; Use-Case 2.0's slices are its lighter heir.
+Wirfs-Brock and McKean's control styles (*Object Design*) flag *dispersed* control — logic spread thin, the big
+picture invisible — while warning equally against *centralized* control's god object. In their vocabulary Clean DDD
+is **centralized sequencing over delegated computation**, the compromise they circled without naming; §10's
+functional core is what keeps the centralized shell from becoming the god object. Larman's own Expert carries
+contraindications (Expert would have `Sale` persist itself) and the Pure Fabrication escape valve — a use-case
+controller is itself a fabrication, merely kept thin. DCI (Reenskaug, Coplien) states the result — the algorithm is
+readable nowhere in class-oriented code — and gives it a Context; Evans' *Services* chapter concedes that forcing
+an operation onto an entity that is not its natural home distorts the model; Martin makes the split structural
+(application-specific rules in the interactor, enterprise-wide rules in entities).
+
+**The presenter descends from tell-don't-ask, not from the use-case tradition.** No critique targeted Larman's
+returning controller, but four principles converge against it. *Tell, Don't Ask* (Sharp; Hunt and Thomas): code
+that gets information and then decides is procedural — a UI asking the controller for a result and deciding what to
+show is that shape at the architectural boundary, and the presenter port is the principle applied there.
+*Command–Query Separation* (Meyer): a `void` interaction is a pure command; one that writes and returns its outcome
+is both. The **London school** of TDD (Freeman and Pryce, *Growing Object-Oriented Software, Guided by Tests*; "Mock
+Roles, not Objects") is the closest precedent for the whole presenter discipline — `void` methods, collaborators
+notified through listener roles whose methods name outcomes, mocks as the tool for designing those roles; the
+captor-based interaction tests (`testing.md`) are that school's technique. The exact difference is instructive: the
+London-school listener already coarsened notification from property changes to *outcomes* — the step Larman's
+`Sale`→UI Observer lacked — but typically kept the *domain object* as the notifier. Clean DDD also relocates the
+notifier from the domain object to the *interaction*; the two moves together turn Observer into a presenter port.
+The *humble* half comes from the humble-object line (Feathers' "Humble Dialog Box", Fowler's Passive View,
+Meszaros' Humble Object). And the counter-tradition is reconciled rather than rejected: functional programming's
+*return values, stay pure* holds **inside the functional core** (§10 — Bernhardt's functional core returns values),
+tell-don't-ask holds **at the boundary** — each school applied at the layer where its argument is strongest.
+(Citations in this and the Larman paragraphs are from memory, not checked against the texts — verify before
+quoting. Promotion candidate, flagged not promoted: *dispersal of use-case logic was criticized within the object
+tradition itself — Jacobson's scattering and tangling, Wirfs-Brock's dispersed control, DCI — and Clean DDD is
+centralized sequencing over delegated computation; the presenter port descends from tell-don't-ask, CQS and the
+London school's outcome-named listener roles, relocating the notifier from the domain object to the interaction;
+return values stay in the functional core, tell-don't-ask governs the boundary.*)
+
 **Express outcomes by presenting, not always by throwing.** A dangling exit target is
 handled by **branch-and-present** — a checkpoint collects the unresolved targets and calls a
 dedicated presenter method — rather than minting a thrown domain-error type. It is lighter,
@@ -3279,6 +3378,41 @@ rules, ports, and transactions says otherwise, so in practice the process lands 
 *unacknowledged*. Clean DDD's move is to stop being embarrassed about that gravity: name the procedure, give
 it discipline (void interactions, checkpoints, terminal presentation, a named initiating actor), and test it
 against its spec.
+
+**The distrust was rational — the compensation has a history, and its premise has expired.** The thesis above
+is not a charge of ideology against the canon. When the Blue Book appeared, the era's use-case class *was* the EJB
+stateless session bean — the J2EE Session Facade over anemic entity beans, DTOs everywhere (the pattern catalog's
+first edition even called them "Value Objects"), transactions declared per method — and it was bound to its
+container: no dependency injection into a plain core, mocking in its infancy, so the only way to verify the
+application layer was to deploy it. A layer verifiable only by deployment *deserves* distrust, and moving the
+defense into the model — the one place a plain unit test could reach — was the sound response, not a doctrinal
+error. What followed compounded it. The POJO reaction (Spring, Hibernate, the anemic-model critique) discarded
+the use-case layer along with EJB, because it *looked like* the facade; the enterprise-patterns taxonomy offered
+Transaction Script *or* Domain Model, framing procedure as the simple-domain choice and leaving no name for
+procedural orchestration over a rich functional core; and the ORM's Unit of Work erased the procedure's own
+text — the save step dissolved into dirty checking, the transaction boundary into an annotation (§5's explicit
+demarcation had nowhere left to live). Every condition that made the application layer untestable is now gone —
+a framework-free core, constructor injection, mocked ports, ArchUnit gates — so the move above is *available*,
+not merely argued for; the compensation outlived its cause as doctrine.
+
+Two refinements keep this honest. **One force survives: distribution.** A procedure cannot hold a transaction
+across services, so where aggregates live in different stores, aggregate-local consistency plus events is a
+requirement, not a compensation — the same bound "consistency scoped by scenario" (below) draws at the single
+transactional resource. **And the revival came back at the wrong grain.** When the procedure returned —
+hexagonal ports, the Clean Architecture interactor, CQRS command handlers — it returned as a single-method
+`execute()` or one handler per command: Larman's *system operation*, not Cockburn's *user goal* (§4's lineage).
+The goal level — several interactions under one goal, several actors, the outcome stripes — never came back, and
+it is the piece this project restores. `[thread #5]` Finally, the doctrine was *thinkable* in the late 1990s but
+not *affordable*: always-valid immutable VOs meant hand-written `equals`/`hashCode`/withers against a JavaBeans
+convention that demanded no-arg constructors and setters, `doInTransaction(() -> …)` meant anonymous inner
+classes, and §13's compile-time exhaustiveness waited for sealed types. §13's economics inversion therefore has a
+pre-LLM first half — modern Java, Lombok, Mockito, ArchUnit, Testcontainers — which the human-AI pairing
+completes. (Promotion candidate, flagged not promoted: *the canon's fat aggregate was a rational compensation for
+an application layer that could not be tested in isolation (the EJB session facade); the POJO reaction discarded
+the use-case layer with EJB, the Transaction-Script-vs-Domain-Model taxonomy left procedural orchestration over a
+functional core unnamed, and the ORM's Unit of Work erased the procedure's text; the testability premise has
+expired, distribution is the one force that still binds, and the procedure's revival returned at the
+system-operation grain, leaving the user-goal grain unrestored.*)
 
 **Consistency scoped by scenario, not by aggregate.** `[thread #3]` Vernon's one-aggregate-per-transaction
 rule is a consequence, not a principle: when the aggregate is the *only* construct that can declare "these
