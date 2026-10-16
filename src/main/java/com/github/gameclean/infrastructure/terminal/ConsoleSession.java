@@ -11,6 +11,7 @@ import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
 import com.github.gameclean.core.usecase.inventory.DropInputPort;
 import com.github.gameclean.core.usecase.inventory.InventoryInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
+import com.github.gameclean.core.usecase.parley.TalkToNpcInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
 import jakarta.annotation.PostConstruct;
@@ -187,6 +188,7 @@ public class ConsoleSession {
                 case TakeCommand take -> takeTarget(take.getTarget());
                 case DropCommand drop -> dropTarget(drop.getTarget());
                 case HitCommand hit -> hitTarget(hit.getTarget());
+                case TalkCommand talk -> talkTo(talk.getTarget());
                 case InventoryCommand ignored -> reviewBelongings();
                 case PlayCommand ignored -> sitDownToPlay();
                 case SelectCommand select -> guide(Integer.toString(select.getOrdinal()));
@@ -241,6 +243,13 @@ public class ConsoleSession {
         // case present a menu and arm the AffordanceContext (kind HIT), so the next bare number resumes striking.
         FightNpcInputPort fightNpcUseCase = applicationContext.getBean(FightNpcInputPort.class);
         fightNpcUseCase.playerHitsTarget(target);
+    }
+
+    private void talkTo(String target) {
+        // Same idiom as hit: a fresh prototype use case per interaction. An ambiguous target makes the use case
+        // present a menu and arm the AffordanceContext (kind TALK), so the next bare number resumes talking.
+        TalkToNpcInputPort talkToNpcUseCase = applicationContext.getBean(TalkToNpcInputPort.class);
+        talkToNpcUseCase.playerTalksToTarget(target);
     }
 
     private void reviewBelongings() {

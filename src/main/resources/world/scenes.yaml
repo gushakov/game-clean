@@ -160,6 +160,12 @@ items:
 # `corpse:` (optional) names the item template minted as this NPC's corpse when an
 # instance is slain — one corpse per slaying, dropped in the scene where it fell, its
 # `contains` rolled there and then. Unauthored = the NPC leaves no corpse.
+#
+# `sayings:` (optional) lists the lines the NPC may answer with when the player talks to
+# it (`talk <npc>`); one is picked uniformly at random each time, so repeat a line to
+# weight it. Unauthored = the NPC has nothing to say (it acknowledges you and stays
+# silent). A hostile NPC — one the player has struck — refuses to talk regardless of its
+# lines: the combat stance outranks eloquence.
 npcs:
   - id: npc1
     shortDescription: A hooded wanderer.
@@ -170,6 +176,10 @@ npcs:
     attackChance: 1/3      # once provoked, per-tick odds of striking back (~a blow every ~3s)
     hitPoints: 20          # health pool it spawns at; a strike does 1..10 damage
     corpse: itm5           # slain, it leaves the wanderer's corpse (see items)
+    sayings:               # what it answers when talked to — one line picked at random
+      - You walk the same stones I walked. Mind where they lead.
+      - The gate was shut long before the hinges rusted. Ask yourself by whom.
+      - I have counted the steps to the tower a thousand times. The number changes.
     spawn:
       scenes: scn1         # scenes where the NPC can spawn
       chance: 1/1          # chance of spawning on each try

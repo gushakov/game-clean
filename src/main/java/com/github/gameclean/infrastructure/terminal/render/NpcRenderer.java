@@ -18,8 +18,8 @@ import java.util.Optional;
 
 /**
  * Renders NPC-facing output — the <em>asynchronous</em> narration of NPC movements the player can witness, and
- * the synchronous outcomes of a {@code hit}: the strike confirmations and the NPC-flavored disambiguation
- * dialogue. The NPC counterpart of {@link ItemRenderer} and {@link CurrentSceneRenderer}: a shared,
+ * the synchronous outcomes of a {@code hit} or a {@code talk}: the strike confirmations, the NPC's speech, and
+ * the NPC-flavored disambiguation dialogue both verbs share. The NPC counterpart of {@link ItemRenderer} and {@link CurrentSceneRenderer}: a shared,
  * domain-aware collaborator (it knows {@link Npc} and {@link PerceivedNpcMovement}) over the domain-agnostic
  * {@link Console}.
  *
@@ -42,6 +42,7 @@ public class NpcRenderer {
     private static final AttributedStyle SLAIN = AttributedStyle.DEFAULT.foreground(AttributedStyle.RED).bold();
     private static final AttributedStyle STRUCK_PLAYER =
             AttributedStyle.DEFAULT.foreground(AttributedStyle.RED);
+    private static final AttributedStyle SPEECH = AttributedStyle.DEFAULT.foreground(AttributedStyle.GREEN);
 
     Console console;
 
@@ -137,6 +138,35 @@ public class NpcRenderer {
     /** The player picked a number outside the offered menu; the menu still stands. */
     public void renderNoSuchOption(int ordinal) {
         console.printError("There is no option %d. Type one of the numbers shown.".formatted(ordinal));
+    }
+
+    /**
+     * The NPC answers the player: the speaker named, then the authored line quoted verbatim — the one place
+     * the saying's prose reaches the screen. The synchronous response to {@code talk}, so a plain write.
+     */
+    public void renderNpcSays(Npc npc, String saying) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(SPEECH).append("%s says: \"%s\"".formatted(bareName(npc.getShortDescription()), saying));
+        console.write(sb);
+    }
+
+    /**
+     * A hostile NPC shuts the conversation — the use case decided the refusal on the persisted stance; this only
+     * phrases it (one generic refusal; authored snarls per NPC wait for their own goal).
+     */
+    public void renderNpcRefusesToTalk(Npc npc) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(SPEECH).append("%s glares at you and says nothing. It has not forgotten your blow."
+                .formatted(bareName(npc.getShortDescription())));
+        console.write(sb);
+    }
+
+    /** A peaceful NPC with nothing authored to say: it notices the player and offers no words. */
+    public void renderNpcHasNothingToSay(Npc npc) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(SPEECH).append("%s looks you over, nods once, and says nothing."
+                .formatted(bareName(npc.getShortDescription())));
+        console.write(sb);
     }
 
     private static String phrase(PerceivedNpcMovement movement) {

@@ -64,6 +64,11 @@ public class CommandParser {
             }
             return new HitCommand(joinRemainder(args));
         });
+        // 'talk'/'speak' address an NPC by description, the remainder as the target like 'hit <target>'. An
+        // idiomatic leading 'to'/'with' ('talk to the wanderer') is dropped — the preposition is grammar, not
+        // designation. Bare 'talk' (or a bare preposition) names no one and falls through to unknown.
+        register("talk", CommandParser::talkCommand);
+        register("speak", CommandParser::talkCommand);
         // Mini-game verbs. 'play' sits down at the table; 'stand'/'stay' and 'game'/'table' continue an armed
         // blackjack conversation (unarmed they fold into guidance). All argument-free.
         register("play", args -> args.isEmpty() ? new PlayCommand() : null);
@@ -118,9 +123,32 @@ public class CommandParser {
         registry.put(verb, factory);
     }
 
-    /** Joins the argument tokens back into one target phrase (whitespace collapsed to single spaces). */
+    /**
+     * {@code talk}/{@code speak} with an optional leading preposition: drops a first {@code to}/{@code with}
+     * token, then takes the rest as the multi-word target; nothing left ⇒ no command (unknown).
+     */
+    private static Command talkCommand(List<String> args) {
+        List<String> target = args;
+        if (!target.isEmpty()
+                && (target.getFirst().equalsIgnoreCase("to") || target.getFirst().equalsIgnoreCase("with"))) {
+            target = target.subList(1, target.size());
+        }
+        return target.isEmpty() ? null : new TalkCommand(joinRemainder(target));
+    }
+
+    /**
+     * Joins the argument tokens back into one target phrase (whitespace collapsed to single spaces), dropping
+     * a leading article when something follows it — {@code take the dagger} / {@code talk to the wanderer}
+     * designate "dagger" / "wanderer". The article is grammar, not designation: left in, it would defeat the
+     * domain's substring match against a short description that begins "A …". A bare {@code the} is kept as
+     * the (nonsense) target it is, so the player is told nothing matches rather than nothing was typed.
+     */
     private static String joinRemainder(List<String> args) {
-        return String.join(" ", args);
+        List<String> target = args;
+        if (target.size() > 1 && target.getFirst().equalsIgnoreCase("the")) {
+            target = target.subList(1, target.size());
+        }
+        return String.join(" ", target);
     }
 
     /** A short, all-digits token that parses to a strictly positive int — a 1-based menu pick. */

@@ -20,6 +20,11 @@ import org.mapstruct.Mapping;
  * {@code currentScene ↔ currentSceneId} name mismatch is declared. The {@code version} and the opaque
  * {@code corpseRef} authored handle (a plain string on both sides) map straight through (by name) in both
  * directions.
+ *
+ * <p>The {@code sayings} match by name too, but their <em>elements</em> differ in shape — a plain {@code String}
+ * on the domain side, an owned-child {@link NpcSayingDbEntity} row on the storage side — so the two
+ * {@code default} element converters below give MapStruct the per-element step and it generates the list
+ * walk itself (authored order preserved, the list key being the row's {@code idx}).
  */
 @Mapper(componentModel = "spring")
 public interface NpcDbEntityMapper extends ScalarConverter, CompositeDbConverter {
@@ -29,4 +34,14 @@ public interface NpcDbEntityMapper extends ScalarConverter, CompositeDbConverter
 
     @Mapping(target = "currentScene", source = "currentSceneId")
     Npc toDomain(NpcDbEntity entity);
+
+    /** One authored line → its child row (the back-reference and position are the parent collection's job). */
+    default NpcSayingDbEntity toSayingDbEntity(String saying) {
+        return new NpcSayingDbEntity(saying);
+    }
+
+    /** One child row → the authored line; the NPC's own gate rejects a blank stored line as an integrity fault. */
+    default String toSaying(NpcSayingDbEntity entity) {
+        return entity.getText();
+    }
 }
