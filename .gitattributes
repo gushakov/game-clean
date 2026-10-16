@@ -1,2 +1,12 @@
 * text eol=lf
 
+
+# Binary assets — never line-ending-normalized (the catch-all above forces text on everything else)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.jar binary
