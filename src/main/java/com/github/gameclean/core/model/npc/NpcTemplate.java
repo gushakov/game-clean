@@ -31,6 +31,10 @@ import java.util.Set;
  * template minted as an instance's corpse when it is slain; it is copied onto every spawned instance like the
  * descriptions. Whether it <em>resolves</em> — to an authored container without a ground-spawn rule — is an
  * inter-template rule the use-case gate checks, exactly like containment targets.
+ *
+ * <p>The optional {@code sayings} (authored absence when empty) are the lines an instance answers with when the
+ * player talks to it (#104); they are copied onto every spawned instance like the descriptions. A blank line is
+ * rejected here, at the template, for the same reason a blank description is.
  */
 @Value
 public class NpcTemplate {
@@ -45,8 +49,11 @@ public class NpcTemplate {
     /** Authored handle of the corpse item template minted when an instance is slain — null when it leaves none. */
     String corpseRef;
 
+    /** The authored lines every spawned instance may answer with when talked to — empty when none are authored. */
+    List<String> sayings;
+
     public NpcTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule, Chance moveChance,
-                       Chance attackChance, int maxHitPoints, String corpseRef) {
+                       Chance attackChance, int maxHitPoints, String corpseRef, List<String> sayings) {
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
         this.fullDescription = requireNonBlank(fullDescription, "npc full description");
         this.spawnRule = DomainValidation.requireNonNull(spawnRule, "npc spawn rule must not be null");
@@ -61,11 +68,19 @@ public class NpcTemplate {
             throw new InvalidDomainObjectError("npc corpse ref must not be blank when present");
         }
         this.corpseRef = corpseRef;
+        // Authored absence is the empty list; a present line must carry content. Validated here, up front, for
+        // the same reason the descriptions are — independent of how the spawn rolls fall.
+        if (sayings == null) {
+            this.sayings = List.of();
+        } else {
+            sayings.forEach(saying -> requireNonBlank(saying, "npc saying"));
+            this.sayings = List.copyOf(sayings);
+        }
     }
 
     /**
      * Builds one NPC instance of this template at the given scene, stamped with the given freshly generated id.
-     * The descriptions, move chance, attack chance and corpse ref are copied onto the instance — instances hold
+     * The descriptions, move chance, attack chance, corpse ref and sayings are copied onto the instance — instances hold
      * their own state and do not reference the template. The instance spawns at full health
      * ({@link HitPoints#full(int)} of {@link #maxHitPoints}), <em>non-hostile</em>, and version {@code 0} (a
      * new, not-yet-persisted row).
@@ -81,6 +96,7 @@ public class NpcTemplate {
                 .hitPoints(HitPoints.full(maxHitPoints))
                 .hostile(false)
                 .corpseRef(corpseRef)
+                .sayings(sayings)
                 .version(0)
                 .build();
     }

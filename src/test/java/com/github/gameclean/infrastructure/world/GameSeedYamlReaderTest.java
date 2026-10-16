@@ -95,6 +95,18 @@ class GameSeedYamlReaderTest {
     }
 
     @Test
+    void readsTheAuthoredSayingsOnNpcsInOrder() {
+        GameSeed seed = readSeed();
+
+        // npc1 (the hooded wanderer) authors three lines; they arrive raw, trimmed, in authored order (#104).
+        assertThat(seed.getNpcs()).singleElement()
+                .satisfies(npc -> assertThat(npc.getSayings()).containsExactly(
+                        "You walk the same stones I walked. Mind where they lead.",
+                        "The gate was shut long before the hinges rusted. Ask yourself by whom.",
+                        "I have counted the steps to the tower a thousand times. The number changes."));
+    }
+
+    @Test
     void readsTheAuthoredCorpseRefOnNpcsDefaultingToAbsence() {
         GameSeed seed = readSeed();
 

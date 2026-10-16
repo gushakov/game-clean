@@ -63,7 +63,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72); `usecase/parley/` holds `TalkToNpc` (the player talks to an NPC, who answers with an authored saying — the first non-violent NPC interaction, read-only, #104)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -670,7 +670,36 @@ containment fill, death drop):
   **Known consequence** (pinned in `NpcRoundTripIT` + port javadoc): all NPCs slain → `npcsAlreadySpawned()`
   false → the next boot re-spawns fresh instances; corpses accumulate (design-notes §5).
 
-Tests: 518 unit (Surefire, DB-free) + 28 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Talk` vertical **complete** (issue #104) — the player talks to an NPC, who answers with one of its authored
+sayings; the first non-violent NPC interaction, and the project's first vertical built **unsupervised**
+(feature choice, content, code and trial all by the AI collaborator, reviewed only at the PR — design-notes §13):
+
+- **Domain** — `Npc.sayings` (immutable `List<String>`, each non-blank; authored absence = empty list, the
+  `corpseRef`/`Scene.miniGames` precedent) + `hasSayings()` + `pickSaying(Dice)` (uniform pick, the
+  `DayPhase.pickMessage` twin; on a silent NPC a plain precondition throw, not a domain outcome). `NpcTemplate`
+  carries and copies the list; `NpcEntry.sayings` + an optional `sayings:` sequence per `npcs:` entry.
+- **Use case** — `TalkToNpc` (`core/usecase/parley/` — a new summary goal: talking with the inhabitants, distinct
+  from `combat` and the system-actor `npc/`): `playerTalksToTarget(String)` + `playerTalksToChosenCandidate(int,
+  List<String>)` over the shared `orient` + `select`-NPC opening (the third `SelectSceneNpcSubcase` consumer after
+  `hit`). **Read-only, no tx, no persistence port of its own**; holds a `Dice`. Three stripes decided in the use
+  case on domain facts, in fixed order: `presentNpcRefusesToTalk` (hostile — the combat stance outranks the
+  lines), `presentNpcHasNothingToSay` (peaceful, nothing authored), `presentNpcSays(npc, saying)`.
+- **Persistence** — Flyway `V16__create_npc_saying.sql`: child table `npc_saying(npc_id, idx, text)` owned by
+  the npc aggregate (the `exit`/`scene_mini_game` pattern); `@MappedCollection(idColumn, keyColumn = "idx")
+  List<NpcSayingDbEntity>` on `NpcDbEntity` so authored order survives; two `default` element converters on the
+  mapper. Pre-existing rows simply have no sayings.
+- **Terminal** — `TalkCommand` + `talk`/`speak` verbs (remainder as target; a leading `to`/`with` dropped);
+  `AffordanceKind.TALK`; `TalkConversation` (bare-number resume); `TerminalTalkToNpcPresenter` (orient + select-NPC
+  + talk ports, flat); `NpcRenderer` speech renderings (green); guidance list gains `talk <target>`. The live
+  trial also made the shared target-joining helper drop a leading `the` for **every** described target
+  (`talk to the wanderer`, `take the dagger`): the article is grammar, not designation, and it was defeating the
+  substring match against short descriptions that begin "A …".
+- **Content** — `scenes.yaml`: three cryptic lines for the hooded wanderer; `scenes2.yaml`: four for the fishwife,
+  three for the lamplighter, none for the harbor-watchman (the silent surface). All three spawn with certainty.
+- **Deferred** — authored hostile lines (one generic refusal today); dialogue with state (topics, replies); talk
+  affecting the NPC (calming/provoking); a target-less `talk` when one NPC is present.
+
+Tests: 541 unit (Surefire, DB-free) + 30 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **take from a container** (the

@@ -159,7 +159,26 @@ public class GameSeedYamlReader {
                 asInt(node.get("hitPoints"), "npc hit points"),
                 // The corpse ref stays null when unauthored (the NPC leaves no corpse — authored absence,
                 // like an absent spawn); whether it resolves is the use-case gate's business.
-                asString(node.get("corpse")));
+                asString(node.get("corpse")),
+                // The sayings are an optional YAML sequence of lines; absent yields the empty list (the NPC has
+                // nothing to say). Each line is carried raw — non-blankness is the template's gate.
+                asListOfStrings(node.get("sayings")));
+    }
+
+    /**
+     * Reads an optional YAML sequence of scalars ({@code sayings:}) as trimmed strings in authored order;
+     * null yields an empty list. Non-string scalars (a bare number) are tolerated via {@code toString}, the way
+     * {@code asInt} tolerates quoted numbers.
+     */
+    private static List<String> asListOfStrings(Object node) {
+        if (node == null) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (Object value : (List<?>) node) {
+            values.add(value == null ? null : value.toString().strip());
+        }
+        return values;
     }
 
     private static SpawnEntry toSpawnEntry(Map<String, Object> node) {

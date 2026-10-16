@@ -13,6 +13,8 @@ import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
@@ -65,6 +67,29 @@ class NpcRoundTripIT extends AbstractPostgresIT {
                     assertThat(npc.isHostile()).isFalse();
                     assertThat(npc.getHitPoints()).isEqualTo(HitPoints.full(10));
                     assertThat(npc.getCorpseRef()).isEqualTo("itm5");
+                    // The sayings child rows come back in authored order (the list key column).
+                    assertThat(npc.getSayings()).containsExactly("Mind where they lead.", "The number changes.");
+                });
+    }
+
+    @Test
+    void saveNpc_rewrites_the_saying_rows_with_the_aggregate_and_tolerates_a_silent_npc() {
+        SpringNpcRepositoryAdapter adapter = new SpringNpcRepositoryAdapter(repository, mapper);
+        adapter.saveNpc(npc("npc1", HERE));
+        Npc loaded = adapter.findNpcsInScene(HERE).getFirst();   // carries the post-insert version
+
+        // An update of the aggregate (a wander) rewrites the owned children — the lines survive, once each.
+        adapter.saveNpc(loaded.moveTo(SceneId.of("scn2")));
+        assertThat(adapter.findNpcsInScene(SceneId.of("scn2")).getFirst().getSayings())
+                .containsExactly("Mind where they lead.", "The number changes.");
+
+        // A silent NPC (no authored sayings) round-trips to the empty list, not null.
+        adapter.saveNpc(npc("npc2", HERE).withSayings(List.of()));
+        assertThat(adapter.findNpcsInScene(HERE))
+                .singleElement()
+                .satisfies(npc -> {
+                    assertThat(npc.getSayings()).isEmpty();
+                    assertThat(npc.hasSayings()).isFalse();
                 });
     }
 
@@ -164,6 +189,7 @@ class NpcRoundTripIT extends AbstractPostgresIT {
                 .attackChance(new Chance(1, 3))
                 .hitPoints(HitPoints.full(10))
                 .corpseRef("itm5")
+                .sayings(List.of("Mind where they lead.", "The number changes."))
                 .build();
     }
 }

@@ -2,6 +2,8 @@ package com.github.gameclean.core.port.seed;
 
 import lombok.Value;
 
+import java.util.List;
+
 /**
  * Parsed shape of a single authored NPC — its descriptions, its {@link SpawnEntry spawn rule}, and its
  * move chance — a flat, immutable carrier of primitives holding no domain types. The NPC twin of
@@ -42,4 +44,11 @@ public class NpcEntry {
     int attackChanceDenominator;
     int hitPoints;
     String corpse;
+
+    /**
+     * The authored lines this NPC may answer with when the player talks to it (#104) — raw prose, in authored
+     * order; empty when unauthored (the NPC has nothing to say — authored absence, like an absent
+     * {@code corpse}). Whether each line is non-blank is the template's gate.
+     */
+    List<String> sayings;
 }

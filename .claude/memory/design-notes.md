@@ -3321,6 +3321,37 @@ which serves a bounded-context, pattern-completing collaborator (an LLM) for the
 returning human maintainer; and the pairing inverts the ceremony economics, since explicitness costs writing
 (now cheap) and pays in verification (still scarce).*)
 
+**The first unsupervised vertical — `talk <npc>` (#104) — turns the dial one notch further.** The author
+handed over the *choice* of feature as well as its implementation, with no mid-course review: pick something
+`take`-sized, design the content, build it through every ring, try it in the running game, open the PR. The
+issue body was written as a design note *before* the first line of code, precisely so the decisions taken
+alone could be critiqued afterwards; this paragraph is the matching record from the other side. What the
+doctrine delivered unsupervised: the vertical landed in one pass (23 new unit tests, one extended IT, no
+failing build at any step), and the *only* runtime surprise came from the live app, not from any test — a
+leading article (`talk to the wanderer`) defeating the domain's substring match. That is a delivery-grammar
+fact no use-case test could surface, which is exactly the testability stance's own prediction (headless
+adapter smoke checks exist for this class of defect). The decisions made without dialectic, in the order they
+mattered: (1) a new summary goal, `parley`, rather than an arm of `combat` or `npc` — the same `orient` +
+`select`-NPC opening, a different player intent, so the package name should scream the intent; (2) sayings
+as a bare `List<String>` on `Npc` with no `Saying` value object — authored prose with no behaviour of its
+own; the NPC owns the *pick* (`pickSaying(Dice)`, the `DayPhase.pickMessage` precedent) and the fact
+(`hasSayings()`), the use case owns the *branching*, the presenter only phrases; (3) "hostility outranks
+eloquence" — a struck NPC refuses even when it has lines — is an interaction-shape decision taken in the use
+case by reading `isHostile()`, rendered as one generic refusal, authored snarls deferred by emergence; (4)
+the construction gate normalizes a `null` list to the empty list (the `Scene.miniGames` precedent) instead
+of demanding one — the honest hesitation: the *convenience* argument (every existing `Npc.builder()` site
+keeps compiling) is not a domain argument; the domain argument that carried it is that authored absence is a
+valid state, like `corpseRef`, so the gate normalizes rather than rejects; (5) the child table is a
+`List` keyed by position, not a `Set` — authored order and deliberate repetition are the author's to control;
+(6) the article-stripping went into the one shared target-joining helper, so `hit`/`take`/`examine`/`drop`
+gained it too — consistency across verbs beat the minimal diff, the single place scope was widened. Where the
+missing dialectic shows: whether talking to a hostile NPC should *do* something (calm it, provoke it) is a
+game-design question answered here by the budget ("read-only, `take`-sized") rather than by the domain
+expert; and `pickSaying` on a silent NPC throws (the behaviour-guard convention) rather than returning an
+`Optional`, which forces the use case to ask `hasSayings()` first and so makes the nothing-to-say stripe
+explicit — defensible, but chosen, not discussed. The thread's evidence (c) above is therefore no longer
+fully entangled with human review: this slice had none until the PR.
+
 ## 14. Where canonical DDD keeps the process — combat as the comparative exemplar
 
 `FightNpc` is the most sophisticated interaction so far — multi-actor (the NPC retaliating from another

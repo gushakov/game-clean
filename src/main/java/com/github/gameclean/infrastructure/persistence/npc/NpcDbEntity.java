@@ -6,7 +6,10 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Embedded;
+import org.springframework.data.relational.core.mapping.MappedCollection;
 import org.springframework.data.relational.core.mapping.Table;
+
+import java.util.List;
 
 /**
  * Spring Data JDBC persistence entity for the {@code npc} table — the storage shape of the {@code Npc}
@@ -65,4 +68,11 @@ public class NpcDbEntity {
 
     @Embedded.Nullable
     private HitPointsDbEntity hitPoints;
+
+    /**
+     * The authored sayings, owned children over {@code npc_saying} with {@code idx} as the list key — a
+     * {@code List} so authored order survives, the scene's {@code exits}/{@code miniGames} pattern (#104).
+     */
+    @MappedCollection(idColumn = "npc_id", keyColumn = "idx")
+    private List<NpcSayingDbEntity> sayings;
 }

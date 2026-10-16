@@ -5,6 +5,7 @@ import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.designation.Designatable;
 import com.github.gameclean.core.model.dice.Chance;
+import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.scene.SceneId;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -13,6 +14,7 @@ import lombok.Getter;
 import lombok.With;
 import lombok.experimental.FieldDefaults;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -62,6 +64,13 @@ import java.util.Objects;
  * through the corpse-blueprint port at death time), so it stays a plain, opaque {@code String} rather than
  * an id value object — the gate asks only that a present ref is non-blank.
  *
+ * <p><b>Sayings give the NPC a voice (#104).</b> {@link #sayings} are the authored lines it may answer with when
+ * the player talks to it — plain prose in authored order, empty when it has none (authored absence, like an
+ * absent corpse). The NPC owns the selection ({@link #pickSaying(Dice)}, a uniform dice pick) and the fact the
+ * {@code talk} use case decides on ({@link #hasSayings()}); it does not own <em>whether</em> it will talk at all —
+ * that a hostile NPC refuses is the use case's reading of the {@link #hostile} stance, an interaction-shape
+ * decision, not a property of the saying list.
+ *
  * <p>Equality is by identity (id) only — two NPCs are the same NPC when their ids match; the version and hit
  * points are naturally outside value equality.
  */
@@ -86,12 +95,16 @@ public class Npc implements Designatable {
     /** Authored handle of the item template minted as this NPC's corpse when slain — null when it leaves none. */
     String corpseRef;
 
+    /** The authored lines this NPC may answer with when talked to, in authored order — empty when it has none. */
+    List<String> sayings;
+
     /** Optimistic-locking token — opaque to the domain, managed by persistence, not part of value equality. */
     long version;
 
     @Builder
     public Npc(NpcId id, SceneId currentScene, String shortDescription, String fullDescription, Chance moveChance,
-               Chance attackChance, HitPoints hitPoints, boolean hostile, String corpseRef, long version) {
+               Chance attackChance, HitPoints hitPoints, boolean hostile, String corpseRef, List<String> sayings,
+               long version) {
         this.id = DomainValidation.requireNonNull(id, "npc id must not be null");
         this.currentScene = DomainValidation.requireNonNull(currentScene, "npc current scene must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
@@ -105,10 +118,60 @@ public class Npc implements Designatable {
             throw new InvalidDomainObjectError("npc corpse ref must not be blank when present");
         }
         this.corpseRef = corpseRef;
+        this.sayings = requireNonBlankSayings(sayings);
         if (version < 0) {
             throw new InvalidDomainObjectError("npc version must not be negative, got " + version);
         }
         this.version = version;
+    }
+
+    /**
+     * Whether this NPC has anything to say when talked to — at least one authored saying. The domain fact the
+     * {@code talk} use case decides its nothing-to-say stripe on, so the presenter never inspects the list.
+     *
+     * @return {@code true} when at least one saying is authored
+     */
+    public boolean hasSayings() {
+        return !sayings.isEmpty();
+    }
+
+    /**
+     * Picks, uniformly, the line this NPC answers with by asking the given {@link Dice} to choose among its
+     * {@link #sayings} — the {@code DayPhase.pickMessage(Dice)} twin: the uniform-pick mechanic lives on the
+     * dice, the NPC only names <em>what</em> is chosen among. Side-effect free; the NPC is unchanged by
+     * speaking (talk is read-only — a saying is prose, not a state change).
+     *
+     * <p>Asking an NPC with no sayings to speak is a <em>caller programming error</em> (the use case checks
+     * {@link #hasSayings()} first and presents that outcome itself), so it stays a plain
+     * {@link IllegalStateException} per the behaviour-method guard convention, distinct from the construction
+     * gate — exactly as a null dice is a plain {@link NullPointerException}.
+     *
+     * @param dice the dice to pick with (must not be null)
+     * @return the chosen saying
+     * @throws IllegalStateException when this NPC has no sayings
+     */
+    public String pickSaying(Dice dice) {
+        Objects.requireNonNull(dice, "dice must not be null");
+        if (sayings.isEmpty()) {
+            throw new IllegalStateException("npc %s has no sayings to pick from".formatted(id.asString()));
+        }
+        return dice.pick(sayings);
+    }
+
+    /**
+     * The construction gate for the sayings: authored absence ({@code null}) is the empty list, and every
+     * present line must carry content. Copied defensively so the aggregate owns an immutable list.
+     */
+    private static List<String> requireNonBlankSayings(List<String> sayings) {
+        if (sayings == null) {
+            return List.of();
+        }
+        for (String saying : sayings) {
+            if (DomainValidation.requireNonNull(saying, "npc saying must not be null").strip().isEmpty()) {
+                throw new InvalidDomainObjectError("npc saying must not be blank");
+            }
+        }
+        return List.copyOf(sayings);
     }
 
     /**
