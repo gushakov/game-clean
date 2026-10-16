@@ -46,6 +46,8 @@ import com.github.gameclean.core.usecase.npc.AnimateNpcsUseCase;
 import com.github.gameclean.core.usecase.npc.WanderInputPort;
 import com.github.gameclean.core.usecase.npc.WanderUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
+import com.github.gameclean.core.usecase.parley.TalkToNpcInputPort;
+import com.github.gameclean.core.usecase.parley.TalkToNpcUseCase;
 import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneNpcSubcase;
@@ -57,6 +59,7 @@ import com.github.gameclean.infrastructure.terminal.conversation.DropConversatio
 import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.HitConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.TakeConversation;
+import com.github.gameclean.infrastructure.terminal.conversation.TalkConversation;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnimateNpcsPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
@@ -70,6 +73,7 @@ import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresen
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalPlayBlackjackPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalTakePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalTalkToNpcPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalWanderPresenter;
 import com.github.gameclean.infrastructure.terminal.render.BlackjackRenderer;
 import com.github.gameclean.infrastructure.terminal.render.CalendarRenderer;
@@ -250,6 +254,29 @@ public class UseCaseConfig {
 
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public TalkToNpcInputPort talkToNpcUseCase(
+            OrientRenderer orientRenderer,
+            NpcRenderer npcRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            NpcRepositoryOperationsOutputPort npcOps) {
+        // One presenter instance, shared with the orient and the scene-sourced NPC select subcases (as hit does),
+        // so every outcome — the NPC's answer, a refusal, nothing-to-say, the orient not-founds, the
+        // disambiguation outcomes — reaches the same one. Read-only: no transaction port, and no persistence
+        // port of the use case's own (the select subcase holds the NPC port). Dice is a domain collaborator (a
+        // fresh SystemDice, like the ticker) picking the NPC's line.
+        TerminalTalkToNpcPresenter presenter =
+                new TerminalTalkToNpcPresenter(orientRenderer, npcRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        SelectSceneNpcSubcase select = new SelectSceneNpcSubcase(presenter, npcOps);
+        return new TalkToNpcUseCase(presenter, orient, select, new SystemDice());
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public PlayBlackjackInputPort playBlackjackUseCase(
             OrientRenderer orientRenderer,
             BlackjackRenderer blackjackRenderer,
@@ -310,6 +337,11 @@ public class UseCaseConfig {
     @Bean
     public Conversation hitConversation(ApplicationContext applicationContext) {
         return new HitConversation(applicationContext);
+    }
+
+    @Bean
+    public Conversation talkConversation(ApplicationContext applicationContext) {
+        return new TalkConversation(applicationContext);
     }
 
     /**

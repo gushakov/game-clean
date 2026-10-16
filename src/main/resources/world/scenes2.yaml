@@ -282,6 +282,11 @@ npcs:
     attackChance: 1/3      # gutting-knife handy — hits back hard once provoked (~every ~3s)
     hitPoints: 15          # health pool it spawns at; a strike does 1..10 damage
     corpse: itm8           # slain, she certainly leaves her knife on the body (see items)
+    sayings:               # talkative — one line picked at random each time
+      - Mind the steps. They're slicker than they look, and the sea's taken better than you.
+      - Fish? There's been no fish since the lamps went dark. Only what the tide brings up.
+      - You've the look of someone the sea hasn't finished with yet.
+      - If you go down to the cave, don't go when the tide turns. Nobody comes back dry.
     spawn:
       scenes: scn1
       chance: 1/1          # certain to spawn
@@ -296,6 +301,10 @@ npcs:
     attackChance: 1/6      # frail and blind — flails back only now and then once provoked
     hitPoints: 12          # health pool it spawns at; a strike does 1..10 damage
     corpse: itm10          # slain, he leaves an empty-handed corpse (see items)
+    sayings:               # hums more than he talks — one line picked at random each time
+      - Every lamp on this coast is lit. Can't you see them? No. No, I suppose you can't.
+      - Listen. The tide hums back when I hum. It knows the tune.
+      - I lit the lantern room once, long ago. Something up there blew it out.
     spawn:
       scenes: scn1
       chance: 1/1
@@ -310,6 +319,7 @@ npcs:
     attackChance: 1/4      # stolid but stubborn — swings steadily once roused
     hitPoints: 18          # health pool it spawns at; a strike does 1..10 damage
     # no `corpse:` — slain, the watchman leaves nothing behind (the corpse-less path)
+    # no `sayings:` — talked to, the watchman has nothing to say (the silent path)
     spawn:
       scenes: scn1
       chance: 1/1

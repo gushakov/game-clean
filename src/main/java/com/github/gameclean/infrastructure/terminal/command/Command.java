@@ -17,5 +17,5 @@ package com.github.gameclean.infrastructure.terminal.command;
  * adding a new intent is a compile error until every dispatch handles it, rather than silently falling through.
  */
 public sealed interface Command
-        permits LookCommand, ExamineCommand, TakeCommand, DropCommand, InventoryCommand, HitCommand, SelectCommand, MoveCommand, TimeCommand, PlayCommand, HitCardCommand, StandCommand, GameStandingCommand, QuitCommand, UnknownCommand {
+        permits LookCommand, ExamineCommand, TakeCommand, DropCommand, InventoryCommand, HitCommand, TalkCommand, SelectCommand, MoveCommand, TimeCommand, PlayCommand, HitCardCommand, StandCommand, GameStandingCommand, QuitCommand, UnknownCommand {
 }

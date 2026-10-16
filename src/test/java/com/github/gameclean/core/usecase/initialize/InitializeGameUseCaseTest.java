@@ -753,13 +753,13 @@ class InitializeGameUseCaseTest {
                                 int chanceNumerator, int chanceDenominator, int max, String... candidateScenes) {
         return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
                 new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max),
-                moveNumerator, moveDenominator, 1, 3, 10, null);
+                moveNumerator, moveDenominator, 1, 3, 10, null, List.of());
     }
 
     /** An always-spawning NPC (one try, certain) declaring the given corpse ref. */
     private static NpcEntry npcWithCorpse(String id, String corpseRef, String... candidateScenes) {
         return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
-                new SpawnEntry(List.of(candidateScenes), 1, 1, 1), 1, 4, 1, 3, 10, corpseRef);
+                new SpawnEntry(List.of(candidateScenes), 1, 1, 1), 1, 4, 1, 3, 10, corpseRef, List.of());
     }
 
     private static List<SceneEntry> twoConnectedScenes() {

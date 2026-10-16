@@ -3,12 +3,13 @@ package com.github.gameclean.core.model.npc;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
+import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.*;
 
 /**
  * Tests for the {@link Npc} aggregate: the always-valid construction gate, the {@link Npc#moveTo(SceneId)}
@@ -261,5 +262,47 @@ class NpcTest {
         Npc wanderer = npc("scn1");
         assertThat(wanderer.hasIdToken("npc1")).isTrue();
         assertThat(wanderer.hasIdToken("npc2")).isFalse();
+    }
+
+    // --- sayings (#104) ----------------------------------------------------------------------------
+
+    @Test
+    void unauthored_sayings_are_the_empty_list_and_the_npc_has_nothing_to_say() {
+        Npc silent = npc("scn1");   // the builder never set sayings — authored absence
+        assertThat(silent.getSayings()).isEmpty();
+        assertThat(silent.hasSayings()).isFalse();
+    }
+
+    @Test
+    void a_blank_saying_is_rejected_by_the_construction_gate() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> npc("scn1").withSayings(List.of("Mind the steps.", "   ")));
+    }
+
+    @Test
+    void pickSaying_asks_the_dice_to_choose_among_the_authored_lines_in_order() {
+        Npc talker = npc("scn1").withSayings(List.of("First.", "Second.", "Third."));
+        assertThat(talker.hasSayings()).isTrue();
+        // The uniform pick is the dice's; the NPC only names what is chosen among, in authored order.
+        assertThat(talker.pickSaying(new ScriptedDice().willPick(2))).isEqualTo("Third.");
+        assertThat(talker.pickSaying(new ScriptedDice().willPick(0))).isEqualTo("First.");
+    }
+
+    @Test
+    void pickSaying_on_a_silent_npc_is_a_caller_precondition_fault_not_a_domain_outcome() {
+        assertThatIllegalStateException()
+                .isThrownBy(() -> npc("scn1").pickSaying(new ScriptedDice().willPick(0)));
+        assertThatNullPointerException()
+                .isThrownBy(() -> npc("scn1").withSayings(List.of("Hm.")).pickSaying(null));
+    }
+
+    @Test
+    void speaking_leaves_the_npc_unchanged_and_the_sayings_ride_through_copy_on_write() {
+        Npc talker = npc("scn1").withSayings(List.of("Only line."));
+        talker.pickSaying(new ScriptedDice().willPick(0));
+        assertThat(talker.getSayings()).containsExactly("Only line.");
+        // Copy-on-write carries the sayings like every other field (moving, taking damage, provocation).
+        assertThat(talker.moveTo(SceneId.of("scn2")).getSayings()).containsExactly("Only line.");
+        assertThat(talker.takeDamage(1).provoked().getSayings()).containsExactly("Only line.");
     }
 }

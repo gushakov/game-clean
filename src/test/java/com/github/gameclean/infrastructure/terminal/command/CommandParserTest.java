@@ -163,4 +163,35 @@ class CommandParserTest {
         Optional<Command> parsed = parser.parse("move east west");
         assertThat(parsed).contains(new UnknownCommand("move east west"));
     }
+
+    @Test
+    void talk_and_speak_take_the_remainder_as_the_target_dropping_a_leading_preposition() {
+        assertThat(parser.parse("talk wanderer")).contains(new TalkCommand("wanderer"));
+        assertThat(parser.parse("talk hooded wanderer")).contains(new TalkCommand("hooded wanderer"));
+        assertThat(parser.parse("speak fishwife")).contains(new TalkCommand("fishwife"));
+        // An idiomatic 'to'/'with' is grammar, not designation — dropped, and so is the article after it.
+        assertThat(parser.parse("talk to the wanderer")).contains(new TalkCommand("wanderer"));
+        assertThat(parser.parse("talk to wanderer")).contains(new TalkCommand("wanderer"));
+        assertThat(parser.parse("speak with lamplighter")).contains(new TalkCommand("lamplighter"));
+        // The verb and the preposition are case-insensitive; the target keeps its case (matching is the domain's).
+        assertThat(parser.parse("TALK TO Wanderer")).contains(new TalkCommand("Wanderer"));
+    }
+
+    @Test
+    void a_leading_article_is_dropped_from_every_described_target_when_something_follows_it() {
+        // "the" is grammar, not designation — across the target verbs, not just talk.
+        assertThat(parser.parse("take the rusty dagger")).contains(new TakeCommand("rusty dagger"));
+        assertThat(parser.parse("look the chest")).contains(new ExamineCommand("chest"));
+        assertThat(parser.parse("hit The wanderer")).contains(new HitCommand("wanderer"));
+        assertThat(parser.parse("drop the ring")).contains(new DropCommand("ring"));
+        // A bare "the" stays the (nonsense) target it is — nothing follows it to designate.
+        assertThat(parser.parse("take the")).contains(new TakeCommand("the"));
+    }
+
+    @Test
+    void bare_talk_or_a_bare_preposition_names_no_one_and_is_unknown() {
+        assertThat(parser.parse("talk")).contains(new UnknownCommand("talk"));
+        assertThat(parser.parse("talk to")).contains(new UnknownCommand("talk to"));
+        assertThat(parser.parse("speak with")).contains(new UnknownCommand("speak with"));
+    }
 }

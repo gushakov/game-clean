@@ -31,6 +31,9 @@ public enum AffordanceKind {
     /** A pending {@code hit} disambiguation: the next pick strikes the chosen NPC. */
     HIT,
 
+    /** A pending {@code talk} disambiguation: the next pick addresses the chosen NPC. */
+    TALK,
+
     /** A live blackjack hand: {@code hit}/{@code stand}/{@code game}/{@code play} continue the table talk. */
     BLACKJACK
 }

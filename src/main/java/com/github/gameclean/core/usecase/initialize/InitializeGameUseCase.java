@@ -441,7 +441,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             Chance attackChance =
                     new Chance(entry.getAttackChanceNumerator(), entry.getAttackChanceDenominator());
             NpcTemplate template = new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(),
-                    rule, moveChance, attackChance, entry.getHitPoints(), entry.getCorpse());
+                    rule, moveChance, attackChance, entry.getHitPoints(), entry.getCorpse(), entry.getSayings());
             authored.add(new AuthoredNpc(entry.getId(), template));
         }
         return authored;
