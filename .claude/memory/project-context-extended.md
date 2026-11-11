@@ -160,20 +160,22 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
 - **Subcase (shared, reusable interaction logic)** — `core/usecase/orient/` holds the project's first
   subcase: `OrientPlayerSubcaseInputPort.playerGetsBearings()` / `OrientPlayerSubcase`, a **guarded
   prologue** reused by `look`/`move` (resolve ambient player → resolve their current scene). Its own
-  presenter port `OrientPlayerPresenterOutputPort` is extended by each parent's presenter port, and the
-  parent is handed one presenter instance the subcase shares. On a missing player / dangling current scene
+  presenter port `OrientPlayerPresenterOutputPort` is **flat** — it extends nothing and no parent port extends
+  it; the concrete presenter implements it beside the parent's own port (#81), and the parent is handed one
+  presenter instance the subcase shares. On a missing player / dangling current scene
   it presents the outcome and throws the marker `SubcaseAlreadyPresented` (`core/port/`); on success it
   *returns* `OrientPlayerResult` (player + scene). Parents delegate their opening and swallow the marker in
   a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all. Tested directly
   (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4). The second subcase
-  family, `core/usecase/select/`, owns the target-disambiguation dialogue: `AbstractSelectTargetSubcase<C>`
-  (one-level Template Method, generic in its coordinate; `final` template methods, one
-  `provisionCandidates(C)` hook) with concretes `SelectSceneItemSubcase` (`SceneId` → scene ground;
-  `examine`/`take`) and `SelectInventoryItemSubcase` (`PlayerId` → player's keeping; `drop`), each holding the
-  item port and provisioning its own candidates — parents pass only the coordinate. Its
-  `SelectTargetPresenterOutputPort` stays ⟂ the orient port (flat composition on one concrete presenter), and
-  its outcomes are named provenance-neutrally (`presentItemNoLongerAvailable`) with per-presenter English
-  (design-notes §4).
+  family, `core/usecase/select/`, owns the target-disambiguation dialogue: `AbstractSelectTargetSubcase<C, T extends Designatable>`
+  (one-level Template Method, generic in its coordinate *and* candidate type, #67; `final` template methods,
+  two type-bound hooks — `provisionCandidates(C)` and the eager `requireWellFormedToken(String)`) with concretes
+  `SelectSceneItemSubcase` (`SceneId` → scene ground; `examine`/`take`), `SelectInventoryItemSubcase`
+  (`PlayerId` → player's keeping; `drop`) and `SelectSceneNpcSubcase` (`SceneId` → living NPCs in the scene;
+  `hit`/`talk`), each holding its repository port and provisioning its own candidates — parents pass only the
+  coordinate. Its `SelectTargetPresenterOutputPort<T>` stays ⟂ the orient port (flat composition on one concrete
+  presenter), and its outcomes are named provenance- and type-neutrally
+  (`presentTargetNoLongerAvailable(String idToken)`) with per-presenter English (design-notes §4).
 - **Composition root** — `infrastructure/UseCaseConfig` declares each use case `@Bean
   @Scope(PROTOTYPE)`, return-typed to the **input port interface** (impl hidden from the container),
   assembled with explicit `new` (no Spring stereotype on core classes). **Presenters and subcases are
