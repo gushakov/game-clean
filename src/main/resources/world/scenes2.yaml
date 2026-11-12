@@ -150,9 +150,10 @@ scenes:
 #
 # Containment surface (also certain, also scn1): itm6 is a container that always spawns,
 # always holding an instance of the contained-only itm7 (`contains` chance 1/1) —
-#   - `examine chest`   -> the container reveal, listing the whale tooth inside
-#   - `examine tooth`   -> no match: contained items are not on the ground (they surface
-#                          once `take` learns to reach into containers)
+#   - `examine chest`   -> the container reveal, listing the whale tooth and clasp knife inside
+#   - `examine tooth`   -> no match: contained items are not on the ground
+#   - `take tooth from chest` -> reaches into the container; the tooth lands in your keeping
+#   - itm11, the drowned sailor's corpse, is a second ready-made take-from surface (see below)
 #   - `take chest`      -> succeeds: itm6 is authored `portable: true`, so the chest — and
 #                          the tooth inside it, which references the chest, not the scene —
 #                          travels in your keeping (drop it elsewhere and examine it there)
@@ -220,6 +221,8 @@ items:
     contains:
       - item: itm7         # the whale tooth is always inside ...
         chance: 1/1        # ... rolled certainly, once per spawned chest
+      - item: itm13        # ... and so is the clasp knife
+        chance: 1/1
     spawn:
       scenes: scn1
       chance: 1/1          # the chest itself always spawns
@@ -262,6 +265,52 @@ items:
       The lamplighter lies gaunt and still, tarred pole beside him. Whatever tune he
       hummed, the tide answers it alone now. He carried nothing else.
     container: true
+
+  # A corpse that is already there at the start — an ordinary container WITH a ground-spawn
+  # rule (so no NPC may reference it via `corpse:`; death drops must carry no spawn rule).
+  # Anchored by the container default, certainly holding the purse and the signet ring:
+  #   - `examine sailor`               -> the container reveal, listing both
+  #   - `take ring from sailor`        -> the signet ring, straight into your keeping
+  #   - `take purse from corpse`       -> the same (one corpse matches until you make more)
+  #   - `take corpse`                  -> refused: it will not budge
+  - id: itm11
+    shortDescription: The corpse of a drowned sailor.
+    fullDescription: >
+      A sailor the tide gave back, tangled in a scrap of net at the foot of the steps.
+      His coat pockets hang heavy and sodden.
+    container: true
+    contains:
+      - item: itm12
+        chance: 1/1
+      - item: itm14
+        chance: 1/1
+    spawn:
+      scenes: scn1
+      chance: 1/1          # always there on a fresh game
+      max: 1
+
+  # Contained-only: exists solely through the drowned sailor's corpse above.
+  - id: itm12
+    shortDescription: A waterlogged leather purse.
+    fullDescription: >
+      A drawstring purse swollen with seawater. A few green-crusted coins shift inside
+      when you weigh it in your hand.
+
+  # Contained-only: exists solely through the sea chest (itm6) above. With the fishwife's
+  # gutting-knife (itm9) it makes a cross-container ambiguity once she is slain:
+  # `take knife from e` searches chest and corpses alike -> a 2-way menu.
+  - id: itm13
+    shortDescription: A bone-handled clasp knife.
+    fullDescription: >
+      A folding sailor's knife, its bone scales yellowed and its blade spotted but
+      still keen enough to part a rope.
+
+  # Contained-only: exists solely through the drowned sailor's corpse above.
+  - id: itm14
+    shortDescription: A brass signet ring.
+    fullDescription: >
+      A heavy brass ring, its face cut with an anchor fouled in its own chain. The
+      band is worn thin on one side.
 
 # Authored NPCs — like the items, tuned so you actually see them without hunting. All three
 # spawn *certainly* (chance 1/1, max 1) into the starting scene scn1, so a fresh game

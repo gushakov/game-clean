@@ -49,9 +49,10 @@ public class CommandParser {
         // 'examine'/'x' always take a target; bare 'examine' does not fit (falls through to unknown).
         register("examine", args -> args.isEmpty() ? null : new ExamineCommand(joinRemainder(args)));
         register("x", args -> args.isEmpty() ? null : new ExamineCommand(joinRemainder(args)));
-        // 'take'/'get' take the described target as the line remainder (multi-word), like 'examine'.
-        register("take", args -> args.isEmpty() ? null : new TakeCommand(joinRemainder(args)));
-        register("get", args -> args.isEmpty() ? null : new TakeCommand(joinRemainder(args)));
+        // 'take'/'get' take the described target as the line remainder (multi-word), like 'examine' — or,
+        // with a 'from', an item out of a container: two intents sharing a verb, split by token shape.
+        register("take", CommandParser::takeCommand);
+        register("get", CommandParser::takeCommand);
         // 'drop'/'put' take the described target as the line remainder (multi-word), like 'take'.
         register("drop", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
         register("put", args -> args.isEmpty() ? null : new DropCommand(joinRemainder(args)));
@@ -121,6 +122,34 @@ public class CommandParser {
 
     private void register(String verb, CommandFactory factory) {
         registry.put(verb, factory);
+    }
+
+    /**
+     * {@code take}/{@code get}: without a {@code from} the whole remainder is one ground target; with one, the
+     * remainder is split on its <em>last</em> standalone {@code from} into the item and the container to take
+     * it out of ({@code take the ring from the corpse}). A {@code from} with nothing on one side of it names
+     * half a command and fits neither form (unknown). The split is purely lexical — a ground item whose own
+     * description contains the word would be read as a take-from; none is authored, and the grammar stays a
+     * {@code verb [words]} one.
+     */
+    private static Command takeCommand(List<String> args) {
+        if (args.isEmpty()) {
+            return null;
+        }
+        int from = -1;
+        for (int i = 0; i < args.size(); i++) {
+            if (args.get(i).equalsIgnoreCase("from")) {
+                from = i;
+            }
+        }
+        if (from < 0) {
+            return new TakeCommand(joinRemainder(args));
+        }
+        if (from == 0 || from == args.size() - 1) {
+            return null;
+        }
+        return new TakeFromCommand(
+                joinRemainder(args.subList(0, from)), joinRemainder(args.subList(from + 1, args.size())));
     }
 
     /**
