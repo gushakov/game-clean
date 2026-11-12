@@ -128,6 +128,33 @@ public class ItemRenderer {
         console.printError("Someone got there first — it is no longer here.");
     }
 
+    /**
+     * Confirmation that the player has taken an item out of a container. Both short descriptions are authored
+     * as standalone lines ("A tarnished silver ring."), so they are recast for mid-sentence use.
+     */
+    public void renderItemTakenFrom(Item item, Item container) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.GREEN))
+                .append("You take %s from %s.".formatted(
+                        midSentence(item.getShortDescription()), midSentence(container.getShortDescription())));
+        console.write(sb);
+    }
+
+    /** No container on the ground here is designated by the fragment the player typed after {@code from}. */
+    public void renderNoSuchContainer(String containerTarget) {
+        console.printError("You see nothing like '%s' here to take things from.".formatted(containerTarget));
+    }
+
+    /** Nothing inside the searched container(s) is designated by the fragment — the contained twin of {@link #renderNoSuchTarget}. */
+    public void renderNoSuchContainedTarget(String target) {
+        console.printError("You find nothing like '%s' in there.".formatted(target));
+    }
+
+    /** A chosen item that no longer lies in a container here — the contained twin of {@link #renderItemNoLongerHere}. */
+    public void renderItemNoLongerContained(String idToken) {
+        console.printError("That is no longer in there.");
+    }
+
     /** The take was refused: the item is anchored — fixed where it stands. */
     public void renderItemAnchored(Item item) {
         console.printError("You cannot carry that — it will not budge.");
@@ -165,5 +192,17 @@ public class ItemRenderer {
     /** The player picked a number outside the offered menu; the menu still stands. */
     public void renderNoSuchOption(int ordinal) {
         console.printError("There is no option %d. Type one of the numbers shown.".formatted(ordinal));
+    }
+
+    /**
+     * Recasts a short description authored as a standalone line ("The corpse of a hooded wanderer.") for use
+     * inside a sentence: the closing full stop dropped and the leading capital lowered.
+     */
+    private static String midSentence(String shortDescription) {
+        String phrase = shortDescription.strip();
+        if (phrase.endsWith(".")) {
+            phrase = phrase.substring(0, phrase.length() - 1);
+        }
+        return phrase.isEmpty() ? phrase : Character.toLowerCase(phrase.charAt(0)) + phrase.substring(1);
     }
 }

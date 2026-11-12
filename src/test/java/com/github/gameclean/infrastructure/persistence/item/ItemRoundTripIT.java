@@ -144,6 +144,47 @@ class ItemRoundTripIT extends AbstractPostgresIT {
     }
 
     @Test
+    void taking_a_contained_item_moves_it_out_of_its_container_and_leaves_the_container_untouched() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        Item corpse = Item.builder()
+                .id(ItemId.of("itm1"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("The corpse of a hooded wanderer.")
+                .fullDescription("It lies where it fell.")
+                .container(true)
+                .anchored(true)
+                .build();
+        adapter.saveItem(corpse);
+        adapter.saveItem(Item.builder()
+                .id(ItemId.of("itm2"))
+                .location(new Location.Inside(corpse.getId()))
+                .shortDescription("A tarnished silver ring.")
+                .fullDescription("A longer description of the item.")
+                .build());
+        long corpseVersion = repository.findById("itm1").orElseThrow().getVersion();
+        Item ring = adapter.findItemsInside(corpse.getId()).getFirst();   // carries the post-insert version
+
+        adapter.saveItem(ring.takenBy(PlayerId.of("plr1")));
+
+        // Out of the container and into the player's keeping — the same row, CONTAINED -> HELD ...
+        assertThat(adapter.findItemsInside(corpse.getId())).isEmpty();
+        assertThat(adapter.findItemsHeldBy(PlayerId.of("plr1")))
+                .singleElement()
+                .satisfies(item -> assertThat(item.getId()).isEqualTo(ItemId.of("itm2")));
+        ItemDbEntity stored = repository.findById("itm2").orElseThrow();
+        assertThat(stored.getLocation().getKind()).isEqualTo(ItemLocationKind.HELD);
+        assertThat(stored.getLocation().getRef()).isEqualTo("plr1");
+        // ... while the container, which owns no collection, is neither moved nor version-bumped.
+        assertThat(adapter.findItemsInScene(HERE)).singleElement().isEqualTo(corpse);
+        assertThat(repository.findById("itm1").orElseThrow().getVersion()).isEqualTo(corpseVersion);
+        assertThat(repository.count()).isEqualTo(2);
+
+        // And the contained item's own version has teeth: a second taker holding the stale read loses.
+        assertThatExceptionOfType(OptimisticLockingError.class)
+                .isThrownBy(() -> adapter.saveItem(ring.takenBy(PlayerId.of("plr2"))));
+    }
+
+    @Test
     void saveItem_rejects_a_stale_write_with_an_optimistic_locking_error() {
         SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
         adapter.saveItem(groundItem("itm1", "A rusty dagger."));

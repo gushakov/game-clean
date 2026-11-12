@@ -6,7 +6,7 @@ package com.github.gameclean.infrastructure.terminal;
  * infrastructure-local terminal concern: it names <em>delivery-mechanism</em> conversations ({@code examine},
  * {@code take}, the blackjack table talk), not domain concepts, and never crosses into the core.
  *
- * <p>Spans both affordance families: the four disambiguation kinds are {@link SelectionAffordance}s, {@code
+ * <p>Spans both affordance families: the disambiguation kinds are {@link SelectionAffordance}s, {@code
  * BLACKJACK} is an {@link EphemeralAffordance} — which is why the enum is named for the affordance, not for
  * "selection" (an earlier name that predated blackjack and mislabelled it). The <em>family</em> is the sealed
  * {@link Affordance} subtype; this enum is the orthogonal routing key.
@@ -24,6 +24,9 @@ public enum AffordanceKind {
 
     /** A pending {@code take} disambiguation: the next pick takes the chosen item. */
     TAKE,
+
+    /** A pending {@code take … from …} disambiguation: the next pick takes the chosen item out of its container. */
+    TAKE_FROM,
 
     /** A pending {@code drop} disambiguation: the next pick drops the chosen item. */
     DROP,

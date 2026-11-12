@@ -31,7 +31,7 @@ public class TerminalGuidancePresenter implements GuidancePresenterOutputPort {
 
     /** The curated, player-facing command list, shared by both outcomes so they cannot drift. */
     private static final String AVAILABLE_COMMANDS =
-            "'look', 'look <target>' / 'examine <target>', 'take <target>', 'drop <target>', "
+            "'look', 'look <target>' / 'examine <target>', 'take <target>', 'take <target> from <container>', 'drop <target>', "
                     + "'inventory', 'hit <target>', 'talk <target>', 'play', 'move <exit>', 'now', 'bye'";
 
     Console console;

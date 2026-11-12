@@ -1442,6 +1442,36 @@ genuine is-a subtypes bound at wiring time, is legitimate; defer both the base a
 the second concrete makes the generalization visible; when a shared skeleton's outcome reads differently per
 concrete, name it provenance-neutrally on the port and leave the phrasing to the presenters.*)
 
+**Two designations, one dialogue — a second fragment is a filter on the coordinate, not a second menu.**
+`[thread #1]` `[thread #4]` `take ring from corpse` (#107) is the first command naming two targets, and the
+reflex reading is a two-level designation: resolve the container 0/1/N, then the item inside it. That shape
+was rejected on three independent grounds. *Structurally*, both levels would present through
+`SelectTargetPresenterOutputPort<Item>`, and one presenter class can implement a generic interface only once —
+it could not tell "ambiguous container" from "ambiguous content", nor arm different kinds; the flat-port rule
+turned a design smell into a compile-time wall. *Statefully*, an armed item menu would have to remember which
+container it was scoped to, so `SelectionAffordance` would grow a scope token — a second currency in a buffer
+whose whole virtue is holding one. *For the player*, a container menu asks the wrong question: corpses
+accumulate, so two identical "corpse of a hooded wanderer" lines are the realistic ambiguous case, and
+choosing between them (possibly the empty one) is not something the player wants to do — they want the ring.
+So the container fragment is read as **where to look**: the use case filters the scene's ground containers
+inline (one outcome of its own, `presentNoSuchContainer`), hands the surviving *set* to `select` as its
+coordinate, and the skeleton matches the item over the union of their contents. The coordinate generic absorbed
+this without a change — `C = List<ItemId>` is as legitimate a "where the candidates come from" as a `SceneId` —
+which is the `<C>` decision paying a third time. The resume carries no fragment at all: the remembered token
+*identifies* the item, so the live re-check is only **reachability** ("does it still lie inside a container on
+the ground here?"), re-provisioned over every ground container. That is slightly broader than what was offered
+and exactly as honest — the token, not the scope, is the designation. The same collision also settled the
+packaging: `TakeFrom` is its own use case rather than two more interactions on `Take`, although the goal's
+destination and write tail are the same — a shared presenter would need two differently-worded implementations
+of one select port. The duplicated twelve-line tail is the accepted price; sharing it properly means a terminal
+subcase with an injected success stripe, deferred to a third consumer. One small wiring precondition appeared:
+naming the container in the success needs the container the resolved item lies in, found among the searched
+set — a miss can only mean a select subcase bound to another provenance, so it throws to the catch-all like
+the skeleton's own empty-offer guard, not a presented outcome. (Promotion candidate, flagged not promoted:
+*when a command designates two things, ask whether the second is a choice or a scope; a scope narrows the
+select coordinate and needs no dialogue of its own — and a menu pick re-validates reachability of the
+remembered identity, never the fragment that produced the offer.*)
+
 **The `<C, T>` cashing at the second candidate *kind* — `Designatable`, and where the token's shape gate had
 to move.** `[thread #1]` `[thread #4]` Combat targets (`hit <npc>`, #66) are the second candidate kind, and the
 deferral above was cashed as its own behavior-preserving refactor PR (#67) *before* the `hit` vertical, so the
@@ -1785,6 +1815,19 @@ outcome. (Promotion candidate — logged as `[active]` in the methodology log, f
 entry, not yet promoted: *adopt the lock-detected handler only where contention is
 real; a single-writer aggregate keeps the propagating default, and a unit test pinning the propagation turns
 the choice into doctrine.*)
+
+**`take … from …` lands on the contested side — the discriminator is reach, not today's writer count.**
+`[thread #3]` The tempting argument for the plain overload was "nothing else writes contained items". But
+nothing else writes *ground* items today either; `take` got its handler because a ground item is a world
+object any actor in the scene can reach, and `drop` stayed plain because only the holder reaches a held item.
+Loot in a corpse on the ground is in the first category, so `TakeFrom` (#107) uses
+`doInTransaction(action, onLockDetected)` with its own `presentItemGotAway`, and a unit test pins that the
+loss is that stripe and never `presentError` — the `drop` pin's mirror image. The honest gap is the *other*
+aggregate: only the contained item's row is written and version-checked, so a portable container carried off
+between resolution and the write goes undetected (the loot would be taken out of a chest no longer here).
+Unreachable with one player, and closing it means the container must take part in the write — the same
+pressure as capacity, the flagged trigger for reopening the container↔contents boundary (§2). Recorded, not
+fixed.
 
 **`Npc` takes the contrast one step further — single-writer with *no version at all*.** `[thread #3]`
 Autonomous NPC movement writes NPCs, and today the movement ticker is their *only* writer, so `AnimateNpcs`

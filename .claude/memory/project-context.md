@@ -63,7 +63,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72); `usecase/parley/` holds `TalkToNpc` (the player talks to an NPC, who answers with an authored saying — the first non-violent NPC interaction, read-only, #104)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase`/`SelectContainedItemSubcase`/`SelectSceneNpcSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `TakeFrom` (take an item out of a container lying here, #107) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72); `usecase/parley/` holds `TalkToNpc` (the player talks to an NPC, who answers with an authored saying — the first non-violent NPC interaction, read-only, #104)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -80,7 +80,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   first driven→driving back-channel a background actor writes; separate from `AffordanceContext`, #87);
   `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation`
   with its per-dialogue `continuedBy(Command)` predicate + `AbstractSelectionConversation` Template-Method base +
-  `Examine`/`Take`/`Drop`/`Hit`/`BlackjackConversation`); `presenter/` the driven
+  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`Talk`/`BlackjackConversation`); `presenter/` the driven
   `Terminal*Presenter`s; `render/`
   `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`NpcRenderer`/`BlackjackRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
@@ -699,13 +699,39 @@ sayings; the first non-violent NPC interaction, and the project's first vertical
 - **Deferred** — authored hostile lines (one generic refusal today); dialogue with state (topics, replies); talk
   affecting the NPC (calming/provoking); a target-less `talk` when one NPC is present.
 
-Tests: 541 unit (Surefire, DB-free) + 30 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`TakeFrom` vertical **complete** (issue #107) — `take <item> from <container>`: the player takes loot out of a
+corpse or the contents out of a chest; the contained items' second consumer after `examine`, and the first
+command naming **two** targets:
+
+- **Use case** — `TakeFrom` (`core/usecase/inventory/`, its own use case beside `Take`):
+  `playerTakesTargetFrom(itemTarget, containerTarget)` + `playerTakesChosenContent(int, List<String>)`. The
+  container fragment is a **filter, not a second dialogue**: the use case resolves it inline (ground items of
+  the current scene, `isContainer() && matches`) with one outcome of its own, `presentNoSuchContainer`; every
+  matching container is searched and only the *item* is ever disambiguated — one menu, no scope token. The
+  menu pick re-validates against **every** ground container here (reachability, not the original fragment).
+  Write tail as `Take`'s: anchored gate on the **item taken, never the container** (a corpse is anchored and
+  is what one takes from), `takenBy`, one `doInTransaction(action, onLockDetected)` → `presentItemGotAway`
+  (contested, like a ground take), `presentItemTakenFrom(item, container)` after commit. Only the contained
+  item's row is written. (design-notes §4/§5.)
+- **Select** — `SelectContainedItemSubcase<List<ItemId>, Item>`: the fourth concrete; coordinate = the set of
+  containers to look in, candidates = the union of their contents (`findItemsInside` per container).
+- **No domain change, no DDL, no new port method** — `Location.Inside` (#90) and the location-agnostic
+  `takenBy` already carried it.
+- **Terminal** — `TakeFromCommand(itemTarget, containerTarget)`: `take`/`get` split on the **last** standalone
+  `from` (a half-empty `from` is unknown); `AffordanceKind.TAKE_FROM`; `TakeFromConversation`;
+  `TerminalTakeFromPresenter` (orient + select + own port, flat; container-flavored English); `ItemRenderer`
+  gains `renderItemTakenFrom` (short descriptions recast mid-sentence), `renderNoSuchContainer`,
+  `renderNoSuchContainedTarget`, `renderItemNoLongerContained`; guidance list entry.
+- **Deferred** — taking from a **held** container (the carried sea chest), `drop` into a container, a
+  container-annotated menu ("ring (in the corpse)"), and the unguarded container side of the race (see
+  design-notes §5).
+
+Tests: 564 unit (Surefire, DB-free) + 31 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
-over carried items (needs a composite ground∪keeping provisioner), **take from a container** (the
-contained items' consumer beyond `examine`; now urgent — corpse loot (#93) is visible but unreachable
-without it; container capacity — the first genuine container↔contents invariant — waits for it,
-design-notes §2), **player revive/respawn + NPC de-aggro**
+over carried items (needs a composite ground∪keeping provisioner), **container capacity** (the first
+genuine container↔contents invariant — its consumer, take-from, now exists; design-notes §2),
+**player revive/respawn + NPC de-aggro**
 (#87 step 1 ended the session on death; boot-with-dead-player and reviving a fresh incarnation without a
 still-`hostile` NPC attacking it are the deferred next slice), **corpse decay** (corpses accumulate
 forever — a future decay ticker is a natural `[thread #3]` customer), the outbox **event spine** (both
