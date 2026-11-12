@@ -10,6 +10,7 @@ import com.github.gameclean.core.usecase.explore.MoveInputPort;
 import com.github.gameclean.core.usecase.guidance.GuidanceInputPort;
 import com.github.gameclean.core.usecase.inventory.DropInputPort;
 import com.github.gameclean.core.usecase.inventory.InventoryInputPort;
+import com.github.gameclean.core.usecase.inventory.TakeFromInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.core.usecase.parley.TalkToNpcInputPort;
 import com.github.gameclean.infrastructure.terminal.command.*;
@@ -186,6 +187,8 @@ public class ConsoleSession {
                 case LookCommand ignored -> lookAround();
                 case ExamineCommand examine -> examineTarget(examine.getTarget());
                 case TakeCommand take -> takeTarget(take.getTarget());
+                case TakeFromCommand takeFrom ->
+                        takeTargetFrom(takeFrom.getItemTarget(), takeFrom.getContainerTarget());
                 case DropCommand drop -> dropTarget(drop.getTarget());
                 case HitCommand hit -> hitTarget(hit.getTarget());
                 case TalkCommand talk -> talkTo(talk.getTarget());
@@ -229,6 +232,14 @@ public class ConsoleSession {
         // case present a menu and arm the AffordanceContext (kind TAKE), so the next bare number resumes taking.
         TakeInputPort takeUseCase = applicationContext.getBean(TakeInputPort.class);
         takeUseCase.playerTakesTarget(target);
+    }
+
+    private void takeTargetFrom(String itemTarget, String containerTarget) {
+        // Same idiom as take: a fresh prototype use case per interaction; both fragments cross inward as
+        // primitives. An ambiguous item makes the use case present a menu and arm the AffordanceContext (kind
+        // TAKE_FROM), so the next bare number resumes taking from the containers here.
+        TakeFromInputPort takeFromUseCase = applicationContext.getBean(TakeFromInputPort.class);
+        takeFromUseCase.playerTakesTargetFrom(itemTarget, containerTarget);
     }
 
     private void dropTarget(String target) {

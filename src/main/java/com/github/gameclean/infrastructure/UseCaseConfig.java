@@ -39,6 +39,8 @@ import com.github.gameclean.core.usecase.inventory.DropInputPort;
 import com.github.gameclean.core.usecase.inventory.DropUseCase;
 import com.github.gameclean.core.usecase.inventory.InventoryInputPort;
 import com.github.gameclean.core.usecase.inventory.InventoryUseCase;
+import com.github.gameclean.core.usecase.inventory.TakeFromInputPort;
+import com.github.gameclean.core.usecase.inventory.TakeFromUseCase;
 import com.github.gameclean.core.usecase.inventory.TakeInputPort;
 import com.github.gameclean.core.usecase.inventory.TakeUseCase;
 import com.github.gameclean.core.usecase.npc.AnimateNpcsInputPort;
@@ -48,6 +50,7 @@ import com.github.gameclean.core.usecase.npc.WanderUseCase;
 import com.github.gameclean.core.usecase.orient.OrientPlayerSubcase;
 import com.github.gameclean.core.usecase.parley.TalkToNpcInputPort;
 import com.github.gameclean.core.usecase.parley.TalkToNpcUseCase;
+import com.github.gameclean.core.usecase.select.SelectContainedItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneNpcSubcase;
@@ -59,6 +62,7 @@ import com.github.gameclean.infrastructure.terminal.conversation.DropConversatio
 import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.HitConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.TakeConversation;
+import com.github.gameclean.infrastructure.terminal.conversation.TakeFromConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.TalkConversation;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnimateNpcsPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
@@ -72,6 +76,7 @@ import com.github.gameclean.infrastructure.terminal.presenter.TerminalLookPresen
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalMovePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalPlayBlackjackPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalSuspendGamePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalTakeFromPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalTakePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalTalkToNpcPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalWanderPresenter;
@@ -197,6 +202,28 @@ public class UseCaseConfig {
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneItemSubcase select = new SelectSceneItemSubcase(presenter, itemOps);
         return new TakeUseCase(presenter, orient, select, itemOps, txOps);
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public TakeFromInputPort takeFromUseCase(
+            OrientRenderer orientRenderer,
+            ItemRenderer itemRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            ItemRepositoryOperationsOutputPort itemOps,
+            TransactionOperationsOutputPort txOps) {
+        // One presenter instance, shared with the orient and the container-sourced select subcases (as take
+        // does with the scene-sourced one), so every outcome reaches the same presenter. The use case
+        // resolves the containers itself and hands their ids to the select subcase as its coordinate.
+        TerminalTakeFromPresenter presenter =
+                new TerminalTakeFromPresenter(orientRenderer, itemRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        SelectContainedItemSubcase select = new SelectContainedItemSubcase(presenter, itemOps);
+        return new TakeFromUseCase(presenter, orient, select, itemOps, txOps);
     }
 
     @Bean
@@ -327,6 +354,11 @@ public class UseCaseConfig {
     @Bean
     public Conversation takeConversation(ApplicationContext applicationContext) {
         return new TakeConversation(applicationContext);
+    }
+
+    @Bean
+    public Conversation takeFromConversation(ApplicationContext applicationContext) {
+        return new TakeFromConversation(applicationContext);
     }
 
     @Bean

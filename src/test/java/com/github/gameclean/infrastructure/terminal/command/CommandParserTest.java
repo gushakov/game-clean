@@ -54,6 +54,25 @@ class CommandParserTest {
     }
 
     @Test
+    void take_with_a_from_splits_into_the_item_and_the_container_to_take_it_out_of() {
+        assertThat(parser.parse("take ring from corpse")).contains(new TakeFromCommand("ring", "corpse"));
+        assertThat(parser.parse("get silver ring FROM hooded wanderer"))
+                .contains(new TakeFromCommand("silver ring", "hooded wanderer"));
+        // The article is dropped on both halves, as for every described target.
+        assertThat(parser.parse("take the ring from the corpse")).contains(new TakeFromCommand("ring", "corpse"));
+        // The split is on the LAST standalone 'from'.
+        assertThat(parser.parse("take letter from home from chest"))
+                .contains(new TakeFromCommand("letter from home", "chest"));
+    }
+
+    @Test
+    void take_with_a_from_missing_either_half_is_unknown() {
+        assertThat(parser.parse("take from corpse")).contains(new UnknownCommand("take from corpse"));
+        assertThat(parser.parse("take ring from")).contains(new UnknownCommand("take ring from"));
+        assertThat(parser.parse("take from")).contains(new UnknownCommand("take from"));
+    }
+
+    @Test
     void parses_drop_and_its_put_synonym_carrying_the_target() {
         assertThat(parser.parse("drop dagger")).contains(new DropCommand("dagger"));
         assertThat(parser.parse("put rusty sword")).contains(new DropCommand("rusty sword"));

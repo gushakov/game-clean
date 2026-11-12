@@ -171,7 +171,9 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   (one-level Template Method, generic in its coordinate *and* candidate type, #67; `final` template methods,
   two type-bound hooks — `provisionCandidates(C)` and the eager `requireWellFormedToken(String)`) with concretes
   `SelectSceneItemSubcase` (`SceneId` → scene ground; `examine`/`take`), `SelectInventoryItemSubcase`
-  (`PlayerId` → player's keeping; `drop`) and `SelectSceneNpcSubcase` (`SceneId` → living NPCs in the scene;
+  (`PlayerId` → player's keeping; `drop`), `SelectContainedItemSubcase` (`List<ItemId>` → the union of those
+  containers' contents; `take … from …`, whose parent resolves the container set itself, #107) and
+  `SelectSceneNpcSubcase` (`SceneId` → living NPCs in the scene;
   `hit`/`talk`), each holding its repository port and provisioning its own candidates — parents pass only the
   coordinate. Its `SelectTargetPresenterOutputPort<T>` stays ⟂ the orient port (flat composition on one concrete
   presenter), and its outcomes are named provenance- and type-neutrally
@@ -241,7 +243,8 @@ Established by the JLine entry-point work (issue #6).
   **first crack** at each parsed line through its `continuedBy` predicate (default: a bare-number
   `SelectCommand`, suiting the selection family on `AbstractSelectionConversation`); a refused line clears the
   affordance (abandonment — the forfeit for an ephemeral dialogue) and dispatches normally. Handlers:
-  `Examine`/`Take`/`Drop`/`HitConversation` (Template-Method base) and `BlackjackConversation` (implements
+  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`TalkConversation` (Template-Method base; `TakeFrom` has its own
+  `AffordanceKind.TAKE_FROM` because its resume re-validates against containers, not the ground) and `BlackjackConversation` (implements
   `Conversation` directly — the first *verb-continued* dialogue: `hit`/`hit me`, `stand`/`stay`,
   `game`/`table`, plus `play` folding to the anytime table view; it casts the payload back to
   `BlackjackRound`, the `SelectCommand` cast's twin). Each handler pulls a fresh prototype use case per
