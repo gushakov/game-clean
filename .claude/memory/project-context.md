@@ -85,6 +85,10 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`NpcRenderer`/`BlackjackRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
+  Two further rules in their own classes (production classes only): the blackjack subdomain boundary, and
+  `SubcaseMarkerGuardArchitectureTest` — every call to a `*SubcaseInputPort` method from a non-subcase sits
+  lexically inside a `try` catching exactly `SubcaseAlreadyPresented` (#110; bite-proof in
+  `SubcaseMarkerGuardRuleTest` over `SubcaseMarkerGuardFixtures`; design-notes §4).
 
 ## Status
 
@@ -726,7 +730,7 @@ command naming **two** targets:
   container-annotated menu ("ring (in the corpse)"), and the unguarded container side of the race (see
   design-notes §5).
 
-Tests: 564 unit (Surefire, DB-free) + 31 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+Tests: 573 unit (Surefire, DB-free) + 31 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **container capacity** (the first
