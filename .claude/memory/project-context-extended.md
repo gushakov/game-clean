@@ -165,7 +165,10 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   presenter instance the subcase shares. On a missing player / dangling current scene
   it presents the outcome and throws the marker `SubcaseAlreadyPresented` (`core/port/`); on success it
   *returns* `OrientPlayerResult` (player + scene). Parents delegate their opening and swallow the marker in
-  a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all. Tested directly
+  a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all — enforced by
+  `SubcaseMarkerGuardArchitectureTest` (#110), whose guard is lexical: **call a subcase port directly in the
+  interaction method's `try`**, never from a lambda or a private helper (reported even when a guarded `try`
+  invokes it), and keep the `SubcaseInputPort` suffix, by which the rule recognizes ports. Tested directly
   (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4). The second subcase
   family, `core/usecase/select/`, owns the target-disambiguation dialogue: `AbstractSelectTargetSubcase<C, T extends Designatable>`
   (one-level Template Method, generic in its coordinate *and* candidate type, #67; `final` template methods,

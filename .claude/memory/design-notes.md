@@ -963,6 +963,23 @@ subcase may return a result on its non-presenting success branch**. This has sin
 The composition-root consequence — parent and subcase share one ad-hoc-`new`ed presenter instance — is
 in §6.
 
+**The parent's swallow is a build-time check, and the check is lexical.** `[thread #4]` The contract above
+has one silent failure: a parent without the dedicated catch lets the marker fall into `catch (Exception)`
+and presents an error on top of the outcome already shown. A checked marker was rejected (the catch-all
+satisfies the compiler, so it guarantees nothing). Instead an ArchUnit rule (#110) requires every call to a
+`*SubcaseInputPort` method, from a class that is not itself a subcase, to sit inside a `try` catching
+exactly `SubcaseAlreadyPresented`; ArchUnit exposes the enclosing try blocks of each call
+(`JavaAccess.getContainingTryBlocks()` / `TryCatchBlock.getCaughtThrowables()`). Three findings from the
+fixtures. First, "inside" means *the call's own bytecode, in the same method*: a subcase call moved into a
+lambda (a transaction callback) or into a private helper is reported even when a guarded `try` invokes it,
+because the rule cannot follow the call graph. That false positive is accepted as a convention, not fought:
+**subcase calls stay directly in the interaction method**, which is where all of them already are and where
+the checkpoint ladder is readable. Second, nesting is invisible: an inner `try` with only a catch-all inside
+an outer guarded `try` passes although the inner catch-all gets the marker first. Third, the catch body is
+not inspected, and a returning-only subcase port method is treated like a presenting one. The last two are
+stated limits; the parents' interaction tests keep covering what the catch does. The rule also makes the
+`SubcaseInputPort` suffix load-bearing: it is how a subcase port, and so a subcase, is recognized.
+
 **The first *multi-interaction* use case — `examine`, and where conversational state lives.** `[thread #4]`
 `[thread #3]` `look <target>` / `examine <target>` is the project's first goal whose presentation in *one*
 interaction sets up a *follow-up* interaction that completes it. The player names a target; if the fragment is
