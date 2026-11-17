@@ -31,19 +31,23 @@ import java.util.List;
  * is refused as a presented business outcome ({@code presentItemAnchored}), decided here on the domain fact
  * before any transaction opens, exactly as {@code examine} branches on {@code isContainer()}. Past that gate
  * the item is moved into the player's keeping ({@code item.takenBy}) and saved inside one narrow
- * {@link TransactionOperationsOutputPort#doInTransaction read-write transaction}, with the success presented
- * only <em>after commit</em> so the player is never told the item is theirs before the move is durable.
+ * {@link TransactionOperationsOutputPort#doInTransactionWithResult read-write transaction} that holds the
+ * write and nothing else. The block returns what it settled (a
+ * {@link TakeAttempt}) and the presentation is the plain statement <em>after</em> it, so statement order is
+ * the after-commit order: the player is never told the item is theirs before the move is durable.
  *
- * <p><b>Concurrency is closed authoritatively here.</b> A ground item is contested, so the transaction uses
- * the {@code (action, onLockDetected)} overload: the item's optimistic-locking version makes the
- * last-writer-wins race fail at commit, and that lost race is presented as {@code presentItemGotAway} — the
- * write-side twin of {@code select}'s advisory read-side {@code presentTargetNoLongerAvailable}. The handler presents,
- * so the {@code doInTransaction} is the interaction's terminal act (no statement follows it).
+ * <p><b>Concurrency is closed authoritatively here.</b> A ground item is contested, so the transaction is the
+ * lock-aware one: the item's optimistic-locking version makes the last-writer-wins race fail at the versioned
+ * write, the transaction rolls back, and the block returns {@link TakeAttempt#GOT_AWAY} instead of raising.
+ * That lost race is presented as {@code presentItemGotAway} — the write-side twin of {@code select}'s advisory
+ * read-side {@code presentTargetNoLongerAvailable}. Both presentations use values resolved before the block
+ * ({@code taken}, the item's id); the block contributes only which of the two fates occurred.
  *
  * <p>On every path exactly one {@code present*} is reached: a subcase presents its own outcome and throws
- * {@link SubcaseAlreadyPresented} (swallowed here as a no-op); the success path presents after commit; a lost
- * race presents via {@code onLockDetected}; the outermost {@code catch} routes anything unhandled (a malformed
- * remembered token, a {@code PersistenceOperationsError} that has already rolled back) to {@code presentError}.
+ * {@link SubcaseAlreadyPresented} (swallowed here as a no-op); past the block the {@code if}/{@code else} on
+ * the attempt presents the take or the lost race, never both and never neither; the outermost {@code catch}
+ * routes anything unhandled (a malformed remembered token, a {@code PersistenceOperationsError} that has
+ * already rolled back) to {@code presentError}.
  */
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
@@ -83,10 +87,16 @@ public class TakeUseCase implements TakeInputPort {
     }
 
     /**
+     * What the take's transaction settled: the versioned write committed, or it lost a concurrent race and
+     * rolled back. Private to this use case — it never crosses the input port, it only carries the block's
+     * one bit to the presentation that follows it.
+     */
+    private enum TakeAttempt { TAKEN, GOT_AWAY }
+
+    /**
      * The shared write tail: refuse an anchored item, otherwise move the resolved item into the holder's
-     * keeping and persist it in one narrow transaction, presenting success after commit and a lost concurrent
-     * race via {@code onLockDetected}. Void and terminal — it ends in a presentation on every path, so
-     * callers do nothing after it.
+     * keeping, persist it in one narrow transaction, and present what the transaction settled. Void and
+     * terminal — it ends in a presentation on every path, so callers do nothing after it.
      */
     private void takeResolvedItem(PlayerId holder, Item item) {
         // Checkpoint — an anchored item is fixed where it stands: a business refusal, presented and done,
@@ -96,11 +106,20 @@ public class TakeUseCase implements TakeInputPort {
             return;
         }
         Item taken = item.takenBy(holder);
-        txOps.doInTransaction(
+
+        // The write set, and nothing else: no presentation, no subcase, no nested transaction in here.
+        TakeAttempt attempt = txOps.doInTransactionWithResult(
                 () -> {
                     itemOps.saveItem(taken);
-                    txOps.doAfterCommit(() -> presenter.presentItemTaken(taken));
+                    return TakeAttempt.TAKEN;
                 },
-                () -> presenter.presentItemGotAway(item.getId()));
+                TakeAttempt.GOT_AWAY);
+
+        // All presentation is after the block: the transaction has committed or rolled back by now.
+        if (attempt == TakeAttempt.TAKEN) {
+            presenter.presentItemTaken(taken);
+        } else {
+            presenter.presentItemGotAway(item.getId());
+        }
     }
 }

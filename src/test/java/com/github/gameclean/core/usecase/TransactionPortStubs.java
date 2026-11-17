@@ -3,6 +3,8 @@ package com.github.gameclean.core.usecase;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
 
+import java.util.function.Supplier;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doAnswer;
@@ -12,12 +14,14 @@ import static org.mockito.Mockito.doAnswer;
  * Each method runs the transactional action inline so a use case under test behaves as it would against the
  * real adapter — the work happens synchronously and deferred presentations are observable in the test body.
  *
- * <p>The port has two {@code doInTransaction} overloads, so the helpers come in two families:
+ * <p>The port has several demarcation overloads, so the helpers come in families:
  * <ul>
  *   <li>the {@code (boolean commit, Runnable action)} overload — the plain demarcation used by most
  *       interactions ({@code Move}, {@code SuspendGame}, {@code InitializeGame});</li>
- *   <li>the {@code (Runnable action, Runnable onLockDetected)} overload — the optimistic-lock-aware
- *       demarcation used by {@code AnnounceTimeOfDay}.</li>
+ *   <li>the {@code (Runnable action, Runnable onLockDetected)} overload — the deprecated
+ *       optimistic-lock-aware demarcation with a presenting handler ({@code AnnounceTimeOfDay});</li>
+ *   <li>the {@code (Supplier action, T onLockDetected)} overload — the result-returning lock-aware
+ *       demarcation that replaces it ({@code Take}): {@link #runLockAwareTransactionWithResult}.</li>
  * </ul>
  *
  * <p>Whether {@link #fireAfterCommit} is stubbed is deliberate, not incidental: under Mockito strict stubs an
@@ -72,6 +76,23 @@ public final class TransactionPortStubs {
             }
             return null;
         }).when(txOps).doInTransaction(any(Runnable.class), any(Runnable.class));
+    }
+
+    /**
+     * {@code (Supplier, T)} result-returning lock-aware overload, mirroring the adapter on both paths: run the
+     * action inline and return its result; if it raises {@link OptimisticLockingError}, return the supplied
+     * loss value instead. Any other error propagates, as the real port lets it. One stub serves the success,
+     * lock-loss and error tests alike — there is no after-commit to fire, since the interaction presents as a
+     * plain statement after the call.
+     */
+    public static void runLockAwareTransactionWithResult(TransactionOperationsOutputPort txOps) {
+        doAnswer(inv -> {
+            try {
+                return inv.getArgument(0, Supplier.class).get();
+            } catch (OptimisticLockingError e) {
+                return inv.getArgument(1);
+            }
+        }).when(txOps).doInTransactionWithResult(any(Supplier.class), any());
     }
 
     /** Fire after-commit callbacks immediately, as a committed transaction would. */

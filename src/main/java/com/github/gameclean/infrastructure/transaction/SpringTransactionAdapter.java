@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -39,6 +40,15 @@ import java.util.function.Supplier;
  * which is exactly why its type sits in the neutral {@code core.port.concurrency} package both adapters depend
  * on rather than in either port's own (design-notes §5). With a {@code null} handler the overload is a plain
  * read-write transaction and the error propagates as usual.
+ *
+ * <p>The {@code (action, onLockDetected)} <em>result</em> overload is the same reaction with the handler
+ * replaced by a value, and supersedes the {@code Runnable} one (kept deprecated while call sites move over).
+ * The catch sits around the template, which has already rolled back and rethrown, so returning the caller's
+ * loss value happens outside the transaction — the very state the statement after the call runs in, which is
+ * why a value suffices where a handler used to run. Catching around the template is enough because Spring Data
+ * JDBC issues the versioned {@code UPDATE} at {@code save}: the loss is thrown from inside the action, never
+ * from the commit. The overload refuses to run inside an active transaction — a joined block would swallow
+ * the loss while the enclosing transaction is already rollback-only.
  *
  * <p>The after-commit hook registers a {@link TransactionSynchronization} overriding {@code afterCommit()}
  * — <em>never</em> {@code afterCompletion(STATUS_COMMITTED)}. The two look interchangeable and are not:
@@ -82,6 +92,7 @@ public class SpringTransactionAdapter implements TransactionOperationsOutputPort
     }
 
     @Override
+    @Deprecated
     public void doInTransaction(Runnable action, Runnable onLockDetected) {
         if (onLockDetected == null) {
             // No handler supplied: behave exactly like a plain read-write transaction — a lost race
@@ -107,6 +118,26 @@ public class SpringTransactionAdapter implements TransactionOperationsOutputPort
             return template(readOnly).execute(status -> action.get());
         } catch (TransactionException e) {
             throw new TransactionOperationsError("Transaction could not be completed", e);
+        }
+    }
+
+    @Override
+    public <T> T doInTransactionWithResult(Supplier<T> action, T onLockDetected) {
+        Objects.requireNonNull(onLockDetected, "onLockDetected");
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            // Joined to an enclosing transaction, a swallowed loss would return onLockDetected while that
+            // transaction is already rollback-only. Refuse on every run, not only when the race is lost.
+            throw new TransactionOperationsError(
+                    "A lock-detecting transaction block must be the outermost transaction");
+        }
+        try {
+            // Delegating keeps the narrow TransactionException wrapping in one place.
+            return doInTransactionWithResult(false, action);
+        } catch (OptimisticLockingError e) {
+            // The action's versioned write lost a concurrent race. The template has rolled back and rethrown,
+            // so the transaction is over here: the loss comes back as the caller's own outcome value.
+            log.debug("[Transaction] Optimistic-lock conflict detected; returning the onLockDetected result", e);
+            return onLockDetected;
         }
     }
 
