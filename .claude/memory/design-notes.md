@@ -1792,6 +1792,54 @@ policy (re-read, recompute, re-save) — intricate and footgun-prone (unbounded 
 `AnnounceTimeOfDay` deliberately forgoes (the loser's goal is already met), so it too waits for a contended
 aggregate that wants it.
 
+**The handler became a value — and the last presentation left the transaction block.** `[thread #3]` (#112) The
+preferred shape of a writing interaction is *loads and asserts → one transaction → one presentation as the
+statement after it*: statement order is the after-commit order, and no hook is involved. The lock-aware block
+was the one place that could not adopt it, for the reason recorded just above — a *presenting* handler swallows
+the loss and returns control past the call, so a success written after the block would present a second time
+and had to stay registered inside it. The result-returning overload
+`doInTransactionWithResult(action, onLockDetected)` does not manage that exception, it dissolves it: the block
+holds the write set and returns what it settled, and both stripes are presented after it. Nothing in the block
+presents, so there is no swallow-and-continue hazard left for a terminal-act discipline to police.
+
+The loss side is a **value, not a handler**, and the argument is about the handler's information set. The
+adapter's catch sits around the template, which has already rolled back and rethrown — so a handler would run
+in exactly the state the statement after the call runs in: same thread, no transaction, same locals. It can
+draw on three sources. Locals resolved before the block: the code after the block sees the same ones. A fresh
+read (to name the winner, say): it returns the same thing a moment later, neither place having isolation. And
+the fact *that* the race was lost: one bit, which is precisely what the returned value carries. So nothing is
+learnable in a handler that is not learnable after the block, and a lambda there is pure affordance — for a
+presentation, a subcase call, a nested transaction. Passing a value removes the affordance rather than
+forbidding the misuse; a re-read that names the winner goes in the conflict branch after the block. The earlier
+finding that the reaction "must be a parameter" (shape (B) over (A)) still stands — the loss value *is* a
+parameter, established before the body runs — but what had to be a parameter was never behaviour, only the
+classification. The stated limit: the claim would break if the error carried *which* aggregate lost and one
+block held several contested writes. No block does; deferred by emergence.
+
+`T` is the **interaction's own outcome type, private to its use case** — never a shared generic bag of flags
+and attributes. Three reasons. A bag is a product where a sum is meant (§2's sealed-over-nullable ruling):
+nothing ties which attributes are populated to which fate occurred, and an `if … return; if … return;` tail
+over two flags leaves a path that presents nothing. It is also the *shape* of the forbidden `Result<T, Error>`,
+legitimate here only because it never crosses the input port — a private nested type makes that structural,
+where a public one in `core` is a step from being returned by a helper. And the cost is small: at every
+contested site so far the presentation's data is resolved *before* the block (reads and computation stay
+outside the transaction), so the block contributes only "committed or lost" and `T` is a two-constant enum
+branched by `if`/`else` — the `else` arm being the exactly-one-presentation guarantee, since Java does not check
+a `switch` statement over a plain enum for exhaustiveness. A sealed type with value cases and a pattern
+`switch`, which the compiler does check, is for three or more fates or a block that genuinely yields data.
+
+Two things carry over unchanged in substance. **Scenario-indexing survives**: the loss value is still supplied
+per block, so one detector still surfaces as differently named outcomes per write and per branch — what moved
+to the end is the rendering, not the classification. And **the block must be outermost**, which was always true
+of the handler form and is now executable: joined to an active transaction, a swallowed loss would hand back
+the loss value while the enclosing transaction is already rollback-only, so the adapter refuses to run the
+overload inside one — on every run, not only when the race is lost. The consequence worth naming is on the
+hook side: once the remaining sites follow, `doAfterCommit` has no structural consumer left in this project (no
+presenting subcase owns a transaction), and the fail-loud reasoning above becomes a description of a hook that
+is no longer needed — the best hook is no hook. The test double follows the port: one stub that mirrors the
+adapter serves the success, lost-race and error tests alike, where the hook form needed a fire-after-commit
+variant kept apart from the error paths.
+
 **`Item` is the first aggregate contended *by design* — so `@Version` finally meets the contention it was
 parked for, and the lost race is a *new* outcome with a read-side twin.** `[thread #3]` The `@Version` deferred
 for `Player` and adopted slightly-ahead-of-contention for `DayPhaseLog` lands, on `take`, at an aggregate that
