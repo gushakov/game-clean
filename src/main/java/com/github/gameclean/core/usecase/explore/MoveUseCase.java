@@ -41,7 +41,7 @@ import java.util.Optional;
  * <p>Unlike {@code look}, {@code move} <b>writes</b>: it records the player's new position. The reads and
  * the validity checks all run <em>outside</em> any transaction; a single
  * {@link TransactionOperationsOutputPort#doInTransaction} holds only the write, and the success
- * presentation is deferred to after-commit so the player is never shown the entered room before the move
+ * presentation is the statement after it, so the player is never shown the entered room before the move
  * is durable. Exactly one {@code present*} is reached on every path and it is the interaction's last act:
  * the subcase presents the two not-found outcomes; the no-such-exit and dangling-target branches present
  * and return; the outermost {@code catch} routes anything unhandled (a malformed configured id, or a
@@ -90,11 +90,8 @@ public class MoveUseCase implements MoveInputPort {
             // move has committed, and end the interaction there — nothing runs past a presentation.
             Player moved = playerInScene.getPlayer().moveTo(targetId);
             Scene entered = targetScene.get();
-            txOps.doInTransaction(false, () -> {
-                playerRepositoryOps.savePlayer(moved);
-                txOps.doAfterCommit(() -> presenter.presentSceneEntered(entered, itemsInEntered, npcsInEntered));
-            });
-            return;
+            txOps.doInTransaction(false, () -> playerRepositoryOps.savePlayer(moved));
+            presenter.presentSceneEntered(entered, itemsInEntered, npcsInEntered);
 
         } catch (SubcaseAlreadyPresented e) {
             // The orient subcase already presented its outcome (missing player or dangling scene); no-op.

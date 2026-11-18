@@ -21,9 +21,10 @@ package com.github.gameclean.core.port.concurrency;
  * PersistenceOperationsError} or {@code TransactionOperationsError}: an optimistic-lock conflict is not "the
  * store is broken" or "demarcation failed", it is "someone else got there first" — a normal outcome the caller
  * typically reacts to differently (skip, retry, or treat as already-done) rather than reporting as a fault. It
- * is reacted to either by the use case (catch and present a domain outcome) or, as an opt-in idiom, by the
- * transaction port's {@code doInTransaction(action, onLockDetected)} handler. The day-phase announcement, for
- * instance, presents "nothing to announce": the loser's intent was already fulfilled by the winner.
+ * is reacted to either by the use case (catch and present a domain outcome) or, for a contested write, through
+ * the transaction port's lock-aware {@code doInTransactionWithResult(action, onLockDetected)}, which turns it
+ * into the caller's loss value. The day-phase announcement, for instance, presents "nothing to announce" on
+ * that value: the loser's intent was already fulfilled by the winner.
  *
  * <p><b>No parent hierarchy yet.</b> The §5 detector lens predicts siblings — a unique-constraint race, a
  * serialization failure — that would one day justify a {@code ConcurrencyConflictError} parent here. That is

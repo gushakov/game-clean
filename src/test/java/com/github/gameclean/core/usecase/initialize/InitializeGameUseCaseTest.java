@@ -48,10 +48,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionWithResult;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -112,7 +110,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -127,7 +125,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -145,7 +143,7 @@ class InitializeGameUseCaseTest {
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(GameClock.initial()));
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -163,7 +161,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // The clock is absent (default Optional.empty), so it is created at time zero.
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -178,7 +176,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // The day-phase log is absent (default Optional.empty), so it is created at the "nothing announced" sentinel.
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -197,7 +195,7 @@ class InitializeGameUseCaseTest {
         // One item over two candidate scenes, always-hit chance, one try: roll hits, pick scene index 1
         // (scn2), then mint the id by picking 8 alphabet glyphs — all index 0 ('0') -> "itm00000000".
         dice.willRoll(true).willPick(1, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -224,7 +222,7 @@ class InitializeGameUseCaseTest {
         // The rolls still happen (outside the transaction) — scene pick + 8 id glyphs — but the guard means
         // nothing is saved.
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -278,7 +276,7 @@ class InitializeGameUseCaseTest {
         // 8 zero-glyphs -> "itm00000000"; then its one containment entry rolls a hit and mints the contained
         // instance from 8 one-glyphs -> "itm11111111".
         dice.willRoll(true, true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -312,7 +310,7 @@ class InitializeGameUseCaseTest {
         // The chest spawns (roll, scene pick, 8 glyphs); its containment roll misses, so no id is minted for
         // the dagger — the pick script would throw on an unscripted ninth-plus pull.
         dice.willRoll(true, false).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -385,7 +383,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // Each template consumes a spawn roll, a scene pick, and 8 id glyphs (dagger all-zero, chest all-one).
         dice.willRoll(true, true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -405,7 +403,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -425,7 +423,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -446,7 +444,7 @@ class InitializeGameUseCaseTest {
         // One NPC over two candidate scenes, always-hit spawn chance, one try: roll hits, pick scene index 1
         // (scn2), then mint the id by picking 8 alphabet glyphs — all index 0 ('0') -> "npc00000000".
         dice.willRoll(true).willPick(1, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -474,7 +472,7 @@ class InitializeGameUseCaseTest {
         // The rolls still happen (outside the transaction) — scene pick + 8 id glyphs — but the guard means
         // nothing is saved.
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -525,7 +523,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // The corpse template never rolls (no spawn rule); the NPC rolls: hit, scene pick, 8 id glyphs.
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -593,7 +591,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -698,7 +696,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(sceneOps).saveScene(any());
-        runTransaction(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -714,7 +712,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
-        runTransaction(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -828,7 +826,7 @@ class InitializeGameUseCaseTest {
     }
 
     private void verifyNothingInitialized() {
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
+        verifyNoInteractions(txOps);
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(itemOps, never()).saveItem(any());

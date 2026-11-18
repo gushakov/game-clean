@@ -106,24 +106,24 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
 ## Transactions (explicit demarcation, no blanket `@Transactional`)
 
 `core/port/transaction/TransactionOperationsOutputPort` — lean 3-method canon over plain
-`Runnable`/`Supplier`: `doInTransaction(readOnly, …)`, `doInTransactionWithResult(readOnly, …)`,
-`doAfterCommit(…)` (+ no-readOnly `default` overloads, and the lock-aware
-`doInTransaction(action, onLockDetected)`). Usage rule: validation
-and reads run **outside** the transaction; only persistence (later, event dispatch) runs **inside**;
-present in `doAfterCommit` (never before commit). Failure is expressed by **throwing** (unchecked) —
-caught at the use case's outermost checkpoint; there is deliberately no `rollback()`.
+`Runnable`/`Supplier`: `doInTransaction(readOnly, …)`, `doInTransactionWithResult(readOnly, …)`, and the
+lock-aware `doInTransactionWithResult(action, onLockDetected)` (+ no-readOnly `default` overloads). Usage
+rule: validation and reads run **outside** the transaction; only persistence (later, event dispatch) runs
+**inside**; the presentation is the **statement after the block** (branching on what a result-returning
+block settled — a use-case-private enum or value type), never inside it. There is **no after-commit or
+after-rollback hook**. Failure is expressed by **throwing** (unchecked) — caught at the use case's outermost
+checkpoint; there is deliberately no `rollback()`.
 
 - Adapter — `infrastructure/transaction/SpringTransactionAdapter` (plain Lombok class, not
-  component-scanned), backed by Spring `TransactionTemplate` + `TransactionSynchronizationManager`.
-  `doAfterCommit` runs immediately when no tx is active. **No cache coupling** (project has no cache);
+  component-scanned), backed by Spring `TransactionTemplate` (`TransactionSynchronizationManager` only to
+  refuse a lock-aware block joined to an active tx). **No cache coupling** (project has no cache);
   the methodology's `CacheInvalidationOnRollback` seam is added only when a cache appears.
-- The after-commit hook is registered as `afterCommit()`, **never** `afterCompletion(STATUS_COMMITTED)`
-  — the latter's `catch (Throwable)` turns a failing presenter into a log line. Whatever the deferred
-  action throws, the caller sees (both branches). `doAfterRollback` was **retired** for failing that
-  same test: Spring has no `afterRollback()` hook, only the swallowing form (issue #99, design-notes §5).
-  Pinned by `SpringTransactionAdapterTest.AfterCommitFailsLoudly`, which drives a minimal real
-  `AbstractPlatformTransactionManager` — a **mocked** `PlatformTransactionManager` never fires
-  synchronizations at all, so after-commit assertions over one are vacuous.
+- The lock-aware overload catches `OptimisticLockingError` around the template (already rolled back) and
+  returns the caller's loss value; a `null` loss value is rejected, and a block joined to an active
+  transaction is refused with `TransactionOperationsError`. The outermost-refusal test drives a minimal real
+  `AbstractPlatformTransactionManager` — a **mocked** `PlatformTransactionManager` never marks a transaction
+  active. Use case tests stub the port through `core/usecase/TransactionPortStubs` (one stub per overload,
+  shared by success and error paths).
 - Demarcation faults have their own currency — a begin/commit/unexpected-rollback failure surfaces as a Spring
   `TransactionException`, which the two `doInTransaction*` methods catch **narrowly** (`TransactionException`,
   never `Exception`) and wrap into `core/port/transaction/TransactionOperationsError` (unchecked, mirroring
@@ -153,8 +153,7 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   not the use-case package — design-notes §3). Either way, value objects are constructed inside the use
   case, never by adapters.
 - **Read-only use cases take no transaction.** `Look` (`core/usecase/explore/`) reads through the
-  persistence ports and presents directly — no `TransactionOperationsOutputPort` collaborator at all,
-  no after-commit hook. Outcomes (missing player, dangling current scene) are reached by
+  persistence ports and presents directly — no `TransactionOperationsOutputPort` collaborator at all. Outcomes (missing player, dangling current scene) are reached by
   branch-and-present, the error catch-all by the outermost `try`. Summary-goal package `explore/`
   (looking around; later `look <target>` / `move`).
 - **Subcase (shared, reusable interaction logic)** — `core/usecase/orient/` holds the project's first

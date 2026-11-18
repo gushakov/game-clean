@@ -32,11 +32,13 @@ import java.util.Optional;
  * re-rolls; it just resolves the exit by name.
  *
  * <p><b>One write, one atomic unit, and narrate only what the player can witness.</b> The reads and validity
- * checks run outside the transaction; a single {@link TransactionOperationsOutputPort#doInTransaction} holds
- * only the {@code saveNpc} write, using the {@code (action, onLockDetected)} overload because an NPC is
- * contested (the same NPC's other executions, the player's strike) — a lost race presents the quiet stripe and
- * the loop re-derives. After commit, the movement is narrated <em>only if perceptible</em> from where the player
- * stands (its source or target is the player's current scene); otherwise it is the quiet stripe. Exactly one
+ * checks run outside the transaction; a single lock-aware
+ * {@link TransactionOperationsOutputPort#doInTransactionWithResult(java.util.function.Supplier, Object)
+ * doInTransactionWithResult} holds only the {@code saveNpc} write, lock-aware because an NPC is contested (the
+ * same NPC's other executions, the player's strike) — a lost race ({@link WanderAttempt#LOST}) presents the
+ * quiet stripe and the loop re-derives. After the block, the movement is narrated <em>only if perceptible</em>
+ * from where the player stands (its source or target is the player's current scene — decided before the
+ * block); otherwise it is the quiet stripe. Exactly one
  * {@code present*} is reached on every path; the outermost {@code catch} routes anything unhandled (a
  * {@code PersistenceOperationsError} that has already rolled back, a malformed dispatched id) to
  * {@code presentError}.
@@ -97,26 +99,33 @@ public class WanderUseCase implements WanderInputPort {
                     .orElse(null);
             PerceivedNpcMovement perceived = perceptibleMovement(moved, from, to, exitName, playerScene);
 
-            // One write, one atomic unit; narrate after commit only if perceptible, else the quiet stripe. A
-            // lost lock race is quiet too (the loop re-derives). The interaction ends here.
-            txOps.doInTransaction(
+            // One write, one atomic unit, and nothing else in it.
+            WanderAttempt attempt = txOps.doInTransactionWithResult(
                     () -> {
                         npcOps.saveNpc(moved);
-                        txOps.doAfterCommit(() -> {
-                            if (perceived != null) {
-                                presenter.presentNpcMovement(perceived);
-                            } else {
-                                presenter.presentNothingHappened();
-                            }
-                        });
+                        return WanderAttempt.MOVED;
                     },
-                    presenter::presentNothingHappened);
+                    WanderAttempt.LOST);
+
+            // All presentation is after the block: narrate only a committed, perceptible move; a lost lock race
+            // is quiet too (the loop re-derives).
+            if (attempt == WanderAttempt.MOVED && perceived != null) {
+                presenter.presentNpcMovement(perceived);
+            } else {
+                presenter.presentNothingHappened();
+            }
 
         } catch (Exception e) {
             // Outermost checkpoint: a malformed dispatched id or a PersistenceOperationsError ends here.
             presenter.presentError(e);
         }
     }
+
+    /**
+     * What the wander's transaction settled: the NPC's versioned write committed, or it lost a concurrent race
+     * and rolled back. Private to this use case.
+     */
+    private enum WanderAttempt { MOVED, LOST }
 
     /**
      * Classifies the move against the player's scene: a move <em>from</em> it is a {@link MovementKind#DEPARTED}

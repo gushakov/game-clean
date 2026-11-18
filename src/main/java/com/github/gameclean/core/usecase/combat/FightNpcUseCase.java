@@ -61,15 +61,18 @@ import java.util.Optional;
  * damage, lower the player, and persist.
  *
  * <p><b>Concurrency, both sides.</b> An NPC is contested (the player's strike races the wandering/attacking
- * policy's executions), so the player-strike uses the {@code (action, onLockDetected)} overload and a lost race
- * presents {@code presentNpcGotAway}. The player is now contested too (an NPC counterstrike races the player's
- * own {@code move}), so the counterstrike likewise uses the overload and a lost race presents the quiet stripe —
- * the loop re-derives. Both handlers present, so each {@code doInTransaction} is its interaction's terminal act.
+ * policy's executions), so the player-strike writes through the lock-aware
+ * {@link TransactionOperationsOutputPort#doInTransactionWithResult(java.util.function.Supplier, Object)
+ * doInTransactionWithResult} and a lost race ({@link StrikeAttempt#GOT_AWAY}) presents
+ * {@code presentNpcGotAway}. The player is contested too (an NPC counterstrike races the player's own
+ * {@code move}), so the counterstrike writes through the same overload and a lost race
+ * ({@link CounterstrikeAttempt#LOST}) presents the quiet stripe — the loop re-derives. Each block holds its
+ * write set and nothing else; every presentation is a plain statement after it.
  *
  * <p>On every path exactly one {@code present*} is reached: a subcase presents and throws
- * {@link SubcaseAlreadyPresented} (swallowed here as a no-op); a success presents after commit; a lost race
- * presents via {@code onLockDetected}; a counterstrike miss presents the quiet stripe; the outermost
- * {@code catch} routes anything unhandled to {@code presentError}.
+ * {@link SubcaseAlreadyPresented} (swallowed here as a no-op); past a block, the branch on its outcome presents
+ * the success or the lost race; a counterstrike miss presents the quiet stripe; the outermost {@code catch}
+ * routes anything unhandled to {@code presentError}.
  */
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
@@ -154,20 +157,24 @@ public class FightNpcUseCase implements FightNpcInputPort {
             int damage = dice.rollDie(DAMAGE_DIE_SIDES);
             Player struck = player.takeDamage(damage);
 
-            // One write, one atomic unit. The player is contested (the counterstrike races the player's own
-            // move), so a lost lock race is the quiet stripe — the loop re-derives. Present only after commit.
-            txOps.doInTransaction(
+            // One write, one atomic unit, and nothing else in it. The player is contested (the counterstrike
+            // races the player's own move), so a lost lock race comes back as LOST.
+            CounterstrikeAttempt attempt = txOps.doInTransactionWithResult(
                     () -> {
                         playerRepositoryOps.savePlayer(struck);
-                        txOps.doAfterCommit(() -> {
-                            if (struck.isDead()) {
-                                presenter.presentPlayerSlain(npc, damage);
-                            } else {
-                                presenter.presentNpcStruckPlayer(npc, damage, struck);
-                            }
-                        });
+                        return CounterstrikeAttempt.LANDED;
                     },
-                    presenter::presentNothingHappened);
+                    CounterstrikeAttempt.LOST);
+
+            // All presentation is after the block. A lost race is the quiet stripe — the loop re-derives; the
+            // struck-vs-slain choice reads `struck`, settled before the block.
+            if (attempt == CounterstrikeAttempt.LOST) {
+                presenter.presentNothingHappened();
+            } else if (struck.isDead()) {
+                presenter.presentPlayerSlain(npc, damage);
+            } else {
+                presenter.presentNpcStruckPlayer(npc, damage, struck);
+            }
 
         } catch (Exception e) {
             // Outermost checkpoint: a malformed dispatched id, a PersistenceOperationsError (already rolled
@@ -177,10 +184,22 @@ public class FightNpcUseCase implements FightNpcInputPort {
     }
 
     /**
+     * What a player-strike transaction settled: its versioned write committed, or it lost a concurrent race
+     * and rolled back. Private to this use case; each of the two strike blocks (survivor, slain) returns one.
+     */
+    private enum StrikeAttempt { LANDED, GOT_AWAY }
+
+    /**
+     * What the counterstrike transaction settled: the player's versioned write committed, or it lost a
+     * concurrent race (the player's own move) and rolled back.
+     */
+    private enum CounterstrikeAttempt { LANDED, LOST }
+
+    /**
      * The shared player-strike tail: roll the damage (outside the transaction), lower the resolved NPC
      * copy-on-write, and persist the consequence in one narrow transaction — a survivor is provoked and saved;
-     * a slain NPC's row is atomically replaced by its minted corpse and loot. Each branch presents its outcome
-     * after commit and a lost concurrent race via {@code onLockDetected}. Void and terminal — it ends in a
+     * a slain NPC's row is atomically replaced by its minted corpse and loot. The write sets differ, so the
+     * fork has two blocks; each presents, after its block, the outcome or the lost race. Void and terminal — it ends in a
      * presentation on every path, so callers do nothing after it.
      */
     private void strikeResolvedNpc(Npc npc) {
@@ -190,12 +209,17 @@ public class FightNpcUseCase implements FightNpcInputPort {
         if (!struck.isDead()) {
             // A survivor is provoked into the hostile stance so the animate policy re-derives its counterattack.
             Npc provoked = struck.provoked();
-            txOps.doInTransaction(
+            StrikeAttempt attempt = txOps.doInTransactionWithResult(
                     () -> {
                         npcOps.saveNpc(provoked);
-                        txOps.doAfterCommit(() -> presenter.presentNpcStruck(provoked, damage));
+                        return StrikeAttempt.LANDED;
                     },
-                    () -> presenter.presentNpcGotAway(npc.getId()));
+                    StrikeAttempt.GOT_AWAY);
+            if (attempt == StrikeAttempt.LANDED) {
+                presenter.presentNpcStruck(provoked, damage);
+            } else {
+                presenter.presentNpcGotAway(npc.getId());
+            }
             return;
         }
 
@@ -209,13 +233,18 @@ public class FightNpcUseCase implements FightNpcInputPort {
         // One atomic unit replaces the NPC with its remains: the version-checked delete (a lost race must not
         // slay an NPC another writer has moved past) and the corpse + loot inserts commit together — a death
         // never commits without its corpse, nor a corpse without its death.
-        txOps.doInTransaction(
+        StrikeAttempt attempt = txOps.doInTransactionWithResult(
                 () -> {
                     npcOps.deleteNpc(struck);
                     remains.forEach(itemOps::saveItem);
-                    txOps.doAfterCommit(() -> presenter.presentNpcSlain(struck, corpse));
+                    return StrikeAttempt.LANDED;
                 },
-                () -> presenter.presentNpcGotAway(npc.getId()));
+                StrikeAttempt.GOT_AWAY);
+        if (attempt == StrikeAttempt.LANDED) {
+            presenter.presentNpcSlain(struck, corpse);
+        } else {
+            presenter.presentNpcGotAway(npc.getId());
+        }
     }
 
     /**

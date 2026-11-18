@@ -18,8 +18,8 @@ import java.util.Optional;
  * <p>It is the time-system twin of {@code move}: the read and the banking arithmetic run <em>outside</em> any
  * transaction (load the clock, ask the time source how long the session ran, let the clock
  * {@link GameClock#accumulate(long) accumulate} that into a new total), and a single
- * {@link TransactionOperationsOutputPort#doInTransaction} holds only the save. The acknowledgement is deferred
- * to after-commit, so the player is never told their progress was saved before it durably is, and the
+ * {@link TransactionOperationsOutputPort#doInTransaction} holds only the save. The acknowledgement is the
+ * statement after it, so the player is never told their progress was saved before it durably is, and the
  * interaction ends there — nothing runs past a presentation.
  *
  * <p>A missing clock (the game not yet in a playable state) is an <em>anticipated precondition</em>, handled
@@ -53,10 +53,8 @@ public class SuspendGameUseCase implements SuspendGameInputPort {
             GameClock banked = clock.get().accumulate(gameTimeSourceOps.elapsedSessionSeconds());
 
             // One write, one atomic unit; acknowledge only after the bank commits, then end.
-            txOps.doInTransaction(false, () -> {
-                gameClockRepositoryOps.saveClock(banked);
-                txOps.doAfterCommit(presenter::presentGameSuspended);
-            });
+            txOps.doInTransaction(false, () -> gameClockRepositoryOps.saveClock(banked));
+            presenter.presentGameSuspended();
 
         } catch (Exception e) {
             // Outermost checkpoint: only genuine faults reach here — a PersistenceOperationsError (already

@@ -25,8 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionWithResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -70,7 +69,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn1");   // player watches from the source scene
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 
@@ -88,7 +87,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn2");   // player watches from the target scene
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 
@@ -103,7 +102,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn3");   // player is elsewhere — the move touches neither their scene
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 
@@ -169,7 +168,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn1");
         doThrow(new OptimisticLockingError("stale version")).when(npcOps).saveNpc(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 

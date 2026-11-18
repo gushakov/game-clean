@@ -37,8 +37,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionWithResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -115,7 +114,7 @@ class FightNpcUseCaseTest {
         Npc goblin = npc("npc1", 20, HERE);
         when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(goblin);
         when(dice.rollDie(10)).thenReturn(4);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerHitsTarget("hooded");
 
@@ -137,7 +136,7 @@ class FightNpcUseCaseTest {
         when(selectTargetSubcase.playerDesignatesChosenCandidate(2, List.of("npc0", "npc1"), HERE))
                 .thenReturn(goblin);
         when(dice.rollDie(10)).thenReturn(4);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerHitsChosenCandidate(2, List.of("npc0", "npc1"));
 
@@ -153,7 +152,7 @@ class FightNpcUseCaseTest {
         Npc goblin = npc("npc1", 3, HERE);   // no authored corpseRef — the NPC leaves nothing behind
         when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(goblin);
         when(dice.rollDie(10)).thenReturn(9);   // overkill floors at zero — dead
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerHitsTarget("hooded");
 
@@ -174,7 +173,7 @@ class FightNpcUseCaseTest {
         Npc wanderer = npc("npc1", 3, HERE).withCorpseRef("itm5");
         when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(wanderer);
         when(corpseBlueprintSourceOps.loadCorpseBlueprint("itm5")).thenReturn(blueprintWithRing());
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
         // Damage 9 (lethal on 3 hp), then the corpse id's 8 glyphs (all '0'), then the loot roll hits, then
         // the loot id's 8 glyphs (all '1') — the mint consumes real entropy, so the dice are scripted.
         ScriptedDice scripted = new ScriptedDice()
@@ -208,7 +207,7 @@ class FightNpcUseCaseTest {
         Npc wanderer = npc("npc1", 3, HERE).withCorpseRef("itm5");
         when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(wanderer);
         when(corpseBlueprintSourceOps.loadCorpseBlueprint("itm5")).thenReturn(blueprintWithRing());
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
         // Lethal damage, corpse id glyphs, then the loot roll MISSES — no loot id is ever minted.
         ScriptedDice scripted = new ScriptedDice()
                 .willRollDie(9)
@@ -253,7 +252,7 @@ class FightNpcUseCaseTest {
         when(dice.rollDie(10)).thenReturn(9);
         // The wander/attack policy's execution committed first — the version-checked delete loses.
         doThrow(new OptimisticLockingError("stale version")).when(npcOps).deleteNpc(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerHitsTarget("hooded");
 
@@ -269,7 +268,7 @@ class FightNpcUseCaseTest {
         when(selectTargetSubcase.playerDesignatesTarget("hooded", HERE)).thenReturn(goblin);
         when(dice.rollDie(10)).thenReturn(4);
         doThrow(new OptimisticLockingError("stale version")).when(npcOps).saveNpc(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerHitsTarget("hooded");
 
@@ -320,7 +319,7 @@ class FightNpcUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.of(player(HERE, 30, 30)));
         when(dice.rollDie(10)).thenReturn(6);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcStrikesPlayer("npc1");
 
@@ -340,7 +339,7 @@ class FightNpcUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.of(player(HERE, 4, 30)));
         when(dice.rollDie(10)).thenReturn(9);   // overkill floors at zero — the player is slain
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcStrikesPlayer("npc1");
 
@@ -410,7 +409,7 @@ class FightNpcUseCaseTest {
         when(dice.rollDie(10)).thenReturn(6);
         // The player's own move committed first — the counterstrike's versioned write loses.
         doThrow(new OptimisticLockingError("stale version")).when(playerRepositoryOps).savePlayer(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcStrikesPlayer("npc1");
 

@@ -24,12 +24,12 @@ import java.util.List;
 import java.util.Optional;
 
 import static com.github.gameclean.core.model.calendar.CalendarFixtures.standard;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionWithResult;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -72,7 +72,7 @@ class AnnounceTimeOfDayUseCaseTest {
         when(dayPhaseScheduleSourceOps.loadDayPhases()).thenReturn(dawnAtHourSix());
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
         dice.willPick(0);   // pick the first message
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.systemObservesTimeOfDay();
 
@@ -91,7 +91,7 @@ class AnnounceTimeOfDayUseCaseTest {
         verify(presenter).presentNothingToAnnounce();
         verify(presenter, never()).presentDayPhaseBegan(any(), any());
         verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
-        verify(txOps, never()).doInTransaction(any(Runnable.class), any(Runnable.class));
+        verifyNoInteractions(txOps);
     }
 
     @Test
@@ -106,7 +106,7 @@ class AnnounceTimeOfDayUseCaseTest {
         verify(presenter).presentNothingToAnnounce();
         verify(presenter, never()).presentDayPhaseBegan(any(), any());
         verify(dayPhaseLogRepositoryOps, never()).saveDayPhaseLog(any());
-        verify(txOps, never()).doInTransaction(any(Runnable.class), any(Runnable.class));
+        verifyNoInteractions(txOps);
     }
 
     @Test
@@ -118,7 +118,7 @@ class AnnounceTimeOfDayUseCaseTest {
         // The version-checked save loses to a concurrent advance that happened since our read.
         doThrow(new OptimisticLockingError("stale version"))
                 .when(dayPhaseLogRepositoryOps).saveDayPhaseLog(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.systemObservesTimeOfDay();
 
