@@ -28,18 +28,18 @@ import java.util.List;
  *
  * <p><b>The write tail, shared by both interactions.</b> Once {@code select} returns the resolved item, both
  * designations converge on {@link #dropResolvedItem}: the item is put down ({@code item.droppedAt}) and
- * saved inside one narrow read-write transaction, with the success presented only <em>after commit</em> so
+ * saved inside one narrow read-write transaction, with the success presented as the statement after it, so
  * the player is never told the item is on the ground before the move is durable.
  *
  * <p><b>Deliberately the plain transaction overload — the single-writer contrast to {@code take}.</b> A held
- * item is written only by its holder, so there is no concurrent race to lose and the
- * {@code (action, onLockDetected)} idiom would be machinery for an unreachable outcome. The versioned save
- * still guards integrity; were a lock loss ever to occur it would be a wiring surprise, and it propagates to
+ * item is written only by its holder, so there is no concurrent race to lose and the lock-aware
+ * {@code doInTransactionWithResult(action, onLockDetected)} would be machinery for an unreachable outcome. The
+ * versioned save still guards integrity; were a lock loss ever to occur it would be a wiring surprise, and it propagates to
  * the outermost {@code catch → presentError} like any fault (design-notes §5: contested→handler,
  * single-writer→propagate).
  *
  * <p>On every path exactly one {@code present*} is reached: a subcase presents its own outcome and throws
- * {@link SubcaseAlreadyPresented} (swallowed here as a no-op); the success path presents after commit; the
+ * {@link SubcaseAlreadyPresented} (swallowed here as a no-op); the success path presents after the block; the
  * outermost {@code catch} routes anything unhandled to {@code presentError}.
  */
 @RequiredArgsConstructor
@@ -81,15 +81,13 @@ public class DropUseCase implements DropInputPort {
 
     /**
      * The shared write tail: put the resolved item down in the destination scene and persist it in one narrow
-     * transaction, presenting success after commit. Void and terminal — it ends in a presentation on every
+     * transaction, then present the success. Void and terminal — it ends in a presentation on every
      * path, so callers do nothing after it. Plain overload on purpose: a lock loss on a single-writer held
      * item is unreachable, so it is left to propagate as a fault rather than handled as an outcome.
      */
     private void dropResolvedItem(SceneId destination, Item item) {
         Item dropped = item.droppedAt(destination);
-        txOps.doInTransaction(false, () -> {
-            itemOps.saveItem(dropped);
-            txOps.doAfterCommit(() -> presenter.presentItemDropped(dropped));
-        });
+        txOps.doInTransaction(false, () -> itemOps.saveItem(dropped));
+        presenter.presentItemDropped(dropped);
     }
 }

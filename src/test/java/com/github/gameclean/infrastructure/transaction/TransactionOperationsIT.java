@@ -18,7 +18,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,15 +26,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Verifies {@link TransactionOperationsOutputPort} against the real Dockerized Postgres. Uses
  * {@code @SpringBootTest} (not a {@code @DataJdbcTest} slice) on purpose: there is no test-managed
  * rollback wrapping each method, so the programmatic transactions genuinely commit and roll back —
- * which is exactly what the after-commit hook and the rollback-discards-writes guarantee need in order
- * to be observable. The same holds for the lock-aware result overload: its lost race is a real stale
+ * which is exactly what the rollback-discards-writes guarantee needs in order to be observable. The same
+ * holds for the lock-aware result overload: its lost race is a real stale
  * versioned write against the store, so the claim that the loss is raised by the write (not the commit)
  * and comes back as the caller's loss value is proven here rather than assumed.
  *
- * <p>The port has no after-rollback hook to exercise: Spring implements one only as
- * {@code afterCompletion(STATUS_ROLLED_BACK)}, whose {@code catch (Throwable)} would swallow a failing
- * action, so the method was retired rather than kept un-fail-loud. Rollback-side presentation happens from
- * an ordinary {@code catch} outside {@code doInTransaction} instead.
+ * <p>The port has no after-commit or after-rollback hook to exercise: every interaction presents as the
+ * statement after its block, so statement order is the after-commit order and a rollback skips what follows
+ * by throwing.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class TransactionOperationsIT extends AbstractPostgresIT {
@@ -67,39 +65,6 @@ class TransactionOperationsIT extends AbstractPostgresIT {
         sceneRepository.deleteById(ROLLBACK_TEST_ID);
         // The lost-race test commits its item for real (no test-managed rollback here), so remove it.
         itemRepository.deleteById(LOCK_TEST_ITEM_ID);
-    }
-
-    @Test
-    void runsAfterCommitWhenTheTransactionCommits() {
-        AtomicBoolean committed = new AtomicBoolean(false);
-
-        txOps.doInTransaction(false, () -> txOps.doAfterCommit(() -> committed.set(true)));
-
-        assertThat(committed).as("after-commit hook fired").isTrue();
-    }
-
-    @Test
-    void doesNotRunAfterCommitWhenTheActionThrows() {
-        AtomicBoolean committed = new AtomicBoolean(false);
-
-        assertThatThrownBy(() -> txOps.doInTransaction(false, () -> {
-            txOps.doAfterCommit(() -> committed.set(true));
-            throw new IllegalStateException("boom");
-        })).isInstanceOf(IllegalStateException.class);
-
-        assertThat(committed).as("after-commit hook did not fire on a rolled-back transaction").isFalse();
-    }
-
-    @Test
-    void propagatesAThrowingAfterCommitActionOverTheRealTransactionManager() {
-        IllegalStateException fromDeferredAction = new IllegalStateException("presenter blew up after commit");
-
-        // The fail-loud contract against the real manager: a deferred action that throws must reach the
-        // caller of doInTransaction rather than being logged and swallowed, and must arrive as itself —
-        // not wrapped in TransactionOperationsError, since it is no failure of the demarcation machinery.
-        assertThatThrownBy(() -> txOps.doInTransaction(false, () -> txOps.doAfterCommit(() -> {
-            throw fromDeferredAction;
-        }))).isSameAs(fromDeferredAction);
     }
 
     @Test
@@ -140,15 +105,6 @@ class TransactionOperationsIT extends AbstractPostgresIT {
     void returnsTheActionsResultWhenTheLockAwareTransactionCommits() {
         String settled = txOps.doInTransactionWithResult(() -> "committed", "lost");
         assertThat(settled).isEqualTo("committed");
-    }
-
-    @Test
-    void runsAfterCommitImmediatelyOutsideAnyTransaction() {
-        AtomicBoolean committed = new AtomicBoolean(false);
-
-        txOps.doAfterCommit(() -> committed.set(true));
-
-        assertThat(committed).as("after-commit runs immediately with no active transaction").isTrue();
     }
 
     @Test

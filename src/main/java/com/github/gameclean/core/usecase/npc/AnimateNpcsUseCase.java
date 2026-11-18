@@ -28,7 +28,7 @@ import java.util.Optional;
  * there is no security assertion — the peer of {@code AnnounceTimeOfDay}.
  *
  * <p><b>A read-only policy — decide, then dispatch, never execute.</b> This use case performs no writes, holds
- * no transaction, and registers no {@code doAfterCommit}. It is the Event-Storming <em>policy</em>: from a
+ * no transaction, and presents nothing that waits on a commit. It is the Event-Storming <em>policy</em>: from a
  * single snapshot read it <em>derives</em> each NPC's decision, then <em>dispatches</em> each decided action as
  * a command through {@link NpcCommandsOutputPort}. A driving adapter turns each command back into the
  * <em>executing</em> interaction ({@code FightNpc.npcStrikesPlayer} for a strike, {@code Wander.npcWandersThrough}

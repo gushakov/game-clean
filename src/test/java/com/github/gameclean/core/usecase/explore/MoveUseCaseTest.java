@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -84,7 +83,7 @@ class MoveUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard));
         when(itemOps.findItemsInScene(SceneId.of("scn2"))).thenReturn(itemsInCourtyard);
         when(npcOps.findNpcsInScene(SceneId.of("scn2"))).thenReturn(npcsInCourtyard);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransaction(txOps);
 
         useCase.playerMovesThrough("east");
 
@@ -102,7 +101,7 @@ class MoveUseCaseTest {
     void matchesTheExitCaseInsensitively() {
         orientedAt("plr1", gateTo("scn2"));
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
-        runTransactionAndFireAfterCommit(txOps);
+        runTransaction(txOps);
 
         useCase.playerMovesThrough("EAST");
 

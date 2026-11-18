@@ -39,18 +39,20 @@ import java.util.List;
  * <p><b>The write tail</b> mirrors {@code Take}'s. Its opening checkpoint is the anchored refusal — read off
  * the <em>item being taken</em>, never the container: a corpse is anchored and is exactly what one takes from.
  * Past that gate the item moves into the player's keeping ({@code item.takenBy} — the mutator is
- * location-agnostic, so no model change was needed) and is saved inside one narrow read-write transaction,
- * success presented only after commit. Only the contained item's row is written; the container owns no
- * collection, so it is neither written nor version-checked.
+ * location-agnostic, so no model change was needed) and is saved inside one narrow read-write transaction
+ * that holds the write and nothing else. The block returns what it settled (a {@link TakeFromAttempt}) and the
+ * presentation is the plain statement after it. Only the contained item's row is written; the container owns
+ * no collection, so it is neither written nor version-checked.
  *
  * <p><b>Concurrency.</b> Contents of a container on the ground are within any actor's reach, so the write is
- * contested like a ground take: the {@code (action, onLockDetected)} overload, a lost race presented as
- * {@code presentItemGotAway}. The handler presents, so the {@code doInTransaction} is the interaction's
- * terminal act.
+ * contested like a ground take: the lock-aware
+ * {@link TransactionOperationsOutputPort#doInTransactionWithResult(java.util.function.Supplier, Object)
+ * doInTransactionWithResult}, whose lost race comes back as {@link TakeFromAttempt#GOT_AWAY} and is presented
+ * as {@code presentItemGotAway}.
  *
  * <p>On every path exactly one {@code present*} is reached: a subcase presents its own outcome and throws
  * {@link SubcaseAlreadyPresented} (swallowed here as a no-op); this use case presents no-such-container, the
- * anchored refusal, the success after commit, or the lost race; the outermost {@code catch} routes anything
+ * anchored refusal, or — past the block — the take or the lost race; the outermost {@code catch} routes anything
  * unhandled to {@code presentError}.
  */
 @RequiredArgsConstructor
@@ -108,9 +110,14 @@ public class TakeFromUseCase implements TakeFromInputPort {
     }
 
     /**
+     * What the take's transaction settled: the versioned write committed, or it lost a concurrent race and
+     * rolled back. Private to this use case; it only carries the block's one bit to the presentation.
+     */
+    private enum TakeFromAttempt { TAKEN, GOT_AWAY }
+
+    /**
      * The shared write tail: refuse an anchored item, otherwise move the resolved item into the holder's
-     * keeping and persist it in one narrow transaction, presenting success after commit and a lost concurrent
-     * race via {@code onLockDetected}. Void and terminal — it ends in a presentation on every path, so
+     * keeping, persist it in one narrow transaction, and present what the transaction settled. Void and terminal — it ends in a presentation on every path, so
      * callers do nothing after it.
      */
     private void takeResolvedItem(PlayerId holder, Item item, List<Item> containers) {
@@ -121,12 +128,21 @@ public class TakeFromUseCase implements TakeFromInputPort {
         }
         Item container = containerHolding(item, containers);
         Item taken = item.takenBy(holder);
-        txOps.doInTransaction(
+
+        // The write set, and nothing else.
+        TakeFromAttempt attempt = txOps.doInTransactionWithResult(
                 () -> {
                     itemOps.saveItem(taken);
-                    txOps.doAfterCommit(() -> presenter.presentItemTakenFrom(taken, container));
+                    return TakeFromAttempt.TAKEN;
                 },
-                () -> presenter.presentItemGotAway(item.getId()));
+                TakeFromAttempt.GOT_AWAY);
+
+        // All presentation is after the block: the transaction has committed or rolled back by now.
+        if (attempt == TakeFromAttempt.TAKEN) {
+            presenter.presentItemTakenFrom(taken, container);
+        } else {
+            presenter.presentItemGotAway(item.getId());
+        }
     }
 
     /** The items on the scene's ground that can hold things. Held containers are out of reach of this goal. */

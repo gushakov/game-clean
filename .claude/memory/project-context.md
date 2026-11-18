@@ -85,10 +85,13 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`NpcRenderer`/`BlackjackRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
-  Two further rules in their own classes (production classes only): the blackjack subdomain boundary, and
+  Three further rules in their own classes (production classes only): the blackjack subdomain boundary;
   `SubcaseMarkerGuardArchitectureTest` — every call to a `*SubcaseInputPort` method from a non-subcase sits
   lexically inside a `try` catching exactly `SubcaseAlreadyPresented` (#110; bite-proof in
-  `SubcaseMarkerGuardRuleTest` over `SubcaseMarkerGuardFixtures`; design-notes §4).
+  `SubcaseMarkerGuardRuleTest` over `SubcaseMarkerGuardFixtures`; design-notes §4); and
+  `PresentationOutsideTransactionArchitectureTest` — a class holding the transaction port never calls a
+  `*PresenterOutputPort` from a lambda nor references one as a method reference (#112; bite-proof in
+  `PresentationOutsideTransactionRuleTest` over `PresentationOutsideTransactionFixtures`; design-notes §5).
 
 ## Status
 
@@ -169,7 +172,7 @@ named exit into the target scene, then sees it):
   trimmed lookup) and `Player.moveTo(SceneId)` (immutable, returns a new `Player`).
 - **Use case** — `Move` (`core/usecase/explore/`): input port `playerMovesThrough(String exitName)`,
   `MoveUseCase`, co-located `MovePresenterOutputPort`. Reads + validity checks outside a tx; one
-  `doInTransaction` holds only the `savePlayer` write; the entered scene is presented in `doAfterCommit`.
+  `doInTransaction` holds only the `savePlayer` write; the entered scene is presented as the statement after it.
   Branch-and-present for missing player / dangling current scene / no such exit / dangling exit target.
 - **Shared presenter capability** — the two not-found outcomes (`presentPlayerNotFound` +
   `presentCurrentSceneNotFound`) live on `OrientPlayerPresenterOutputPort` (the `orient` subcase's port — see
@@ -323,9 +326,10 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   presenter port declares `presentDayPhaseBegan` + `presentNothingToAnnounce` + `presentGameNotInitialized`
   (per-port readiness declaration since the flat-port rule deleted `ClockReadinessPresenterOutputPort`, #81).
   Derives "now" like `AskForTime`; reads the log once (capturing its version) + random message pick **outside**
-  the tx; one `doInTransaction(action, onLockDetected)` holds the single **version-checked** save (no inside-tx
-  re-read), presents after commit. A concurrent loss surfaces as `OptimisticLockingError` → the tx-port
-  `onLockDetected` handler → `presentNothingToAnnounce`; a quiet observation also presents
+  the tx; one lock-aware `doInTransactionWithResult(action, onLockDetected)` holds the single **version-checked**
+  save (no inside-tx re-read) and returns a private `AnnounceAttempt`; the presentation follows the block. A
+  concurrent loss surfaces as `OptimisticLockingError` → the adapter returns `LOST` →
+  `presentNothingToAnnounce`; a quiet observation also presents
   `presentNothingToAnnounce` (no tx); missing clock → `presentGameNotInitialized`
   (design-notes §5/§8 thread #3). `InitializeGame` gained a **5th create-if-absent guard** (seed
   `DayPhaseLog.initial()` beside the clock).
@@ -334,7 +338,8 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   `DayPhaseLogRepositoryOperationsOutputPort` (`core/port/persistence/`, find/save); `OptimisticLockingError`
   (`core/port/concurrency/`, its **own neutral package** — raised by persistence, reacted to by the transaction
   port / use case, owned conceptually by the aggregate; not a subtype of either port error — a concurrent loss
-  is an outcome, not a fault. Also reacted to via the new `doInTransaction(action, onLockDetected)` overload).
+  is an outcome, not a fault. Turned into a loss value by the lock-aware `doInTransactionWithResult(action,
+  onLockDetected)`).
 - **Adapters / infra** — `YamlCalendarSource` now implements **both** source ports (reads a `dayPhases:` block in
   `calendar.yaml` via `CalendarYamlReader.readDayPhases`, reconciles each phase hour against `hoursPerDay`
   fail-fast at boot); Flyway `V5__create_day_phase_log.sql` (singleton row, with a `version` column) +
@@ -382,11 +387,12 @@ project's first contested-resource write and first multi-conversation terminal d
   two interactions converging on `presentItemTaken` — `playerTakesTarget(String)` and
   `playerTakesChosenCandidate(int, List<String>)`. Pure orchestration: `orient` → `select` (the scene-ground
   `SelectSceneItemSubcase`, reused) → `item.takenBy(player)` → one
-  `doInTransaction(action, onLockDetected)` holding only `saveItem`, present after commit. No
+  `doInTransactionWithResult(action, onLockDetected)` holding only `saveItem` and returning a private
+  `TakeAttempt { TAKEN, GOT_AWAY }`; both presentations follow the block. No
   value-object-construction checkpoint (orient/select hand it valid objects). `TakePresenterOutputPort` extends
   `ErrorHandlingPresenterOutputPort` + `presentItemTaken(Item)` + `presentItemGotAway(ItemId)` (the distinct
   write-side lock-loss outcome; concrete presenter also implements the orient + select ports). (design-notes §4/§5.)
-- **Concurrency** — `@Version` on `Item` (first contested-resource write): the lock-loss in `onLockDetected` is the
+- **Concurrency** — `@Version` on `Item` (first contested-resource write): the lock-loss (`GOT_AWAY`) is the
   write-side twin of `select`'s read-side `presentItemNoLongerAvailable`. Mirrors `DayPhaseLog`: version on model +
   `@Version` on `ItemDbEntity`, version-driven `saveItem` (null/0 → insert so spawn still inserts; >0 →
   update-with-check), wrapping `OptimisticLockingFailureException → OptimisticLockingError`. (design-notes §5.)
@@ -427,7 +433,7 @@ second inventory goal, and the second `select` provisioner that extracted the Te
 - **Use case** — `Drop` (`core/usecase/inventory/`): `playerDropsTarget(String)` +
   `playerDropsChosenCandidate(int, List<String>)` converging on `presentItemDropped(Item)`. The criss-cross
   mirror of take — selects by player, mutates by scene — over the same `orient`+`select` opening; no
-  construction checkpoint. **Plain** `doInTransaction` (no `onLockDetected`): a held item is single-writer, so
+  construction checkpoint. **Plain** `doInTransaction` (not the lock-aware overload): a held item is single-writer, so
   a lock loss is unreachable and propagates to the catch-all — the contested→handler (`take`) vs
   single-writer→propagate (`drop`) contrast, pinned by a unit test (design-notes §5).
 - **Ports / persistence** — `findItemsHeldBy(PlayerId)` on the item port; the adapter reuses the existing
@@ -714,8 +720,9 @@ command naming **two** targets:
   matching container is searched and only the *item* is ever disambiguated — one menu, no scope token. The
   menu pick re-validates against **every** ground container here (reachability, not the original fragment).
   Write tail as `Take`'s: anchored gate on the **item taken, never the container** (a corpse is anchored and
-  is what one takes from), `takenBy`, one `doInTransaction(action, onLockDetected)` → `presentItemGotAway`
-  (contested, like a ground take), `presentItemTakenFrom(item, container)` after commit. Only the contained
+  is what one takes from), `takenBy`, one lock-aware `doInTransactionWithResult` → `presentItemGotAway` on a
+  lost race (contested, like a ground take), else `presentItemTakenFrom(item, container)`, both after the block.
+  Only the contained
   item's row is written. (design-notes §4/§5.)
 - **Select** — `SelectContainedItemSubcase<List<ItemId>, Item>`: the fourth concrete; coordinate = the set of
   containers to look in, candidates = the union of their contents (`findItemsInside` per container).

@@ -14,7 +14,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 
 import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doThrow;
@@ -48,7 +47,7 @@ class SuspendGameUseCaseTest {
     void banksTheSessionIntoTheClockAndAcknowledgesAfterCommit() {
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(new GameClock(1_000)));
         when(gameTimeSourceOps.elapsedSessionSeconds()).thenReturn(350L);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransaction(txOps);
 
         useCase.playerLeavesTheGame();
 

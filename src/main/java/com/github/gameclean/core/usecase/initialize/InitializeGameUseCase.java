@@ -78,8 +78,8 @@ import java.util.stream.Collectors;
  * side effect, so they too run outside the transaction; a single {@code doInTransaction} then holds the three
  * idempotency guards (seed-if-empty, create-if-absent player/clock/day-phase-log, spawn-if-none) together with their writes, so those
  * read-then-write decisions cannot interleave with a concurrent initialization, and a restart re-rolls
- * harmlessly but never re-persists. The lone success presentation is deferred to after-commit so it is never
- * reported before the data is durable, and the interaction returns immediately after registering it. The
+ * harmlessly but never re-persists. The block returns what it spawned (a {@link SpawnReport}), and the lone
+ * success presentation is the statement after it, so it is never reported before the data is durable. The
  * initiating actor is the system at startup, so there is no security assertion. The single outermost
  * {@code catch} routes any unhandled error (notably a {@code PersistenceOperationsError}, which has already
  * rolled its transaction back) to {@code presentError}.
@@ -230,10 +230,9 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             // NPCs if none were spawned yet, creates the world clock at time zero if none exists yet, and seeds
             // the day-phase log at its sentinel if none exists yet; holding all these read-then-write guards in
             // one transaction stops a concurrent initialization from double-seeding, double-creating, or
-            // double-spawning. Exactly one after-commit presentation reports the single success — carrying the
-            // items and NPCs spawned this run (empty if already spawned) — and the interaction ends here, since
-            // nothing runs past a presentation.
-            txOps.doInTransaction(false, () -> {
+            // double-spawning. The block returns the items and NPCs spawned this run (empty if already
+            // spawned); exactly one presentation, after it, reports the single success.
+            SpawnReport report = txOps.doInTransactionWithResult(false, () -> {
                 if (sceneOps.worldIsEmpty()) {
                     scenes.forEach(sceneOps::saveScene);
                 }
@@ -264,10 +263,9 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 if (dayPhaseLogRepositoryOps.findDayPhaseLog().isEmpty()) {
                     dayPhaseLogRepositoryOps.saveDayPhaseLog(DayPhaseLog.initial());
                 }
-                txOps.doAfterCommit(() ->
-                        presenter.presentGameInitialized(scenes, playerId, reportedItems, reportedNpcs));
+                return new SpawnReport(reportedItems, reportedNpcs);
             });
-            return;
+            presenter.presentGameInitialized(scenes, playerId, report.getItems(), report.getNpcs());
 
         } catch (Exception e) {
             // Outermost checkpoint. Anything not handled above ends here — notably a
@@ -527,6 +525,17 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
         Optional<Item> spawnInside(Dice dice, Chance chance, ItemId container) {
             return template.spawnInside(dice, chance, container);
         }
+    }
+
+    /**
+     * What the initialization transaction settled: the items and NPCs it spawned this run, each empty when a
+     * previous run had already spawned them. Use-case-private; it only carries the block's result to the
+     * presentation that follows it.
+     */
+    @Value
+    private static class SpawnReport {
+        List<Item> items;
+        List<Npc> npcs;
     }
 
     /**
