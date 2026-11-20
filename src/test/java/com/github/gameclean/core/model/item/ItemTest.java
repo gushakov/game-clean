@@ -198,4 +198,37 @@ class ItemTest {
         // checkpoint, so the fact simply rides the copy-on-write like every other field.
         assertThat(anchoredChest.droppedAt(SceneId.of("scn2")).isAnchored()).isTrue();
     }
+
+    private static Item.ItemBuilder coin() {
+        return Item.builder()
+                .id(ItemId.of("itm3"))
+                .location(new Location.OnGround(SceneId.of("scn1")))
+                .shortDescription("A copper coin.")
+                .fullDescription("A single dull copper coin.")
+                .currency(true);
+    }
+
+    @Test
+    void the_currency_flag_defaults_false_and_survives_copy_on_write() {
+        // Nothing counts coins yet — the fact and its getter are all this phase asks of the model, and like
+        // every other instance-copied fact it rides the location moves (@With routes through the gate).
+        assertThat(item("A rusty dagger.").isCurrency()).isFalse();
+
+        assertThat(coin().build().takenBy(PlayerId.of("plr1")).isCurrency()).isTrue();
+        assertThat(coin().build().droppedAt(SceneId.of("scn2")).isCurrency()).isTrue();
+    }
+
+    @Test
+    void rejects_currency_that_is_a_container() {
+        // Money that holds other things is a purse: its contents would ride along uncounted.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> coin().container(true).build());
+    }
+
+    @Test
+    void rejects_currency_that_is_anchored() {
+        // Money fixed to the ground cannot be paid.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> coin().anchored(true).build());
+    }
 }

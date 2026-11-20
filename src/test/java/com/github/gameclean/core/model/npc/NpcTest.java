@@ -305,4 +305,44 @@ class NpcTest {
         assertThat(talker.moveTo(SceneId.of("scn2")).getSayings()).containsExactly("Only line.");
         assertThat(talker.takeDamage(1).provoked().getSayings()).containsExactly("Only line.");
     }
+
+    // --- offers (#117) ------------------------------------------------------------------------------
+
+    private static Offer roomOffer() {
+        return new Offer("room", "A room for the night.", 2, "itm6");
+    }
+
+    @Test
+    void unauthored_offers_are_the_empty_list() {
+        // The builder never set offers — authored absence, the silent-NPC twin: an NPC that sells nothing is
+        // an ordinary NPC, not an invalid one.
+        assertThat(npc("scn1").getOffers()).isEmpty();
+    }
+
+    @Test
+    void rejects_two_offers_sharing_a_handle() {
+        // The handle is what a later phase's player names when buying, so within one NPC it can mean one thing.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> npc("scn1").withOffers(List.of(
+                        roomOffer(), new Offer("room", "A bowl of yesterday's stew.", 1, "itm1"))))
+                .withMessageContaining("room");
+    }
+
+    @Test
+    void rejects_an_offer_its_value_object_would_not_accept() {
+        // The element gate is the Offer's own, but the NPC re-runs it on whatever it is handed — the stance that
+        // makes a stored row the domain would refuse an integrity fault of the read rather than a live NPC.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> npc("scn1").withOffers(List.of(new Offer("room", "   ", 2, "itm6"))));
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> npc("scn1").withOffers(List.of(new Offer("room", "A room.", 0, "itm6"))));
+    }
+
+    @Test
+    void the_offers_ride_through_copy_on_write() {
+        Npc keeper = npc("scn1").withOffers(List.of(roomOffer()));
+        // The offers are as ordinary a field as the sayings: every mutator carries them forward.
+        assertThat(keeper.moveTo(SceneId.of("scn2")).getOffers()).containsExactly(roomOffer());
+        assertThat(keeper.takeDamage(1).provoked().getOffers()).containsExactly(roomOffer());
+    }
 }

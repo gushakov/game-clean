@@ -15,43 +15,56 @@ import static org.assertj.core.api.Assertions.*;
 
 /**
  * Tests for {@link ItemTemplate} — its always-valid construction (non-blank descriptions; the spawn rule is
- * <em>optional</em>, authored absence for a contained-only item), {@code spawnInto}, which rolls the
- * {@link SpawnRule}'s placements with a {@link ScriptedDice} and builds one instance per placement, minting
- * each instance's id from the <em>same</em> dice, and {@code spawnInside}, its containment counterpart (one
+ * <em>optional</em>, authored absence for a contained-only item; the currency invariant), {@code spawnInto}, which
+ * rolls the {@link SpawnRule}'s placements with a {@link ScriptedDice} and builds one instance per placement,
+ * minting each instance's id from the <em>same</em> dice, and {@code spawnInside}, its containment counterpart (one
  * chance roll, a hit minting one instance inside the given container). The dice is the only collaborator (no
  * id supplier — the model mints its own ids), so per hit the script supplies a scene pick followed by the
  * id-body glyph picks, pinning the whole policy deterministically.
+ *
+ * <p>The template is built through its constructor-level {@code @Builder} — the {@link #templateBuilder()} helper
+ * starts from the two descriptions and each test names only the facts it is about, so an added capability costs
+ * this file no edit and a same-typed argument can never be quietly swapped.
  */
 class ItemTemplateTest {
 
     private static final String SHORT = "A rusty dagger.";
     private static final String FULL = "A plain iron dagger, rusty but usable.";
 
+    /** A template carrying the two descriptions and nothing else — every test adds the facts it is about. */
+    private static ItemTemplate.ItemTemplateBuilder templateBuilder() {
+        return ItemTemplate.builder().shortDescription(SHORT).fullDescription(FULL);
+    }
+
     private static ItemTemplate template(int numerator, int denominator, int maxTries, String... candidateScenes) {
         SpawnRule rule = new SpawnRule(new Chance(numerator, denominator), maxTries,
                 Arrays.stream(candidateScenes).map(SceneId::of).toList());
-        return new ItemTemplate(SHORT, FULL, false, false, rule);
+        return templateBuilder().spawnRule(rule).build();
+    }
+
+    private static SpawnRule alwaysInScn1() {
+        return new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
     }
 
     @Test
     void rejects_a_blank_short_description() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new ItemTemplate("  ", FULL, false, false, rule));
+                .isThrownBy(() -> ItemTemplate.builder().shortDescription("  ").fullDescription(FULL)
+                        .spawnRule(alwaysInScn1()).build());
     }
 
     @Test
     void rejects_a_blank_full_description() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new ItemTemplate(SHORT, "  ", false, false, rule));
+                .isThrownBy(() -> ItemTemplate.builder().shortDescription(SHORT).fullDescription("  ")
+                        .spawnRule(alwaysInScn1()).build());
     }
 
     @Test
     void a_template_without_a_spawn_rule_spawns_nothing_and_references_no_scenes() {
         // Authored absence, not invalid input: a contained-only item never spawns onto the ground. The empty
         // dice script proves no roll, no pick and no mint happen (an unscripted pull would throw).
-        ItemTemplate template = new ItemTemplate(SHORT, FULL, false, false, null);
+        ItemTemplate template = templateBuilder().build();
 
         assertThat(template.spawnInto(new ScriptedDice())).isEmpty();
         assertThat(template.candidateScenesNotIn(Set.of())).isEmpty();
@@ -95,8 +108,7 @@ class ItemTemplateTest {
 
     @Test
     void instances_copy_the_container_capability() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
-        ItemTemplate chest = new ItemTemplate(SHORT, FULL, true, false, rule);
+        ItemTemplate chest = templateBuilder().container(true).spawnRule(alwaysInScn1()).build();
         ScriptedDice dice = new ScriptedDice().willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         assertThat(chest.spawnInto(dice)).allSatisfy(item -> assertThat(item.isContainer()).isTrue());
@@ -104,38 +116,69 @@ class ItemTemplateTest {
 
     @Test
     void rejects_a_blank_opens_handle() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
         assertThatExceptionOfType(InvalidDomainObjectError.class)
-                .isThrownBy(() -> new ItemTemplate(SHORT, FULL, false, false, "  ", rule));
+                .isThrownBy(() -> templateBuilder().opens("  ").spawnRule(alwaysInScn1()).build());
     }
 
     @Test
     void instances_copy_the_opens_handle() {
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
-        ItemTemplate key = new ItemTemplate(SHORT, FULL, false, false, "guest-room", rule);
+        ItemTemplate key = templateBuilder().opens("guest-room").spawnRule(alwaysInScn1()).build();
         ScriptedDice dice = new ScriptedDice().willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         assertThat(key.spawnInto(dice)).singleElement()
                 .satisfies(item -> assertThat(item.getOpens()).isEqualTo("guest-room"));
-        assertThat(new ItemTemplate(SHORT, FULL, false, false, rule).getOpens()).isNull();
+        assertThat(templateBuilder().spawnRule(alwaysInScn1()).build().getOpens()).isNull();
     }
 
     @Test
     void instances_copy_the_anchored_fact() {
         // The resolved fact arrives from the gate (authored `portable` inverted, kind defaults applied);
         // the template just copies it onto every instance, like the descriptions and the container flag.
-        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
-        ItemTemplate anchoredChest = new ItemTemplate(SHORT, FULL, true, true, rule);
+        ItemTemplate anchoredChest = templateBuilder().container(true).anchored(true).spawnRule(alwaysInScn1()).build();
         ScriptedDice dice = new ScriptedDice().willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         assertThat(anchoredChest.spawnInto(dice)).allSatisfy(item -> assertThat(item.isAnchored()).isTrue());
     }
 
     @Test
+    void rejects_a_currency_item_that_is_a_container() {
+        // Money that holds other things is a purse, not a coin: the invariant is the template's, rejected as
+        // authored authoring-shape nonsense rather than surviving to spawn an instance the Item gate would refuse.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> templateBuilder().currency(true).container(true).build());
+    }
+
+    @Test
+    void rejects_a_currency_item_that_is_anchored() {
+        // Money bolted to the ground cannot be paid.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> templateBuilder().currency(true).anchored(true).build());
+    }
+
+    @Test
+    void instances_copy_the_currency_flag() {
+        // The plain coin: neither a container nor anchored, so the invariant holds and the flag rides onto
+        // every instance like the container and anchored facts. Absence is the ordinary case: not money.
+        ItemTemplate coin = templateBuilder().shortDescription("A copper coin.")
+                .fullDescription("A single dull copper coin.")
+                .currency(true)
+                .spawnRule(alwaysInScn1())
+                .build();
+        ScriptedDice dice = new ScriptedDice().willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        assertThat(coin.spawnInto(dice)).allSatisfy(item -> {
+            assertThat(item.isCurrency()).isTrue();
+            assertThat(item.isContainer()).isFalse();
+            assertThat(item.isAnchored()).isFalse();
+        });
+        assertThat(templateBuilder().spawnRule(alwaysInScn1()).build().isCurrency()).isFalse();
+    }
+
+    @Test
     void spawnInside_mints_an_instance_inside_the_container_on_a_hit() {
         // A contained-only template (no spawn rule): the containment odds arrive as a value — they are the
         // container's authored fact — and a hit consumes one roll plus the id-body glyph picks.
-        ItemTemplate template = new ItemTemplate(SHORT, FULL, false, false, null);
+        ItemTemplate template = templateBuilder().build();
         ScriptedDice dice = new ScriptedDice().willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0);
 
         assertThat(template.spawnInside(dice, new Chance(1, 45), ItemId.of("itm42"))).hasValueSatisfying(item -> {
@@ -149,7 +192,7 @@ class ItemTemplateTest {
 
     @Test
     void spawnInside_spawns_nothing_and_mints_no_id_on_a_miss() {
-        ItemTemplate template = new ItemTemplate(SHORT, FULL, false, false, null);
+        ItemTemplate template = templateBuilder().build();
         // A miss consumes only the roll — the empty pick script proves no id was minted.
         assertThat(template.spawnInside(new ScriptedDice().willRoll(false), new Chance(1, 45), ItemId.of("itm42")))
                 .isEmpty();
@@ -157,7 +200,7 @@ class ItemTemplateTest {
 
     @Test
     void spawnInside_rejects_null_collaborators() {
-        ItemTemplate template = new ItemTemplate(SHORT, FULL, false, false, null);
+        ItemTemplate template = templateBuilder().build();
         // Caller bugs, not invalid domain construction — plain NullPointerExceptions, as for spawnInto.
         assertThatNullPointerException()
                 .isThrownBy(() -> template.spawnInside(null, new Chance(1, 45), ItemId.of("itm42")));

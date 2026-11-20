@@ -51,6 +51,10 @@ public class ItemDbEntity {
     @Column("anchored")
     private boolean anchored;
 
+    /** Currency: this item is money — one instance counts as one coin toward a price. */
+    @Column("currency")
+    private boolean currency;
+
     @Column("opens")
     private String opens;
 

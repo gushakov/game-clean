@@ -48,6 +48,14 @@ import java.util.Objects;
  * anchored unless authored {@code portable: true} (a transportable container, contents riding along by
  * reference, is an explicit authored fact, never an accident); the seed gate translates.
  *
+ * <p>An item may be <b>currency</b> — the {@link #currency} flag marks it as money: one instance counts as one
+ * coin toward a price, whatever its template, because the world has a single currency and no denominations. The
+ * flag is inert in this phase (nothing counts coins yet), carried from the template onto every instance like
+ * {@link #container} and {@link #opens}. It is subject to an invariant, enforced here as elsewhere by the
+ * construction gate: a currency item is <em>neither</em> a container <em>nor</em> anchored — money that holds
+ * other things is a purse (a container whose contents would ride along uncounted), and money fixed to the ground
+ * cannot be paid. Both are authoring mistakes, rejected rather than modeled around.
+ *
  * <p>An item may <b>open a lock</b> — the nullable {@link #opens} handle names the {@link Lock} it opens
  * ({@code null} when it opens nothing). Like {@code Npc.corpseRef}, the handle is an opaque authored
  * {@code String}, non-blank when present, copied from the template onto every instance; the item answers
@@ -77,6 +85,9 @@ public class Item implements Designatable {
     /** Anchored: fixed where it stands — {@code take} refuses to carry it (a presented outcome). */
     boolean anchored;
 
+    /** Currency: this item is money — one instance counts as one coin toward a price. */
+    boolean currency;
+
     /** Authored handle of the lock this item opens — {@code null} when it opens nothing. */
     String opens;
 
@@ -85,13 +96,21 @@ public class Item implements Designatable {
 
     @Builder
     public Item(ItemId id, Location location, String shortDescription, String fullDescription,
-                boolean container, boolean anchored, String opens, long version) {
+                boolean container, boolean anchored, boolean currency, String opens, long version) {
         this.id = DomainValidation.requireNonNull(id, "item id must not be null");
         this.location = DomainValidation.requireNonNull(location, "item location must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
         this.fullDescription = requireNonBlank(fullDescription, "item full description");
         this.container = container;
         this.anchored = anchored;
+        // Money is never a purse and never bolted to the floor: a currency item carries neither capability.
+        if (currency && container) {
+            throw new InvalidDomainObjectError("currency item must not be a container");
+        }
+        if (currency && anchored) {
+            throw new InvalidDomainObjectError("currency item must not be anchored");
+        }
+        this.currency = currency;
         // Authored absence is a valid state (the item opens nothing); a present handle must carry content.
         if (opens != null && opens.strip().isEmpty()) {
             throw new InvalidDomainObjectError("item opens handle must not be blank when present");

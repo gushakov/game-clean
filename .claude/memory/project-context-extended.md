@@ -62,7 +62,10 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   `V12` player `(hit_points, max_hit_points)` embedded pool + `version` (#66 — an NPC counterstrike makes the
   player a second writer), `V13` item `container`, `V14` item `anchored` (#90), `V15` npc `corpse_ref` (#93),
   `V16` `npc_saying` child table (#104), `V17` exit `(lock_ref, locked_description)` nullable (#115 — the embedded
-  `LockDbEntity`), `V18` item `opens` nullable (#115). A composite PK on an owned child
+  `LockDbEntity`), `V18` item `opens` nullable (#115), `V19` item `currency` boolean not null default false
+   (#117), `V20` `npc_offer` child table `(npc_id, idx)` PK + `unique (npc_id, ref)` (#117 — the `npc_saying`
+   pattern applied to wares; no CHECK on `price`, the `npc.max_hit_points` precedent: its lower bound is the
+   domain gate's). A composite PK on an owned child
   `(scene_id, name)` enforces a domain uniqueness invariant at the DB level. A merged migration is immutable
   (fix forward with a new `Vxx`); `V6` is the first to *alter* an existing table. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
   carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.
@@ -87,7 +90,10 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   — the **version-driven `save`** (mirrors the item adapter; wraps `OptimisticLockingFailureException →
   OptimisticLockingError`); reads catch `DataAccessException | InvalidDomainObjectError` (a corrupt row is an
   integrity fault). `findNpc(NpcId)` loads a single living NPC (`findById` + filter `!isDead()`) for the
-  counterstrike execution.
+  counterstrike execution. **Owned children are lists** keyed by an `idx` column so authored order survives
+  (`sayings` V16, `offers` V20); their element ↔ VO conversion rides two `default` methods on the mapper
+  (`toOffer` / `toOfferEntity`, no `@Mapping`, no `expression`) — which re-runs the VO's own gate on the way
+  back, so a stored row the domain would refuse is a `PersistenceOperationsError` integrity fault of the read.
 
 ### Test layering — Surefire (unit) vs Failsafe (integration)
 

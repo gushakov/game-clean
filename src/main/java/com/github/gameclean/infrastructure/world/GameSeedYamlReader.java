@@ -5,6 +5,7 @@ import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.ItemEntry;
 import com.github.gameclean.core.port.seed.NpcEntry;
+import com.github.gameclean.core.port.seed.OfferEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import org.springframework.stereotype.Component;
@@ -128,7 +129,9 @@ public class GameSeedYamlReader {
                 parseContains(node.get("contains")),
                 spawn,
                 // The lock handle stays null when unauthored (the item opens nothing — authored absence).
-                asString(node.get("opens")));
+                asString(node.get("opens")),
+                // An unauthored currency flag is authored absence: an item is ordinary property (asBoolean).
+                asBoolean(node.get("currency")));
     }
 
     /**
@@ -169,7 +172,34 @@ public class GameSeedYamlReader {
                 asString(node.get("corpse")),
                 // The sayings are an optional YAML sequence of lines; absent yields the empty list (the NPC has
                 // nothing to say). Each line is carried raw — non-blankness is the template's gate.
-                asListOfStrings(node.get("sayings")));
+                asListOfStrings(node.get("sayings")),
+                // The offers are an optional YAML sequence of entries; absent yields the empty list (the NPC sells
+                // nothing). Each entry is carried raw — its shape and the uniqueness of its handles are the
+                // template's gate, and that its item resolves is the use case's inter-template rule.
+                parseOffers(node.get("offers")));
+    }
+
+    /**
+     * Parses an NPC's authored {@code offers:} sequence — one {@code {id, name, price, item}} entry per thing for
+     * sale — into {@link OfferEntry} carriers; an absent key stays the empty list (authored absence, the same
+     * convention as an absent {@code sayings:}). The price is a required scalar of the entry, read like an NPC's
+     * {@code hitPoints}: an entry the author wrote is an entry the author meant, so a missing or non-numeric price
+     * is a malformed file, failing fast here. A price below one coin, by contrast, is domain-invalid and stays the
+     * {@code Offer} gate's.
+     */
+    private static List<OfferEntry> parseOffers(Object node) {
+        if (node == null) {
+            return List.of();
+        }
+        List<OfferEntry> offers = new ArrayList<>();
+        for (Map<String, Object> offerNode : asListOfMaps(node)) {
+            offers.add(new OfferEntry(
+                    asString(offerNode.get("id")),
+                    asString(offerNode.get("name")),
+                    asInt(offerNode.get("price"), "npc offer price"),
+                    asString(offerNode.get("item"))));
+        }
+        return offers;
     }
 
     /**

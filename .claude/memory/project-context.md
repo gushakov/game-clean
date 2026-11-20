@@ -770,7 +770,56 @@ passed only by a player carrying an item that opens it; NPCs carry nothing and n
   innkeeper, certain spawn in `scn5`, `moveChance: 0/1`, room sayings. A play DB seeded before this change needs
   its volume reset to gain the new scenes. `scenes2.yaml` untouched.
 
-Tests: 611 unit (Surefire, DB-free) + 32 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Wares authoring` vertical **complete** (issue #117, inn scenario phase 2 of 4) — coins are currency and
+NPCs carry offers. An authored fact with **no consumer yet**: nothing counts a coin, nothing buys, nothing
+renders an offer (phases 3–4 add the verb and the pitch). Decided in the issue; the only open choice taken
+here was leaving `scenes2.yaml` (the harbour world, referenced by no test) unauthored:
+
+- **Domain** — `Offer` VO (`core/model/npc/`: non-blank `ref`/`name`/`itemRef`, `price ≥ 1`; equality by
+  value). The per-NPC uniqueness rule lives on the VO as a package-private static
+  `Offer.requireUniqueRefs(List<Offer>)`, run by **both** owners (`Npc`, `NpcTemplate`); `itemRef` stays an
+  **opaque authored handle** (the `corpseRef` precedent — no row behind it, the delivered item does not exist
+  until phase 3 mints it). `Npc`/`NpcTemplate` gain `List<Offer> offers` (empty on authored absence, copied
+  template → instance, ride the copy-on-write like the sayings) and no behaviour method — deliberately no
+  `hasOffers()`, since no use case reads wares yet. `Item`/`ItemTemplate` gain `boolean currency`: **one
+  currency, no denominations**, so every currency item is one coin whatever its template. Invariant, gated in
+  **both** types: a currency item is neither a `container` (a purse's contents would ride along uncounted) nor
+  `anchored` (bolted-down money cannot be paid).
+- **`ItemTemplate` ctor collapse** — one `@Builder` ctor validating all seven params
+  (`shortDescription`, `fullDescription`, `container`, `anchored`, `currency`, `opens`, `spawnRule`); both
+  positional overloads **deleted** (a 5th same-typed boolean was the trigger — positional booleans are
+  silently swappable). All call sites migrated to the builder. `NpcTemplate` keeps its positional ctor with
+  `offers` appended as the 9th param. Carriers append new fields last (`ItemEntry.currency` after `opens`,
+  `NpcEntry.offers` after `sayings`) for the same no-adjacent-same-typed-params reason.
+- **Seed / gate** — reader keys `currency:` (`asBoolean`, absence → `false`: unlike `portable` there is no
+  kind-sensitive default to preserve) and `offers:` → new `OfferEntry(id, name, price, item)`; `price` via
+  `asInt(…, "npc offer price")`, so a **missing/non-numeric price is a malformed file** (the `hitPoints`
+  precedent, fail fast) while `price < 1` is the `Offer` gate's **invalid parameters**. New inter-template
+  **checkpoint 14** (after corpse refs, **before** the NPC spawn roll): an offered item must resolve and be
+  neither a container nor anchored → `presentNpcOfferItemInvalid(Map<npcRef, List<itemRef>>)` (the
+  containment-target shape: every offence of an NPC in one presentation). The NPC spawn roll is now 15 and the
+  transaction 16. Entry-shape violations (duplicate handle, price < 1, missing `item:`) surface at checkpoint
+  11 as invalid parameters. An offered item **may** carry its own ground spawn — the routes are independent.
+- **Persistence** — `V19__item_currency.sql` (`item.currency boolean not null default false`) +
+  `V20__create_npc_offer.sql` (`npc_offer(npc_id, idx, ref, name, price, item_ref)`, PK `(npc_id, idx)`,
+  `unique (npc_id, ref)`, no backfill — no offers is a valid NPC). No CHECK on `price` (the
+  `npc.max_hit_points` precedent: the lower bound is the domain gate's). `NpcOfferDbEntity` +
+  `@MappedCollection(idColumn = "npc_id", keyColumn = "idx")` on `NpcDbEntity.offers` — the `npc_saying`
+  pattern, so a catalogue reads in authored order; the mapper converts elements with two `default` methods (no
+  `expression`), which re-runs the `Offer` gate on the way back → a corrupt stored row is an integrity fault of
+  the read, never a presented outcome.
+- **Corpse-loot gap closed** — `YamlGameSeedSource.toTemplate` is now a builder carrying `opens` **and**
+  `currency`: the blueprint drops the ground-spawn rule but never an instance-copied fact (a key minted as
+  loot that opened nothing was the phase-1 bug).
+- **Content** — `scenes.yaml`: `itm3` is now **one** copper coin (`currency: true`, was "a handful of coins" —
+  a handful would be one coin); `npc2` (the innkeeper) offers `room` — "A room for the night." — for **2**
+  coins, delivering `itm6` (the guest-room key, which still also lies on the inn floor until phase 3 removes
+  that spawn). Header comments document both new keys.
+- **Deferred** — `buy`/`rent` verbs and counting coins (phase 3), offer rendering / the keeper's pitch
+  (phase 4), minting the delivered item, a wares blueprint port, a `Price` VO, denominations, removing the
+  key's ground spawn. A play DB seeded before this change needs its volume reset to gain the coin and offer.
+
+Tests: 647 unit (Surefire, DB-free) + 34 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **container capacity** (the first

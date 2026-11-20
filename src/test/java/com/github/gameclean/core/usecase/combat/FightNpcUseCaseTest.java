@@ -445,10 +445,16 @@ class FightNpcUseCaseTest {
 
     /** The wanderer's authored corpse recipe: an anchored container that may hold the silver ring at 1/2. */
     private static CorpseBlueprint blueprintWithRing() {
-        ItemTemplate corpse = new ItemTemplate("The corpse of a hooded wanderer.",
-                "The wanderer lies where it fell.", true, true, null);
-        ItemTemplate ring = new ItemTemplate("A tarnished silver ring.",
-                "A slim band of tarnished silver.", false, false, null);
+        ItemTemplate corpse = ItemTemplate.builder()
+                .shortDescription("The corpse of a hooded wanderer.")
+                .fullDescription("The wanderer lies where it fell.")
+                .container(true)
+                .anchored(true)
+                .build();
+        ItemTemplate ring = ItemTemplate.builder()
+                .shortDescription("A tarnished silver ring.")
+                .fullDescription("A slim band of tarnished silver.")
+                .build();
         return new CorpseBlueprint(corpse, List.of(new CorpseBlueprint.Loot(ring, new Chance(1, 2))));
     }
 

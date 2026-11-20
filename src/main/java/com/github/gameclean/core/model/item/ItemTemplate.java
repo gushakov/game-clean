@@ -6,6 +6,7 @@ import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.Dice;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.model.spawn.SpawnRule;
+import lombok.Builder;
 import lombok.Value;
 
 import java.util.ArrayList;
@@ -17,8 +18,16 @@ import java.util.Set;
 /**
  * An authored kind of item together with the rule by which it populates the world — the always-valid form
  * of one {@code items:} entry in the seed. Holds the short and full descriptions every spawned instance
- * carries, the {@code container} capability and {@code opens} lock handle the instances inherit, and the {@link SpawnRule} governing how
- * many instances appear on the ground and where. Immutable, equality by value.
+ * carries, the {@code container}, {@code anchored} and {@code currency} capabilities and the {@code opens}
+ * lock handle the instances inherit, and the {@link SpawnRule} governing how many instances appear on the
+ * ground and where. Immutable, equality by value.
+ *
+ * <p>The three capability booleans are adjacent and share a default — {@code false} — which is why the
+ * template is built through its constructor-level {@code @Builder} rather than a growing list of positional
+ * overloads: each fact states itself at the call site, an omitted one is the safe authored absence, and a
+ * reordering cannot silently swap two same-typed arguments. The {@code currency} invariant (money is neither
+ * a container nor anchored) is checked here at the same gate {@link Item} checks it at, so an authoring mistake
+ * is rejected as a template rather than surviving until an instance happens to be minted.
  *
  * <p>The spawn rule is <em>optional</em> (authored absence, not invalid input): a contained-only item — one
  * that appears in the world exclusively inside containers — never spawns onto the ground, so its template
@@ -44,24 +53,31 @@ public class ItemTemplate {
     /** Whether instances are fixed where they stand — refused by {@code take} (copied onto every instance). */
     boolean anchored;
 
+    /** Whether instances are money — one counts as one coin toward a price (copied onto every instance). */
+    boolean currency;
+
     /** Authored handle of the lock instances open — {@code null} when they open nothing (copied onto every instance). */
     String opens;
 
     /** The ground-spawn rule, or {@code null} for a contained-only item that never spawns onto the ground. */
     SpawnRule spawnRule;
 
-    /** A template whose instances open no lock. */
+    @Builder
     public ItemTemplate(String shortDescription, String fullDescription, boolean container, boolean anchored,
-                        SpawnRule spawnRule) {
-        this(shortDescription, fullDescription, container, anchored, null, spawnRule);
-    }
-
-    public ItemTemplate(String shortDescription, String fullDescription, boolean container, boolean anchored,
-                        String opens, SpawnRule spawnRule) {
+                        boolean currency, String opens, SpawnRule spawnRule) {
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
         this.fullDescription = requireNonBlank(fullDescription, "item full description");
         this.container = container;
         this.anchored = anchored;
+        // The same invariant Item enforces, checked on the authored fact so a bad template never survives to
+        // spawn an instance: money holds nothing and is fixed to nothing.
+        if (currency && container) {
+            throw new InvalidDomainObjectError("currency item must not be a container");
+        }
+        if (currency && anchored) {
+            throw new InvalidDomainObjectError("currency item must not be anchored");
+        }
+        this.currency = currency;
         if (opens != null && opens.strip().isEmpty()) {
             throw new InvalidDomainObjectError("item opens handle must not be blank when present");
         }
@@ -71,8 +87,9 @@ public class ItemTemplate {
 
     /**
      * Builds one item instance of this template at the given location, stamped with the given freshly
-     * generated id. The descriptions and the container capability are copied onto the instance — instances
-     * hold their own state and do not reference the template.
+     * generated id. The descriptions and every instance-copied fact (the container capability, the anchored
+     * stance, the currency flag, the {@code opens} handle) are copied onto the instance — instances hold their
+     * own state and do not reference the template.
      */
     public Item instanceAt(ItemId id, SceneId location) {
         return instanceWith(id, new Location.OnGround(location));
@@ -94,6 +111,7 @@ public class ItemTemplate {
                 .fullDescription(fullDescription)
                 .container(container)
                 .anchored(anchored)
+                .currency(currency)
                 .opens(opens)
                 .build();
     }

@@ -104,6 +104,17 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
     void presentNpcCorpseRefInvalid(Map<String, String> invalidCorpseRefsByNpc);
 
     /**
+     * Inter-template consistency failure: one or more authored NPCs declare an offer whose {@code item} handle is
+     * not a sellable authored item — the handle resolves to no authored item, or to a <em>container</em> (ware is
+     * handed over as one thing, not as a bundle whose contents ride along), or to an <em>anchored</em> item (ware
+     * fixed to the ground cannot be paid for and carried off). One stripe covers all flavors — the diagnostic
+     * names the offending refs, and the author inspects them — mirroring
+     * {@link #presentItemContainmentTargetInvalid}. Keyed by the NPC's authoring id, each mapped to the offending
+     * {@code item} refs of its offers.
+     */
+    void presentNpcOfferItemInvalid(Map<String, List<String>> invalidOfferItemsByNpc);
+
+    /**
      * Validation failure while constructing value objects from authored input — a blank scene name, a
      * malformed scene / player / starting-scene id, a null field: the intra-aggregate validity gate
      * rejected an input. Used by both phases; the exception message identifies which.

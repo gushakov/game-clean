@@ -9,6 +9,7 @@ import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.ItemEntry;
 import com.github.gameclean.core.port.seed.NpcEntry;
+import com.github.gameclean.core.port.seed.OfferEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import org.junit.jupiter.api.Test;
@@ -142,6 +143,36 @@ class GameSeedYamlReaderTest {
         assertThat(seed.getItems()).extracting(ItemEntry::getId, ItemEntry::getOpens).containsExactly(
                 tuple("itm1", null), tuple("itm2", null), tuple("itm3", null), tuple("itm4", null),
                 tuple("itm5", null), tuple("itm6", "guest-room"));
+    }
+
+    @Test
+    void readsTheAuthoredCurrencyFlagDefaultingToFalse() {
+        GameSeed seed = readSeed();
+
+        // itm3 (the copper coin) authors `currency: true`; every other item omits the key, and absence is
+        // false rather than null — unlike `portable`, the gate has no kind-sensitive default to preserve.
+        assertThat(seed.getItems()).extracting(ItemEntry::getId, ItemEntry::isCurrency).containsExactly(
+                tuple("itm1", false), tuple("itm2", false), tuple("itm3", true), tuple("itm4", false),
+                tuple("itm5", false), tuple("itm6", false));
+
+        // The coin is money, so it must be carryable and hold nothing: neither a container nor anchored.
+        ItemEntry coin = seed.getItems().get(2);
+        assertThat(coin.isContainer()).isFalse();
+        assertThat(coin.getPortable()).isNull();
+    }
+
+    @Test
+    void readsTheAuthoredOffersOnNpcsInOrderDefaultingToEmpty() {
+        GameSeed seed = readSeed();
+
+        // npc2 (the innkeeper) sells the guest-room key for two coins; the four fields arrive raw, the item
+        // handle still an authoring handle the seed gate resolves later (#117).
+        assertThat(seed.getNpcs().get(1).getOffers()).containsExactly(
+                new OfferEntry("room", "A room for the night.", 2, "itm6"));
+
+        // npc1 (the hooded wanderer) authors no `offers:` — authored absence is the empty list: an NPC that
+        // sells nothing is an ordinary NPC, and the gate never sees a null element.
+        assertThat(seed.getNpcs().getFirst().getOffers()).isEmpty();
     }
 
     @Test

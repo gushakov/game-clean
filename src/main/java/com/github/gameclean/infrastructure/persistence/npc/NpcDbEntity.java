@@ -75,4 +75,12 @@ public class NpcDbEntity {
      */
     @MappedCollection(idColumn = "npc_id", keyColumn = "idx")
     private List<NpcSayingDbEntity> sayings;
+
+    /**
+     * The authored offers, owned children over {@code npc_offer} with {@code idx} as the list key — the
+     * {@link #sayings} pattern applied to wares (#117): a {@code List}, so authored order survives the round-trip
+     * and an NPC's catalogue reads the way it was authored.
+     */
+    @MappedCollection(idColumn = "npc_id", keyColumn = "idx")
+    private List<NpcOfferDbEntity> offers;
 }
