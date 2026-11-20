@@ -1,7 +1,9 @@
 package com.github.gameclean.infrastructure.persistence.scene;
 
+import com.github.gameclean.infrastructure.persistence.common.LockDbEntity;
 import lombok.Data;
 import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -10,7 +12,8 @@ import org.springframework.data.relational.core.mapping.Table;
  * scene, identified within the aggregate by the composite key {@code (scene_id, name)}. The
  * {@code scene_id} back-reference column is supplied by the parent's
  * {@link org.springframework.data.relational.core.mapping.MappedCollection}, so it is not a
- * field here.
+ * field here. An exit's optional lock embeds as two nullable columns ({@link LockDbEntity}); both null is an
+ * ordinary exit.
  */
 @Data
 @Table("exit")
@@ -20,4 +23,7 @@ public class ExitDbEntity {
 
     @Column("target_scene_id")
     private String targetSceneId;
+
+    @Embedded.Nullable
+    private LockDbEntity lock;
 }

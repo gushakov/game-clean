@@ -32,7 +32,10 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   `ScalarConverter` (`infrastructure/mapping/`, layer-neutral) for single-scalar text forms (id VOs,
   `Chance` as `num/den`), and `CompositeDbConverter` (`infrastructure/persistence/common/`) for `@Embedded`
   composites (`HitPointsDbEntity`; `LocationDbEntity`, the sealed VO's `(kind, ref)` encoding with the
-  exhaustive `switch` inside the converter). Re-wrapping runs the VO's own validation. Builds the domain
+  exhaustive `switch` inside the converter; `LockDbEntity`, an exit's nullable lock — embedded in an owned
+  child entity, `@Embedded.Nullable`, both columns null = no lock). A VO with a convenience constructor beside
+  its canonical one (`Exit`) puts `@Builder` on the canonical constructor: MapStruct then builds through the
+  builder instead of failing on ambiguous constructors. Re-wrapping runs the VO's own validation. Builds the domain
   aggregate through its Lombok builder — requires `lombok-mapstruct-binding` in the annotation-processor
   path (order: lombok → binding → mapstruct). Gotcha: restructuring a DB-entity property ripples into
   derived-query method names (embedded fields are reached by path, e.g. `…HitPointsCurrent…`).
@@ -57,7 +60,9 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   table, `V10` npc move chance collapsed to one `move_chance` varchar (`num/den` text + shape CHECK, backfilled
   from the V7 pair), `V11` npc `hostile` boolean + `attack_chance` varchar (`num/den` text + shape CHECK, #66),
   `V12` player `(hit_points, max_hit_points)` embedded pool + `version` (#66 — an NPC counterstrike makes the
-  player a second writer). A composite PK on an owned child
+  player a second writer), `V13` item `container`, `V14` item `anchored` (#90), `V15` npc `corpse_ref` (#93),
+  `V16` `npc_saying` child table (#104), `V17` exit `(lock_ref, locked_description)` nullable (#115 — the embedded
+  `LockDbEntity`), `V18` item `opens` nullable (#115). A composite PK on an owned child
   `(scene_id, name)` enforces a domain uniqueness invariant at the DB level. A merged migration is immutable
   (fix forward with a new `Vxx`); `V6` is the first to *alter* an existing table. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
   carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.

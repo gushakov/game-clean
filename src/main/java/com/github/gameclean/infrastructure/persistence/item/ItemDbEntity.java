@@ -51,6 +51,9 @@ public class ItemDbEntity {
     @Column("anchored")
     private boolean anchored;
 
+    @Column("opens")
+    private String opens;
+
     @Embedded.Nullable
     private LocationDbEntity location;
 }

@@ -99,7 +99,12 @@ public class GameSeedYamlReader {
         Object exitsNode = node.get("exits");
         if (exitsNode != null) {
             for (Map<String, Object> exitNode : asListOfMaps(exitsNode)) {
-                exits.add(new ExitEntry(asString(exitNode.get("name")), asString(exitNode.get("target"))));
+                // The lock and its refusal line stay null when unauthored (an ordinary exit — authored absence).
+                exits.add(new ExitEntry(
+                        asString(exitNode.get("name")),
+                        asString(exitNode.get("target")),
+                        asString(exitNode.get("lock")),
+                        asString(exitNode.get("lockedDescription"))));
             }
         }
         return new SceneEntry(
@@ -121,7 +126,9 @@ public class GameSeedYamlReader {
                 asBoolean(node.get("container")),
                 asOptionalBoolean(node.get("portable")),
                 parseContains(node.get("contains")),
-                spawn);
+                spawn,
+                // The lock handle stays null when unauthored (the item opens nothing — authored absence).
+                asString(node.get("opens")));
     }
 
     /**

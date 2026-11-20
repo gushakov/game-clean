@@ -103,6 +103,24 @@ class ItemTemplateTest {
     }
 
     @Test
+    void rejects_a_blank_opens_handle() {
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> new ItemTemplate(SHORT, FULL, false, false, "  ", rule));
+    }
+
+    @Test
+    void instances_copy_the_opens_handle() {
+        SpawnRule rule = new SpawnRule(new Chance(1, 1), 1, List.of(SceneId.of("scn1")));
+        ItemTemplate key = new ItemTemplate(SHORT, FULL, false, false, "guest-room", rule);
+        ScriptedDice dice = new ScriptedDice().willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        assertThat(key.spawnInto(dice)).singleElement()
+                .satisfies(item -> assertThat(item.getOpens()).isEqualTo("guest-room"));
+        assertThat(new ItemTemplate(SHORT, FULL, false, false, rule).getOpens()).isNull();
+    }
+
+    @Test
     void instances_copy_the_anchored_fact() {
         // The resolved fact arrives from the gate (authored `portable` inverted, kind defaults applied);
         // the template just copies it onto every instance, like the descriptions and the container flag.

@@ -660,7 +660,7 @@ containment fill, death drop):
   reference it via an optional `corpse: <ref>` (absent = leaves no corpse). `scenes.yaml`: the wanderer's
   corpse may hold the silver ring (1/2); `scenes2.yaml`: fishwife → corpse certainly holding a gutting-knife,
   lamplighter → empty corpse, watchman → no corpse.
-- **Gate** — new `InitializeGame` checkpoint 12: every `corpse:` ref must resolve to an authored container
+- **Gate** — new `InitializeGame` checkpoint 12 (13 since #115 inserted the lock checkpoint): every `corpse:` ref must resolve to an authored container
   without a ground-spawn rule → `presentNpcCorpseRefInvalid(Map<npcRef, corpseRef>)`. Runs every boot, which
   is what makes the runtime port valid-by-provenance. (The pre-decided assembly extraction stayed deferred —
   a new authored *rule* is not a new authored *kind*, design-notes §2.)
@@ -737,7 +737,40 @@ command naming **two** targets:
   container-annotated menu ("ring (in the corpse)"), and the unguarded container side of the race (see
   design-notes §5).
 
-Tests: 573 unit (Surefire, DB-free) + 31 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Locked exits` vertical **complete** (issue #115, inn scenario phase 1 of 4) — an exit may carry a lock,
+passed only by a player carrying an item that opens it; NPCs carry nothing and never pass one:
+
+- **Domain** — `Lock` VO (`core/model/scene/`: non-blank opaque `ref` + optional non-blank `description`,
+  equality by value); `Exit` gains a nullable `lock` (+ `hasLock()`; a 2-arg ctor for ordinary exits, `@Builder`
+  on the 3-arg one so MapStruct builds through it); `Scene.exitsWithoutLock()` (declaration order). `Item` /
+  `ItemTemplate` gain a nullable opaque `opens` handle (the `corpseRef` precedent, copied template → instance) and
+  `Item.opens(Lock)` SEFF (null lock = plain NPE). **The lock is derived, never stored state** — no
+  locked/unlocked field, no verb; `Scene` is still write-once. `item` imports `scene`, never the reverse.
+- **`Move`** — after `presentNoSuchExit`, a locked exit reads `findItemsHeldBy(player)` (only then; directly held
+  items only) and refuses with `presentExitLocked(Exit)` (no tx, no write) when nothing opens it — decided before
+  the dangling-target check. A pass presents `presentSceneEntered(scene, items, npcs, Optional<Item> openedWith)`
+  (first matching key; empty through an open exit). Plain tx overload unchanged.
+- **NPCs** — `AnimateNpcs` picks the wander exit among `exitsWithoutLock()` (none = no wander); `Wander`
+  re-validates and treats a locked named exit as the quiet stripe, no write.
+- **Seed / gate** — `ExitEntry.lock`/`lockedDescription`, `ItemEntry.opens` (reader keys `lock:`,
+  `lockedDescription:`, `opens:`). The scene gate builds the `Lock`; a `lockedDescription` without a `lock` is
+  invalid parameters. New inter-template checkpoint 9 (after containment targets, before spawn rolls): every
+  `opens` must name a lock declared on some authored exit → `presentItemOpensUnknownLock(Map<itemRef, lockRef>)`.
+  A lock no item opens is valid (a sealed door).
+- **Persistence** — Flyway `V17__exit_lock.sql` (`exit.lock_ref`, `exit.locked_description`, nullable) + `V18__item_opens.sql`
+  (`item.opens`, nullable), no backfill. `ExitDbEntity` embeds `@Embedded.Nullable LockDbEntity`
+  (`persistence/common/`); `CompositeDbConverter` gains the `Lock` pair, which `SceneDbEntityMapper` now extends —
+  no `expression`. A corrupt stored lock (blank ref) fails reconstitution → wrapped integrity fault.
+- **Terminal** — `TerminalMovePresenter.presentExitLocked` prints the authored description or "The way <exit> is
+  locked."; a pass with a key prints `ItemRenderer.renderWayOpenedWith` ("You open the way with …") before the
+  scene. No new command, affordance or parser change.
+- **Content** — `scenes.yaml`: courtyard `west` → `scn5` The Crooked Lantern (inn common room) → `up` (lock
+  `guest-room`, with refusal line) → `scn6` Guest Room → `down` (open). `itm6` brass key (`opens: guest-room`) —
+  **temporary** certain ground spawn on the inn floor, to be replaced by the keeper's sale in phase 3. `npc2` stout
+  innkeeper, certain spawn in `scn5`, `moveChance: 0/1`, room sayings. A play DB seeded before this change needs
+  its volume reset to gain the new scenes. `scenes2.yaml` untouched.
+
+Tests: 611 unit (Surefire, DB-free) + 32 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **container capacity** (the first

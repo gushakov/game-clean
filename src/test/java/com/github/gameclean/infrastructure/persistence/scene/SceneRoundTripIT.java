@@ -1,10 +1,14 @@
 package com.github.gameclean.infrastructure.persistence.scene;
 
+import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.persistence.PersistenceOperationsError;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
+import com.github.gameclean.infrastructure.persistence.common.LockDbEntity;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
@@ -16,6 +20,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * Persistence round-trip spike for the {@code Scene} aggregate, exercised against the real,
@@ -86,5 +91,49 @@ class SceneRoundTripIT extends AbstractPostgresIT {
         assertThat(reloadedSquare.getMiniGames()).isEmpty();
 
         assertThat(repository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void persistsAndReadsBackExitLocksWithAndWithoutADescriptionAndTheirAbsence() {
+        Exit lockedWithLine = new Exit("up", SceneId.of("scn6"),
+                new Lock("guest-room", "The door at the head of the stair is locked."));
+        Exit lockedSilently = new Exit("down", SceneId.of("scn7"), new Lock("cellar", null));
+        Exit open = new Exit("east", SceneId.of("scn2"));
+        Scene inn = Scene.builder()
+                .id(SceneId.of("scn5"))
+                .name("The Crooked Lantern")
+                .shortDescription("The common room of a cramped inn.")
+                .fullDescription("A fire crackles in a soot-black hearth.")
+                .exits(List.of(lockedWithLine, lockedSilently, open))
+                .build();
+
+        aggregateTemplate.insert(mapper.toDbEntity(inn));
+        Scene reloaded = mapper.toDomain(repository.findById("scn5").orElseThrow());
+
+        // Exit equality is by value, lock included — so each exit read back carries exactly its own lock (or none).
+        assertThat(reloaded.getExits()).containsExactlyInAnyOrder(lockedWithLine, lockedSilently, open);
+        assertThat(reloaded.exitNamed("east").orElseThrow().getLock()).isNull();
+        assertThat(reloaded.exitNamed("down").orElseThrow().getLock().getDescription()).isNull();
+    }
+
+    @Test
+    void aCorruptStoredLockIsAnIntegrityFaultOfTheRead() {
+        // Written around the domain (straight from the DB entity), as a corrupt row would be: a blank lock ref.
+        SceneDbEntity corrupt = mapper.toDbEntity(Scene.builder()
+                .id(SceneId.of("scn5"))
+                .name("The Crooked Lantern")
+                .shortDescription("The common room of a cramped inn.")
+                .fullDescription("A fire crackles in a soot-black hearth.")
+                .exits(List.of(new Exit("up", SceneId.of("scn6"))))
+                .build());
+        LockDbEntity blankLock = new LockDbEntity();
+        blankLock.setRef("   ");
+        corrupt.getExits().iterator().next().setLock(blankLock);
+        aggregateTemplate.insert(corrupt);
+        SpringSceneRepositoryAdapter adapter = new SpringSceneRepositoryAdapter(repository, aggregateTemplate, mapper);
+
+        assertThatExceptionOfType(PersistenceOperationsError.class)
+                .isThrownBy(() -> adapter.findScene(SceneId.of("scn5")))
+                .withCauseInstanceOf(InvalidDomainObjectError.class);
     }
 }

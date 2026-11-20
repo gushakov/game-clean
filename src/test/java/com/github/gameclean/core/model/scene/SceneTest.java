@@ -108,6 +108,24 @@ class SceneTest {
     }
 
     @Test
+    void lists_the_exits_without_a_lock_in_declaration_order() {
+        Scene scene = validScene().exits(List.of(
+                new Exit("east", SceneId.of("scn2")),
+                new Exit("up", SceneId.of("scn3"), new Lock("guest-room", null)),
+                new Exit("north", SceneId.of("scn4")))).build();
+
+        assertThat(scene.exitsWithoutLock()).extracting(Exit::getName).containsExactly("east", "north");
+    }
+
+    @Test
+    void lists_no_exits_without_a_lock_when_every_exit_is_locked() {
+        Scene scene = validScene().exits(List.of(
+                new Exit("up", SceneId.of("scn3"), new Lock("guest-room", null)))).build();
+
+        assertThat(scene.exitsWithoutLock()).isEmpty();
+    }
+
+    @Test
     void reports_no_dangling_exits_when_every_target_resolves() {
         Scene scene = validScene().build(); // single east -> scn2
         assertThat(scene.exitsWithTargetNotIn(Set.of(SceneId.of("scn2")))).isEmpty();

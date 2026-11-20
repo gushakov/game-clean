@@ -120,6 +120,16 @@ public class ItemRenderer {
     }
 
     /**
+     * The carried item that let the player through a locked exit — one line, printed before the entered scene.
+     */
+    public void renderWayOpenedWith(Item key) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(AttributedStyle.DEFAULT.foreground(AttributedStyle.GREEN))
+                .append("You open the way with %s.".formatted(midSentence(key.getShortDescription())));
+        console.write(sb);
+    }
+
+    /**
      * The take lost a concurrent race — the item was there when chosen but another actor took it first, so this
      * take was rejected. The write-side twin of {@link #renderItemNoLongerHere(String)}; reads the same to the
      * player.

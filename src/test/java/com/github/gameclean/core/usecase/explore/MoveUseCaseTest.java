@@ -10,6 +10,7 @@ import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.SubcaseAlreadyPresented;
@@ -50,7 +51,7 @@ import static org.mockito.Mockito.*;
  * persistence-failure case instead lets the action's error propagate, as the real adapter would.
  *
  * <p>The interaction presents <em>once</em> on every path: the subcase presents the two not-found outcomes;
- * the no-such-exit and dangling-target branches present and return; the happy path presents the entered
+ * the no-such-exit, locked and dangling-target branches present and return; the happy path presents the entered
  * scene after commit; any unhandled failure routes to {@code presentError}.
  */
 @ExtendWith(MockitoExtension.class)
@@ -93,8 +94,70 @@ class MoveUseCaseTest {
         assertThat(saved.getValue().getId()).isEqualTo(PlayerId.of("plr1"));
         assertThat(saved.getValue().getCurrentScene()).isEqualTo(SceneId.of("scn2"));
         // ...and the entered scene is presented after the move commits, with the items and NPCs in it.
-        verify(presenter).presentSceneEntered(courtyard, itemsInCourtyard, npcsInCourtyard);
+        verify(presenter).presentSceneEntered(courtyard, itemsInCourtyard, npcsInCourtyard, Optional.empty());
         verifyNoMoreInteractions(presenter);
+    }
+
+    @Test
+    void neverReadsTheKeepingThroughAnOpenExit() {
+        orientedAt("plr1", gateTo("scn2"));
+        when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(scene("scn2", "Courtyard")));
+        runTransaction(txOps);
+
+        useCase.playerMovesThrough("east");
+
+        verify(itemOps, never()).findItemsHeldBy(any());
+        verify(presenter).presentSceneEntered(any(Scene.class), anyList(), anyList(), eq(Optional.empty()));
+    }
+
+    @Test
+    void refusesALockedExitWhenThePlayerCarriesNothingThatOpensIt() {
+        Scene inn = innWithLockedStairTo("scn6");
+        orientedAt("plr1", inn);
+        when(itemOps.findItemsHeldBy(PlayerId.of("plr1")))
+                .thenReturn(List.of(held("itm1", "A rusty dagger.", null), held("itm7", "An iron key.", "cellar")));
+
+        useCase.playerMovesThrough("up");
+
+        verify(presenter).presentExitLocked(inn.exitNamed("up").orElseThrow());
+        verifyNoMoreInteractions(presenter);
+        verify(playerRepositoryOps, never()).savePlayer(any());
+        verifyNoInteractions(txOps);
+    }
+
+    @Test
+    void passesALockedExitWithTheKeyAndPresentsTheKeyWithTheEnteredScene() {
+        Scene guestRoom = scene("scn6", "Guest Room");
+        Item key = held("itm6", "A small brass key.", "guest-room");
+        orientedAt("plr1", innWithLockedStairTo("scn6"));
+        when(itemOps.findItemsHeldBy(PlayerId.of("plr1")))
+                .thenReturn(List.of(held("itm1", "A rusty dagger.", null), key));
+        when(sceneOps.findScene(SceneId.of("scn6"))).thenReturn(Optional.of(guestRoom));
+        when(itemOps.findItemsInScene(SceneId.of("scn6"))).thenReturn(List.of());
+        when(npcOps.findNpcsInScene(SceneId.of("scn6"))).thenReturn(List.of());
+        runTransaction(txOps);
+
+        useCase.playerMovesThrough("up");
+
+        ArgumentCaptor<Player> saved = ArgumentCaptor.forClass(Player.class);
+        verify(playerRepositoryOps).savePlayer(saved.capture());
+        assertThat(saved.getValue().getCurrentScene()).isEqualTo(SceneId.of("scn6"));
+        verify(presenter).presentSceneEntered(guestRoom, List.of(), List.of(), Optional.of(key));
+        verifyNoMoreInteractions(presenter);
+    }
+
+    @Test
+    void decidesTheLockBeforeResolvingADanglingTarget() {
+        Scene inn = innWithLockedStairTo("scn9");
+        orientedAt("plr1", inn);
+        when(itemOps.findItemsHeldBy(PlayerId.of("plr1"))).thenReturn(List.of());
+
+        useCase.playerMovesThrough("up");
+
+        verify(presenter).presentExitLocked(inn.exitNamed("up").orElseThrow());
+        verify(presenter, never()).presentTargetSceneNotFound(any());
+        verify(sceneOps, never()).findScene(any());
+        verifyNoWriteOrScene();
     }
 
     @Test
@@ -106,7 +169,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("EAST");
 
         verify(playerRepositoryOps).savePlayer(any(Player.class));
-        verify(presenter).presentSceneEntered(any(Scene.class), anyList(), anyList());
+        verify(presenter).presentSceneEntered(any(Scene.class), anyList(), anyList(), any());
     }
 
     @Test
@@ -149,7 +212,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentSceneEntered(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any(), any());
         verifyNoWriteOrScene();
     }
 
@@ -164,7 +227,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(boom);
-        verify(presenter, never()).presentSceneEntered(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any(), any());
     }
 
     @Test
@@ -181,7 +244,7 @@ class MoveUseCaseTest {
         useCase.playerMovesThrough("east");
 
         verify(presenter).presentError(lost);
-        verify(presenter, never()).presentSceneEntered(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any(), any());
     }
 
     // --- fixtures -----------------------------------------------------------------------------------
@@ -209,6 +272,28 @@ class MoveUseCaseTest {
                 .build();
     }
 
+    /** The player's current scene (scn5), with a single "up" exit barred by the "guest-room" lock. */
+    private static Scene innWithLockedStairTo(String targetId) {
+        return Scene.builder()
+                .id(SceneId.of("scn5"))
+                .name("The Crooked Lantern")
+                .shortDescription("The common room of a cramped inn.")
+                .fullDescription("A fire crackles in a soot-black hearth.")
+                .exits(List.of(new Exit("up", SceneId.of(targetId),
+                        new Lock("guest-room", "The door at the head of the stair is locked."))))
+                .build();
+    }
+
+    private static Item held(String id, String shortDescription, String opens) {
+        return Item.builder()
+                .id(ItemId.of(id))
+                .location(new Location.HeldBy(PlayerId.of("plr1")))
+                .shortDescription(shortDescription)
+                .fullDescription("A longer description of the item.")
+                .opens(opens)
+                .build();
+    }
+
     private static Scene scene(String id, String name) {
         return Scene.builder()
                 .id(SceneId.of(id))
@@ -221,7 +306,7 @@ class MoveUseCaseTest {
 
     private void verifyNoWriteOrScene() {
         verify(playerRepositoryOps, never()).savePlayer(any());
-        verify(presenter, never()).presentSceneEntered(any(), any(), any());
+        verify(presenter, never()).presentSceneEntered(any(), any(), any(), any());
         verify(txOps, never()).doInTransaction(anyBoolean(), any());
     }
 
