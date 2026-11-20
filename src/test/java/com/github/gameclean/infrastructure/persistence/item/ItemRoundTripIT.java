@@ -216,6 +216,27 @@ class ItemRoundTripIT extends AbstractPostgresIT {
                 .containsExactlyInAnyOrder(tuple("itm6", "guest-room"), tuple("itm1", null));
     }
 
+    @Test
+    void the_currency_flag_round_trips_and_its_absence_reads_back_as_false() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        Item coin = Item.builder()
+                .id(ItemId.of("itm3"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("A copper coin.")
+                .fullDescription("A single dull copper coin, one face worn smooth.")
+                .currency(true)
+                .build();
+
+        adapter.saveItem(coin);
+        adapter.saveItem(groundItem("itm1", "A rusty dagger."));
+
+        // The V19 column carries the fact both ways: money reads back as money, an ordinary item as not money.
+        // Nothing spends a coin yet — the column is here so the phase that counts them has something to count.
+        assertThat(adapter.findItemsInScene(HERE))
+                .extracting(item -> item.getId().asString(), Item::isCurrency)
+                .containsExactlyInAnyOrder(tuple("itm3", true), tuple("itm1", false));
+    }
+
     private static Item groundItem(String id, String shortDescription) {
         return Item.builder()
                 .id(ItemId.of(id))

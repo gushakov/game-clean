@@ -51,4 +51,13 @@ public class NpcEntry {
      * {@code corpse}). Whether each line is non-blank is the template's gate.
      */
     List<String> sayings;
+
+    /**
+     * What this NPC offers for sale (#117), in authored order — each an {@link OfferEntry} carrier; empty when
+     * unauthored (the NPC sells nothing — authored absence, like an absent {@code sayings} list). The shape of
+     * one entry (a blank handle or name, a price below one coin, a missing {@code item}) and the uniqueness of
+     * handles within this NPC are the template's gate; that each {@link OfferEntry#getItem()} resolves to a
+     * sellable item is the use case's inter-template rule, exactly like a {@code corpse} ref.
+     */
+    List<OfferEntry> offers;
 }

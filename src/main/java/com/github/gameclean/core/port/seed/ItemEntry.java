@@ -27,6 +27,12 @@ import java.util.List;
  * authored-false from unauthored. That {@code contains} requires {@code container: true} is a gate rule,
  * not a parse-time concern.
  *
+ * <p>{@code currency} is the authored money flag — an unauthored key is {@code false}, an item is ordinary
+ * property unless the seed says otherwise (the polarity is positive and defaulted, unlike {@code portable}'s
+ * kind-sensitive default). That a currency item is neither a container nor anchored is a gate rule, not a
+ * parse-time concern. It sits last in the carrier, after the optional {@code opens}: a positional carrier keeps
+ * same-typed parameters apart, so a mis-ordered argument stays a compile error.
+ *
  * <p>Lombok {@code @Value} (not a Java record), matching the shape used across the codebase.
  */
 @Value
@@ -40,4 +46,7 @@ public class ItemEntry {
     List<ContainsEntry> contains;
     SpawnEntry spawn;
     String opens;
+
+    /** Whether the item is money — one instance counts as one coin toward a price. Unauthored means false. */
+    boolean currency;
 }

@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
+import com.github.gameclean.core.model.npc.Offer;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
@@ -91,6 +92,33 @@ class NpcRoundTripIT extends AbstractPostgresIT {
                     assertThat(npc.getSayings()).isEmpty();
                     assertThat(npc.hasSayings()).isFalse();
                 });
+    }
+
+    @Test
+    void saveNpc_rewrites_the_offer_rows_with_the_aggregate_and_tolerates_an_npc_that_sells_nothing() {
+        SpringNpcRepositoryAdapter adapter = new SpringNpcRepositoryAdapter(repository, mapper);
+        List<Offer> wares = List.of(
+                new Offer("room", "A room for the night.", 2, "itm6"),
+                new Offer("stew", "A bowl of yesterday's stew.", 1, "itm1"));
+        adapter.saveNpc(npc("npc1", HERE).withOffers(wares));
+
+        // The V20 child rows come back in authored order (the list key column), every element whole — including
+        // the price, which nothing spends yet, and the item handle, which stays an opaque authored handle.
+        assertThat(adapter.findNpcsInScene(HERE)).singleElement()
+                .satisfies(npc -> assertThat(npc.getOffers()).containsExactlyElementsOf(wares));
+
+        Npc loaded = adapter.findNpcsInScene(HERE).getFirst();   // carries the post-insert version
+
+        // An update of the aggregate (a wander) rewrites the owned children — the wares survive, once each.
+        adapter.saveNpc(loaded.moveTo(SceneId.of("scn2")));
+        assertThat(adapter.findNpcsInScene(SceneId.of("scn2")).getFirst().getOffers())
+                .containsExactlyElementsOf(wares);
+
+        // An NPC with no offers (authored absence) round-trips to the empty list, not null.
+        adapter.saveNpc(npc("npc2", HERE));
+        assertThat(adapter.findNpcsInScene(HERE))
+                .singleElement()
+                .satisfies(npc -> assertThat(npc.getOffers()).isEmpty());
     }
 
     @Test

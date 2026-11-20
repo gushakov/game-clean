@@ -82,6 +82,13 @@ public class LoggingInitializeGamePresenter implements InitializeGamePresenterOu
     }
 
     @Override
+    public void presentNpcOfferItemInvalid(Map<String, List<String>> invalidOfferItemsByNpc) {
+        invalidOfferItemsByNpc.forEach((npcId, itemRefs) -> log.warn(
+                "[InitializeGame] Npc {} declares offer(s) for invalid item ref(s) {} (unresolved, a container, or anchored — ware must be a carryable single item)",
+                npcId, itemRefs));
+    }
+
+    @Override
     public void presentInvalidParametersError(Exception e) {
         log.warn("[InitializeGame] Authored input rejected by the validity gate: {}", e.getMessage());
     }

@@ -11,6 +11,7 @@ import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.ItemTemplate;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcTemplate;
+import com.github.gameclean.core.model.npc.Offer;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
@@ -32,6 +33,7 @@ import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ItemEntry;
 import com.github.gameclean.core.port.seed.NpcEntry;
+import com.github.gameclean.core.port.seed.OfferEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
@@ -159,7 +161,9 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             // template validates its descriptions, its spawn rule when present (valid chance, non-negative
             // tries, at least one candidate scene — an absent rule is authored absence: a contained-only item
             // never spawns onto the ground), and its containment odds up front, independent of how the spawn
-            // and fill later roll. Declaring contains without the container capability is rejected here.
+            // and fill later roll. Declaring contains without the container capability is rejected here, as is
+            // declaring a currency item that is a container or anchored (money holds nothing and is bolted to
+            // nothing).
             List<AuthoredItem> authoredItems;
             try {
                 authoredItems = buildAuthoredItems(seed.getItems());
@@ -202,8 +206,8 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             List<Item> spawnedItems = spawnItems(authoredItems);
 
             // Checkpoint 11 — construct the NPC templates from the authored NPCs (validity gate). Each template
-            // validates its descriptions, its spawn rule, and its move chance up front, independent of how the
-            // spawn later rolls — the item phase's up-front-gate discipline, applied to NPCs.
+            // validates its descriptions, its spawn rule, its move chance and the shape of its offers up front,
+            // independent of how the spawn later rolls — the item phase's up-front-gate discipline, applied to NPCs.
             List<AuthoredNpc> authoredNpcs;
             try {
                 authoredNpcs = buildAuthoredNpcs(seed.getNpcs());
@@ -232,11 +236,24 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 14 — roll and place the NPC instances, outside the transaction (a pure in-memory
+            // Checkpoint 14 — inter-template rule: every authored offer's item ref resolves to an authored item
+            // that is not a container and is portable (ware changes hands on purchase, so it must be carryable,
+            // and it is one thing, not a bundle of contents riding along). Resolved against the authored item set
+            // in memory and reported as a meaningful domain outcome, like the containment-target and corpse-ref
+            // checks — and, like them, before any spawn roll, so an NPC that cannot sell what it advertises is
+            // never minted. This gate runs on every boot, which is what lets a later buying use case read an
+            // offer's item ref as valid-by-provenance.
+            Map<String, List<String>> invalidOfferItems = findInvalidOfferItemRefs(authoredNpcs, authoredItems);
+            if (!invalidOfferItems.isEmpty()) {
+                presenter.presentNpcOfferItemInvalid(invalidOfferItems);
+                return;
+            }
+
+            // Checkpoint 15 — roll and place the NPC instances, outside the transaction (a pure in-memory
             // construction with no persistence side effect, like item spawning).
             List<Npc> spawnedNpcs = spawnNpcs(authoredNpcs);
 
-            // Checkpoint 15 — one outcome, one atomic unit. A single transaction seeds the world if it is
+            // Checkpoint 16 — one outcome, one atomic unit. A single transaction seeds the world if it is
             // still empty, creates the player if none exists yet, spawns items if none were spawned yet, spawns
             // NPCs if none were spawned yet, creates the world clock at time zero if none exists yet, and seeds
             // the day-phase log at its sentinel if none exists yet; holding all these read-then-write guards in
@@ -360,8 +377,15 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             // along by reference, is an explicit authored fact, never an accident). The model stores the
             // resolved inverse (`anchored`, false = carryable, the safe builder default).
             boolean anchored = entry.getPortable() != null ? !entry.getPortable() : entry.isContainer();
-            ItemTemplate template = new ItemTemplate(entry.getShortDescription(), entry.getFullDescription(),
-                    entry.isContainer(), anchored, entry.getOpens(), rule);
+            ItemTemplate template = ItemTemplate.builder()
+                    .shortDescription(entry.getShortDescription())
+                    .fullDescription(entry.getFullDescription())
+                    .container(entry.isContainer())
+                    .anchored(anchored)
+                    .currency(entry.isCurrency())
+                    .opens(entry.getOpens())
+                    .spawnRule(rule)
+                    .build();
             authored.add(new AuthoredItem(entry.getId(), template, buildContainments(entry)));
         }
         return authored;
@@ -487,10 +511,30 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             Chance attackChance =
                     new Chance(entry.getAttackChanceNumerator(), entry.getAttackChanceDenominator());
             NpcTemplate template = new NpcTemplate(entry.getShortDescription(), entry.getFullDescription(),
-                    rule, moveChance, attackChance, entry.getHitPoints(), entry.getCorpse(), entry.getSayings());
+                    rule, moveChance, attackChance, entry.getHitPoints(), entry.getCorpse(), entry.getSayings(),
+                    buildOffers(entry.getOffers()));
             authored.add(new AuthoredNpc(entry.getId(), template));
         }
         return authored;
+    }
+
+    /**
+     * Constructs one authored NPC's offers at the validity gate: each {@code offers} entry becomes an
+     * {@link Offer}, whose own gate rejects a blank handle, a blank name, a price below one coin and a missing
+     * item handle — up front, independent of how the spawn later rolls, the template discipline applied to wares.
+     * An absent {@code offers} key is authored absence, not invalid input: an NPC that sells nothing is an ordinary
+     * NPC. Whether each item ref <em>resolves</em> to a sellable item is the inter-template checkpoint's business,
+     * as is the uniqueness of handles within the NPC (which the {@link NpcTemplate} gate also holds).
+     */
+    private static List<Offer> buildOffers(List<OfferEntry> entries) {
+        if (entries == null) {
+            return List.of();
+        }
+        List<Offer> offers = new ArrayList<>(entries.size());
+        for (OfferEntry entry : entries) {
+            offers.add(new Offer(entry.getId(), entry.getName(), entry.getPrice(), entry.getItem()));
+        }
+        return offers;
     }
 
     /**
@@ -510,6 +554,37 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             AuthoredItem target = byAuthoredId.get(ref);
             if (target == null || !target.isContainer() || target.spawnsOnGround()) {
                 invalid.put(npc.getAuthoredId(), ref);
+            }
+        }
+        return invalid;
+    }
+
+    /**
+     * The inter-template offer-item rule: an offer's {@code item} handle must resolve to an authored item that is
+     * <em>neither</em> a container <em>nor</em> anchored — ware is handed over on purchase, so it has to be
+     * carryable, and it is one thing rather than a bundle whose contents would ride along uncounted. Keyed by the
+     * NPC's authoring id, mapped to its offending item refs: an NPC may carry several offers, so a list per NPC
+     * (the containment-target shape, not the corpse check's one-ref-per-NPC flat map). An NPC with no offers
+     * contributes nothing.
+     *
+     * <p>Note what stays <em>valid</em> on purpose: a delivered item that also has a ground-spawn rule of its own
+     * (the key lies on the inn floor and is still for sale); a world whose offers no currency item can pay for
+     * (currency is authored separately, and counting coins is a later phase); a currency item no offer prices.
+     */
+    private static Map<String, List<String>> findInvalidOfferItemRefs(List<AuthoredNpc> authoredNpcs,
+                                                                       List<AuthoredItem> authoredItems) {
+        Map<String, AuthoredItem> byAuthoredId = mapByAuthoredId(authoredItems);
+        Map<String, List<String>> invalid = new LinkedHashMap<>();
+        for (AuthoredNpc npc : authoredNpcs) {
+            List<String> offending = new ArrayList<>();
+            for (Offer offer : npc.offers()) {
+                AuthoredItem target = byAuthoredId.get(offer.getItemRef());
+                if (target == null || target.isContainer() || target.isAnchored()) {
+                    offending.add(offer.getItemRef());
+                }
+            }
+            if (!offending.isEmpty()) {
+                invalid.put(npc.getAuthoredId(), offending);
             }
         }
         return invalid;
@@ -556,6 +631,11 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
 
         boolean isContainer() {
             return template.isContainer();
+        }
+
+        /** Whether an instance is fixed where it stands — the stored inverse of the authored {@code portable}. */
+        boolean isAnchored() {
+            return template.isAnchored();
         }
 
         boolean spawnsOnGround() {
@@ -612,6 +692,10 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
 
         String corpseRef() {
             return template.getCorpseRef();
+        }
+
+        List<Offer> offers() {
+            return template.getOffers();
         }
 
         List<SceneId> candidateScenesNotIn(Set<SceneId> knownSceneIds) {

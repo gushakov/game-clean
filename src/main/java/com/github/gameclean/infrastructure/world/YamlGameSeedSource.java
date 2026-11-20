@@ -54,9 +54,10 @@ import java.util.Optional;
  * ref, a ref to a non-container or a ground-spawning template, a construction-gate rejection — signals drift
  * between the persisted world and an edited seed, an integrity fault raised as
  * {@link CorpseBlueprintSourceOperationsError}, never a presented outcome. The blueprint's templates carry
- * <b>no ground-spawn rule</b> (a blueprint is a minting recipe for one death); the corpse's {@code anchored}
- * fact resolves by the same kind-sensitive polarity the gate applies (a container is anchored unless authored
- * {@code portable: true}).
+ * <b>no ground-spawn rule</b> (a blueprint is a minting recipe for one death) but <b>every instance-copied
+ * fact</b> the entry holds — the {@code opens} handle and the {@code currency} flag included, since the minted
+ * instance takes them from the template; the corpse's {@code anchored} fact resolves by the same kind-sensitive
+ * polarity the gate applies (a container is anchored unless authored {@code portable: true}).
  *
  * <p><b>One parse per run (#95).</b> The seed is parsed once and memoized — lazily, in a {@code volatile}
  * field shared by both ports — so the death-time blueprint is assembled from the very parse the boot gate
@@ -172,10 +173,21 @@ public class YamlGameSeedSource
      * (a plain item is portable, a container anchored, unless {@code portable:} says otherwise), and no
      * ground-spawn rule — a blueprint is a minting recipe for one death, so a loot entry's own authored
      * {@code spawn:} (it may also spawn on the ground elsewhere) is deliberately dropped here.
+     *
+     * <p>Every <em>instance-copied</em> fact the entry carries rides onto the template, because the minted instance
+     * copies them from it: the {@code opens} handle (a key minted as corpse loot that opened nothing was the phase
+     * 1 gap this closes) and the {@code currency} flag (a coin minted as loot is still money). The blueprint
+     * drops the spawn rule, never an instance fact.
      */
     private static ItemTemplate toTemplate(ItemEntry entry) {
         boolean anchored = entry.getPortable() != null ? !entry.getPortable() : entry.isContainer();
-        return new ItemTemplate(entry.getShortDescription(), entry.getFullDescription(),
-                entry.isContainer(), anchored, null);
+        return ItemTemplate.builder()
+                .shortDescription(entry.getShortDescription())
+                .fullDescription(entry.getFullDescription())
+                .container(entry.isContainer())
+                .anchored(anchored)
+                .currency(entry.isCurrency())
+                .opens(entry.getOpens())
+                .build();
     }
 }

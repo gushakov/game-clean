@@ -4,6 +4,7 @@ import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import com.github.gameclean.infrastructure.persistence.clock.GameClockSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.daytime.DayPhaseLogSpringDataRepository;
+import com.github.gameclean.infrastructure.persistence.item.ItemDbEntity;
 import com.github.gameclean.infrastructure.persistence.item.ItemSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.npc.NpcDbEntity;
 import com.github.gameclean.infrastructure.persistence.npc.NpcSpringDataRepository;
@@ -100,6 +101,26 @@ class InitializeGameIT extends AbstractPostgresIT {
         assertThat(itemRepository.findAll()).filteredOn(item -> "guest-room".equals(item.getOpens()))
                 .singleElement()
                 .satisfies(key -> assertThat(key.getLocation().getRef()).isEqualTo("scn5"));
+        // ... the innkeeper stands behind her counter with the room on offer for two coins (the V20 child rows,
+        // in authored order) while the wanderer sells nothing, and the copper coin is the only money the
+        // world authors: the boot gate accepted both the currency invariant and the offered ware (#117).
+        assertThat(npcRepository.findAll()).filteredOn(npc -> "scn5".equals(npc.getCurrentSceneId()))
+                .singleElement()
+                .satisfies(keeper -> assertThat(keeper.getOffers()).singleElement().satisfies(offer -> {
+                    assertThat(offer.getRef()).isEqualTo("room");
+                    assertThat(offer.getName()).isEqualTo("A room for the night.");
+                    assertThat(offer.getPrice()).isEqualTo(2);
+                    assertThat(offer.getItemRef()).isEqualTo("itm6");
+                }));
+        assertThat(npcRepository.findAll()).filteredOn(npc -> "scn1".equals(npc.getCurrentSceneId()))
+                .singleElement()
+                .satisfies(wanderer -> assertThat(wanderer.getOffers()).isEmpty());
+        assertThat(itemRepository.findAll())
+                .filteredOn(item -> "A copper coin.".equals(item.getShortDescription()))
+                .allSatisfy(coin -> assertThat(coin.isCurrency()).isTrue());
+        assertThat(itemRepository.findAll())
+                .filteredOn(item -> !"A copper coin.".equals(item.getShortDescription()))
+                .noneMatch(ItemDbEntity::isCurrency);
 
         // ... a second run finds world, player, items and NPCs already present and writes no duplicate rows —
         // notably the spawns are not re-rolled, so the item and NPC counts are unchanged.
