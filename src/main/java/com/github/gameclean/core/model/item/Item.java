@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.designation.Designatable;
 import com.github.gameclean.core.model.player.PlayerId;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.SceneId;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -47,6 +48,11 @@ import java.util.Objects;
  * anchored unless authored {@code portable: true} (a transportable container, contents riding along by
  * reference, is an explicit authored fact, never an accident); the seed gate translates.
  *
+ * <p>An item may <b>open a lock</b> — the nullable {@link #opens} handle names the {@link Lock} it opens
+ * ({@code null} when it opens nothing). Like {@code Npc.corpseRef}, the handle is an opaque authored
+ * {@code String}, non-blank when present, copied from the template onto every instance; the item answers
+ * {@link #opens(Lock)} and the moving use case decides what that means for the exit.
+ *
  * <p>It also carries an opaque optimistic-locking {@link #version} — set by persistence on read, checked by
  * persistence on write — so two actors racing to take the same ground item cannot both succeed (the loser's
  * stale write is rejected). Like {@code DayPhaseLog}, the version is carried on the model but never interpreted
@@ -71,18 +77,26 @@ public class Item implements Designatable {
     /** Anchored: fixed where it stands — {@code take} refuses to carry it (a presented outcome). */
     boolean anchored;
 
+    /** Authored handle of the lock this item opens — {@code null} when it opens nothing. */
+    String opens;
+
     /** Optimistic-locking token — opaque to the domain, managed by persistence, not part of value equality. */
     long version;
 
     @Builder
     public Item(ItemId id, Location location, String shortDescription, String fullDescription,
-                boolean container, boolean anchored, long version) {
+                boolean container, boolean anchored, String opens, long version) {
         this.id = DomainValidation.requireNonNull(id, "item id must not be null");
         this.location = DomainValidation.requireNonNull(location, "item location must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
         this.fullDescription = requireNonBlank(fullDescription, "item full description");
         this.container = container;
         this.anchored = anchored;
+        // Authored absence is a valid state (the item opens nothing); a present handle must carry content.
+        if (opens != null && opens.strip().isEmpty()) {
+            throw new InvalidDomainObjectError("item opens handle must not be blank when present");
+        }
+        this.opens = opens;
         if (version < 0) {
             throw new InvalidDomainObjectError("item version must not be negative, got " + version);
         }
@@ -123,6 +137,22 @@ public class Item implements Designatable {
     @Override
     public boolean hasIdToken(String idToken) {
         return id.asString().equals(Objects.requireNonNull(idToken, "id token must not be null"));
+    }
+
+    /**
+     * Whether this item opens the given lock — {@code true} exactly when this item's {@link #opens} handle equals
+     * the lock's {@code ref}; an item that opens nothing opens no lock. A side-effect-free query over authored
+     * state: the item answers, the moving use case decides.
+     *
+     * <p>A null lock is a <em>caller programming error</em> (the use case asks only about an exit's actual lock),
+     * so it stays a plain {@link NullPointerException} per the behaviour-method guard convention.
+     *
+     * @param lock the lock asked about (must not be null)
+     * @return whether carrying this item lets its carrier through that lock
+     */
+    public boolean opens(Lock lock) {
+        Objects.requireNonNull(lock, "lock must not be null");
+        return opens != null && opens.equals(lock.getRef());
     }
 
     /**

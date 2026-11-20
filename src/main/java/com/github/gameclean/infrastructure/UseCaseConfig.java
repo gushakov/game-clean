@@ -153,6 +153,7 @@ public class UseCaseConfig {
     public MoveInputPort moveUseCase(
             OrientRenderer orientRenderer,
             CurrentSceneRenderer sceneRenderer,
+            ItemRenderer itemRenderer,
             Console console,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
@@ -160,7 +161,8 @@ public class UseCaseConfig {
             ItemRepositoryOperationsOutputPort itemOps,
             NpcRepositoryOperationsOutputPort npcOps,
             TransactionOperationsOutputPort txOps) {
-        TerminalMovePresenter presenter = new TerminalMovePresenter(orientRenderer, sceneRenderer, console);
+        TerminalMovePresenter presenter =
+                new TerminalMovePresenter(orientRenderer, sceneRenderer, itemRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         return new MoveUseCase(presenter, playerRepositoryOps, sceneOps, itemOps, npcOps, txOps, orient);
     }

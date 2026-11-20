@@ -3,12 +3,14 @@ package com.github.gameclean.infrastructure.terminal.presenter;
 import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.player.PlayerId;
+import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.usecase.explore.MovePresenterOutputPort;
 import com.github.gameclean.core.usecase.orient.OrientPlayerPresenterOutputPort;
 import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
+import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,7 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Secondary (driven) adapter rendering the {@code Move} use case's outcomes to the shared JLine console —
@@ -23,8 +26,9 @@ import java.util.List;
  * interaction's artifacts drive: the {@link OrientPlayerPresenterOutputPort orient subcase's} not-founds
  * delegate to the shared {@link OrientRenderer}, the entered scene on success to the shared
  * {@link CurrentSceneRenderer} (the same rendering {@code look} uses, shared by composition, not by port);
- * the two outcomes peculiar to moving — no such exit, a dangling target — are rendered here through the
- * {@link Console}.
+ * the outcomes peculiar to moving — no such exit, a locked exit, a dangling target — are rendered here through
+ * the {@link Console}. A pass through a locked exit prints one line naming the key (via the shared
+ * {@link ItemRenderer}) before the entered scene.
  */
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 @RequiredArgsConstructor
@@ -33,10 +37,13 @@ public class TerminalMovePresenter implements OrientPlayerPresenterOutputPort, M
 
     OrientRenderer orientRenderer;
     CurrentSceneRenderer sceneRenderer;
+    ItemRenderer itemRenderer;
     Console console;
 
     @Override
-    public void presentSceneEntered(Scene scene, List<Item> itemsOnGround, List<Npc> npcsPresent) {
+    public void presentSceneEntered(Scene scene, List<Item> itemsOnGround, List<Npc> npcsPresent,
+                                    Optional<Item> openedWith) {
+        openedWith.ifPresent(itemRenderer::renderWayOpenedWith);
         sceneRenderer.renderScene(scene, itemsOnGround, npcsPresent);
     }
 
@@ -53,6 +60,12 @@ public class TerminalMovePresenter implements OrientPlayerPresenterOutputPort, M
     @Override
     public void presentNoSuchExit(String exitName) {
         console.printError("There is no exit '%s' from here.".formatted(exitName));
+    }
+
+    @Override
+    public void presentExitLocked(Exit exit) {
+        String authored = exit.getLock().getDescription();
+        console.printError(authored != null ? authored : "The way %s is locked.".formatted(exit.getName()));
     }
 
     @Override

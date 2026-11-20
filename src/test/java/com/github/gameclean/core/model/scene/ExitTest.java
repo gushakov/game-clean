@@ -37,9 +37,25 @@ class ExitTest {
     }
 
     @Test
+    void an_ordinary_exit_carries_no_lock() {
+        Exit exit = new Exit("east", TARGET);
+        assertThat(exit.getLock()).isNull();
+        assertThat(exit.hasLock()).isFalse();
+    }
+
+    @Test
+    void carries_its_lock() {
+        Lock lock = new Lock("guest-room", null);
+        Exit exit = new Exit("up", TARGET, lock);
+        assertThat(exit.getLock()).isEqualTo(lock);
+        assertThat(exit.hasLock()).isTrue();
+    }
+
+    @Test
     void equals_by_value() {
         assertThat(new Exit("east", TARGET)).isEqualTo(new Exit("east", TARGET));
         assertThat(new Exit("east", TARGET)).isNotEqualTo(new Exit("west", TARGET));
         assertThat(new Exit("east", TARGET)).isNotEqualTo(new Exit("east", SceneId.of("scn9")));
+        assertThat(new Exit("east", TARGET)).isNotEqualTo(new Exit("east", TARGET, new Lock("guest-room", null)));
     }
 }

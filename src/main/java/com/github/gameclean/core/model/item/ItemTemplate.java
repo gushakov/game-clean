@@ -17,7 +17,7 @@ import java.util.Set;
 /**
  * An authored kind of item together with the rule by which it populates the world — the always-valid form
  * of one {@code items:} entry in the seed. Holds the short and full descriptions every spawned instance
- * carries, the {@code container} capability the instances inherit, and the {@link SpawnRule} governing how
+ * carries, the {@code container} capability and {@code opens} lock handle the instances inherit, and the {@link SpawnRule} governing how
  * many instances appear on the ground and where. Immutable, equality by value.
  *
  * <p>The spawn rule is <em>optional</em> (authored absence, not invalid input): a contained-only item — one
@@ -44,15 +44,28 @@ public class ItemTemplate {
     /** Whether instances are fixed where they stand — refused by {@code take} (copied onto every instance). */
     boolean anchored;
 
+    /** Authored handle of the lock instances open — {@code null} when they open nothing (copied onto every instance). */
+    String opens;
+
     /** The ground-spawn rule, or {@code null} for a contained-only item that never spawns onto the ground. */
     SpawnRule spawnRule;
 
+    /** A template whose instances open no lock. */
     public ItemTemplate(String shortDescription, String fullDescription, boolean container, boolean anchored,
                         SpawnRule spawnRule) {
+        this(shortDescription, fullDescription, container, anchored, null, spawnRule);
+    }
+
+    public ItemTemplate(String shortDescription, String fullDescription, boolean container, boolean anchored,
+                        String opens, SpawnRule spawnRule) {
         this.shortDescription = requireNonBlank(shortDescription, "item short description");
         this.fullDescription = requireNonBlank(fullDescription, "item full description");
         this.container = container;
         this.anchored = anchored;
+        if (opens != null && opens.strip().isEmpty()) {
+            throw new InvalidDomainObjectError("item opens handle must not be blank when present");
+        }
+        this.opens = opens;
         this.spawnRule = spawnRule;
     }
 
@@ -81,6 +94,7 @@ public class ItemTemplate {
                 .fullDescription(fullDescription)
                 .container(container)
                 .anchored(anchored)
+                .opens(opens)
                 .build();
     }
 

@@ -14,6 +14,7 @@ import com.github.gameclean.core.model.npc.NpcTemplate;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -26,6 +27,7 @@ import com.github.gameclean.core.port.persistence.PlayerRepositoryOperationsOutp
 import com.github.gameclean.core.port.persistence.SceneRepositoryOperationsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ContainsEntry;
+import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ItemEntry;
@@ -185,12 +187,21 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 9 — roll and place the item instances, then fill each spawned container instance
+            // Checkpoint 9 — inter-template rule: every item's opens handle names a lock declared on some
+            // authored exit (a key to no door is an authoring mistake). A lock that no item opens is valid — a
+            // sealed door. Resolved in memory against the world being built, before any spawn roll.
+            Map<String, String> unknownLocks = findItemsOpeningUnknownLocks(authoredItems, scenes);
+            if (!unknownLocks.isEmpty()) {
+                presenter.presentItemOpensUnknownLock(unknownLocks);
+                return;
+            }
+
+            // Checkpoint 10 — roll and place the item instances, then fill each spawned container instance
             // from its authored containment. Non-deterministic, but a pure in-memory construction with no
             // persistence side effect, so it runs outside the transaction.
             List<Item> spawnedItems = spawnItems(authoredItems);
 
-            // Checkpoint 10 — construct the NPC templates from the authored NPCs (validity gate). Each template
+            // Checkpoint 11 — construct the NPC templates from the authored NPCs (validity gate). Each template
             // validates its descriptions, its spawn rule, and its move chance up front, independent of how the
             // spawn later rolls — the item phase's up-front-gate discipline, applied to NPCs.
             List<AuthoredNpc> authoredNpcs;
@@ -201,7 +212,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 11 — inter-aggregate rule: every NPC's candidate spawn scenes resolve to an authored
+            // Checkpoint 12 — inter-aggregate rule: every NPC's candidate spawn scenes resolve to an authored
             // scene. Resolved in-memory against the world being built, like the exit and item-spawn checks.
             Map<String, List<SceneId>> unknownNpcSpawnScenes = findUnknownNpcSpawnScenes(authoredNpcs, scenes);
             if (!unknownNpcSpawnScenes.isEmpty()) {
@@ -209,7 +220,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 12 — inter-template rule: every authored corpse ref resolves to an authored item
+            // Checkpoint 13 — inter-template rule: every authored corpse ref resolves to an authored item
             // that is a container (a corpse holds its loot) and has no ground-spawn rule (the death drop is a
             // corpse's only placement route — a spawn rule would also lay corpses out at init). Resolved
             // against the authored item set in memory and reported as a meaningful domain outcome, like the
@@ -221,11 +232,11 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                 return;
             }
 
-            // Checkpoint 13 — roll and place the NPC instances, outside the transaction (a pure in-memory
+            // Checkpoint 14 — roll and place the NPC instances, outside the transaction (a pure in-memory
             // construction with no persistence side effect, like item spawning).
             List<Npc> spawnedNpcs = spawnNpcs(authoredNpcs);
 
-            // Checkpoint 14 — one outcome, one atomic unit. A single transaction seeds the world if it is
+            // Checkpoint 15 — one outcome, one atomic unit. A single transaction seeds the world if it is
             // still empty, creates the player if none exists yet, spawns items if none were spawned yet, spawns
             // NPCs if none were spawned yet, creates the world clock at time zero if none exists yet, and seeds
             // the day-phase log at its sentinel if none exists yet; holding all these read-then-write guards in
@@ -284,12 +295,28 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
                     .shortDescription(entry.getShortDescription())
                     .fullDescription(entry.getFullDescription())
                     .exits(entry.getExits().stream()
-                            .map(exit -> new Exit(exit.getName(), SceneId.of(exit.getTarget())))
+                            .map(InitializeGameUseCase::buildExit)
                             .toList())
                     .miniGames(buildMiniGames(entry.getMiniGames()))
                     .build());
         }
         return scenes;
+    }
+
+    /**
+     * Constructs one authored exit at the validity gate, its lock included. A {@code lockedDescription} without a
+     * {@code lock} is an authoring shape violation (a refusal line for a door that is never refused, like
+     * {@code contains} on a non-container), rejected here as invalid parameters.
+     */
+    private static Exit buildExit(ExitEntry entry) {
+        Lock lock = null;
+        if (entry.getLock() != null) {
+            lock = new Lock(entry.getLock(), entry.getLockedDescription());
+        } else if (entry.getLockedDescription() != null) {
+            throw new InvalidDomainObjectError(
+                    "exit '%s' declares a locked description but no lock".formatted(entry.getName()));
+        }
+        return new Exit(entry.getName(), SceneId.of(entry.getTarget()), lock);
     }
 
     private static Set<MiniGame> buildMiniGames(List<String> authoredNames) {
@@ -334,7 +361,7 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             // resolved inverse (`anchored`, false = carryable, the safe builder default).
             boolean anchored = entry.getPortable() != null ? !entry.getPortable() : entry.isContainer();
             ItemTemplate template = new ItemTemplate(entry.getShortDescription(), entry.getFullDescription(),
-                    entry.isContainer(), anchored, rule);
+                    entry.isContainer(), anchored, entry.getOpens(), rule);
             authored.add(new AuthoredItem(entry.getId(), template, buildContainments(entry)));
         }
         return authored;
@@ -378,6 +405,27 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
             }
         }
         return invalid;
+    }
+
+    /**
+     * The inter-template lock rule: a present {@code opens} handle must name a lock declared on some authored
+     * exit. Keyed by the item's authoring id, mapped to its offending handle — one handle per item, so a flat map.
+     */
+    private static Map<String, String> findItemsOpeningUnknownLocks(List<AuthoredItem> authoredItems,
+                                                                     List<Scene> scenes) {
+        Set<String> declaredLocks = scenes.stream()
+                .flatMap(scene -> scene.getExits().stream())
+                .filter(Exit::hasLock)
+                .map(exit -> exit.getLock().getRef())
+                .collect(Collectors.toSet());
+        Map<String, String> unknown = new LinkedHashMap<>();
+        for (AuthoredItem item : authoredItems) {
+            String opens = item.getTemplate().getOpens();
+            if (opens != null && !declaredLocks.contains(opens)) {
+                unknown.put(item.getAuthoredId(), opens);
+            }
+        }
+        return unknown;
     }
 
     private static Map<String, AuthoredItem> mapByAuthoredId(List<AuthoredItem> authoredItems) {

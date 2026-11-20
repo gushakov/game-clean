@@ -8,6 +8,7 @@ import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.npccommands.NpcCommandsOutputPort;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -131,6 +133,37 @@ class AnimateNpcsUseCaseTest {
         verify(commandOps, never()).dispatchStrike(any());
         verify(presenter).presentNothingHappened();
         verify(npcOps, never()).saveNpc(any());
+    }
+
+    @Test
+    void anNpcWhoseOnlyExitIsLockedDispatchesNoWander() {
+        when(npcOps.findAllNpcs()).thenReturn(List.of(peacefulNpc("npc1", "scn5")));
+        when(sceneOps.findScene(SceneId.of("scn5"))).thenReturn(Optional.of(innWith(lockedStair())));
+        playerInScene("scn2");
+        dice.willRoll(true);                   // move gate passes, but no exit is passable — nothing is picked
+
+        useCase.systemAdvancesNpcs();
+
+        verify(dice, never()).pick(any());
+        verifyNoInteractions(commandOps);
+        verify(presenter).presentNothingHappened();
+    }
+
+    @Test
+    void anNpcPicksOnlyAmongTheExitsWithoutALock() {
+        Exit open = new Exit("east", SceneId.of("scn2"));
+        when(npcOps.findAllNpcs()).thenReturn(List.of(peacefulNpc("npc1", "scn5")));
+        when(sceneOps.findScene(SceneId.of("scn5"))).thenReturn(Optional.of(innWith(lockedStair(), open)));
+        playerInScene("scn2");
+        dice.willRoll(true).willPick(0);
+
+        useCase.systemAdvancesNpcs();
+
+        // The locked stair is never even offered to the pick: the open exit is the only option.
+        verify(dice).pick(List.of(open));
+        verify(commandOps).dispatchWander(NpcId.of("npc1"), "east");
+        verify(commandOps, never()).dispatchWander(any(), eq("up"));
+        verify(presenter).presentNothingHappened();
     }
 
     @Test
@@ -239,6 +272,20 @@ class AnimateNpcsUseCaseTest {
                 .shortDescription("A weathered archway.").fullDescription("A gate.")
                 .exits(List.of(new Exit("north", SceneId.of("scn2"))))
                 .build();
+    }
+
+    /** scn5, the inn, with the given exits. */
+    private static Scene innWith(Exit... exits) {
+        return Scene.builder()
+                .id(SceneId.of("scn5")).name("The Crooked Lantern")
+                .shortDescription("An inn.").fullDescription("A common room.")
+                .exits(List.of(exits))
+                .build();
+    }
+
+    /** The inn's stair up to scn6, barred by the "guest-room" lock. */
+    private static Exit lockedStair() {
+        return new Exit("up", SceneId.of("scn6"), new Lock("guest-room", null));
     }
 
     /** scn3 with a single exit west -> scn4. */

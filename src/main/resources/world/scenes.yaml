@@ -9,6 +9,17 @@
 # *forward* to scenes defined later in this file — resolution is order-independent
 # because exit.target_scene_id carries no foreign key, and whether every target
 # resolves is a use-case rule (two-pass validation), not a parse-time concern here.
+#
+# Locks. An exit may carry a `lock:` — a handle naming the lock that bars it — and
+# an optional `lockedDescription:`, the line shown when a move through it is
+# refused (a generic line is shown when none is authored; a `lockedDescription:`
+# without a `lock:` is rejected at init). A locked exit is passed only by a mover
+# carrying an item whose `opens:` (see items) names that same handle; NPCs carry
+# nothing and never pass one. There is no locked/unlocked state and no unlock verb:
+# a lock is a fact of the exit, the key a fact of the item, and whether a mover
+# passes is decided each time from what it carries. A lock no item opens is valid —
+# a sealed door. Locks are per exit: the way back down a locked stair is unlocked
+# unless it carries a lock of its own.
 
 scenes:
   - id: scn1
@@ -28,12 +39,15 @@ scenes:
     shortDescription: A grass-cracked courtyard.
     fullDescription: >
       Weeds push between the flagstones of what was once a drilling yard. Stone
-      stairs spiral up to a watchtower; the gate stands open to the south.
+      stairs spiral up to a watchtower; the gate stands open to the south. Lamplight
+      and the smell of woodsmoke spill from a low doorway in the west wall.
     exits:
       - name: south
         target: scn1      # back-edge, closing the loop with the gate
       - name: up
         target: scn4      # forward reference
+      - name: west
+        target: scn5      # forward reference — the inn
 
   - id: scn3
     name: Armoury
@@ -56,6 +70,31 @@ scenes:
     exits:
       - name: down
         target: scn2      # back-edge
+
+  - id: scn5
+    name: The Crooked Lantern
+    shortDescription: The common room of a cramped inn.
+    fullDescription: >
+      A fire crackles in a soot-black hearth, and a few rickety tables crowd the
+      floor between it and a long plank counter. Behind the counter a narrow stair
+      climbs to a door at the top. The courtyard lies back east.
+    exits:
+      - name: east
+        target: scn2      # back-edge to the courtyard
+      - name: up
+        target: scn6      # forward reference — the guest room
+        lock: guest-room  # the lock's handle; itm6 (below) opens it
+        lockedDescription: The door at the head of the stair is locked.
+
+  - id: scn6
+    name: Guest Room
+    shortDescription: A low-beamed guest room under the eaves.
+    fullDescription: >
+      A narrow bed with a straw mattress, a washstand and a shuttered window under
+      the slope of the roof. The stair leads back down to the common room.
+    exits:
+      - name: down
+        target: scn5      # back-edge — no lock: the door opens freely from inside
 
 # Authored items. Each is a *template*: its `spawn` rule places 0..max instances
 # into randomly chosen candidate scenes (one chance roll per try). Instances are
@@ -89,6 +128,11 @@ scenes:
 # CONTAINER is NOT portable unless authored `portable: true`. A transportable container
 # (its contents ride along, since they reference the container by id, not by scene) is
 # a deliberate authored fact, never an accident of the model.
+#
+# Keys (`opens`, optional): the handle of the lock the item opens — it must name a
+# `lock:` declared on some exit above, or init is refused. Carrying the item (held
+# directly, not inside a carried container) lets the player through every exit
+# barred by that lock. Unauthored = the item opens nothing.
 items:
   - id: itm1
     shortDescription: A rusty dagger.
@@ -147,6 +191,19 @@ items:
       - item: itm2         # the tarnished silver ring may be on the body
         chance: 1/2        # rolled once per slaying
 
+  # TEMPORARY placement: the guest-room key lies on the inn floor with certainty. In
+  # phase 3 of the inn scenario this ground spawn is replaced by the keeper selling it.
+  - id: itm6
+    shortDescription: A small brass key.
+    fullDescription: >
+      A small brass key on a loop of frayed red cord. A wooden tag hangs from it,
+      burned with the outline of a lantern.
+    opens: guest-room      # the handle of the lock this item opens (see scn5's exit up)
+    spawn:
+      scenes: scn5
+      chance: 1/1
+      max: 1
+
 # Authored NPCs. Each is a *template*: its `spawn` rule places 0..max instances into
 # randomly chosen candidate scenes (one chance roll per try), exactly like items.
 # Spawned NPCs then wander on a background metronome that fires every second — each tick,
@@ -184,3 +241,20 @@ npcs:
       scenes: scn1         # scenes where the NPC can spawn
       chance: 1/1          # chance of spawning on each try
       max: 1               # maximum number of spawn tries
+
+  - id: npc2
+    shortDescription: A stout innkeeper.
+    fullDescription: >
+      A broad-shouldered woman in a flour-dusted apron, sleeves rolled to the
+      elbow. She keeps one eye on the hearth and the other on whoever comes in.
+    moveChance: 0/1        # never wanders — she keeps her counter
+    attackChance: 1/4
+    hitPoints: 25
+    sayings:
+      - Rooms are upstairs. The door's locked — I keep it that way.
+      - A bed for the night? Coin first, then we talk about the room.
+      - Fire's warm and the stew is yesterday's. The room upstairs is the best in the keep, which says little.
+    spawn:
+      scenes: scn5
+      chance: 1/1
+      max: 1

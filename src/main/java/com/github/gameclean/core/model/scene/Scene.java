@@ -71,6 +71,18 @@ public class Scene {
     }
 
     /**
+     * The exits of this scene that anyone may pass — those carrying no {@link Lock} — in declaration order. A
+     * mover carrying nothing (an NPC) can only ever choose among these.
+     *
+     * @return this scene's exits without a lock, possibly empty
+     */
+    public List<Exit> exitsWithoutLock() {
+        return exits.stream()
+                .filter(exit -> !exit.hasLock())
+                .toList();
+    }
+
+    /**
      * Whether this scene offers the given mini-game — the grounding check a play-a-game interaction makes
      * before dealing anything (Tell-Don't-Ask: the use case asks the scene, never reads the set out to
      * filter). A side-effect-free function over authored state.

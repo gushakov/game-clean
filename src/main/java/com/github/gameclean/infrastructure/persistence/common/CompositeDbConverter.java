@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.combat.HitPoints;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.player.PlayerId;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.SceneId;
 
 /**
@@ -39,6 +40,21 @@ public interface CompositeDbConverter {
 
     default HitPoints dbEntityToHitPoints(HitPointsDbEntity entity) {
         return entity == null ? null : new HitPoints(entity.getCurrent(), entity.getMax());
+    }
+
+    default LockDbEntity lockToDbEntity(Lock lock) {
+        if (lock == null) {
+            return null;
+        }
+        LockDbEntity entity = new LockDbEntity();
+        entity.setRef(lock.getRef());
+        entity.setDescription(lock.getDescription());
+        return entity;
+    }
+
+    /** Rebuilds the exit's {@code Lock} through its validating constructor; no stored lock reads back as none. */
+    default Lock dbEntityToLock(LockDbEntity entity) {
+        return entity == null ? null : new Lock(entity.getRef(), entity.getDescription());
     }
 
     /**

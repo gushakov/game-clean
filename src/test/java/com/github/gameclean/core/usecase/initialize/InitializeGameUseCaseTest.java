@@ -13,6 +13,7 @@ import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -324,7 +325,7 @@ class InitializeGameUseCaseTest {
         // itm1 declares contents without the container capability — an authoring shape violation at the gate.
         givenSeed(seed(twoConnectedScenes(), "scn1",
                 new ItemEntry("itm1", "A rusty dagger.", "A plain iron dagger.", false, null,
-                        List.of(new ContainsEntry("itm2", 1, 2)), null)));
+                        List.of(new ContainsEntry("itm2", 1, 2)), null, null)));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
 
         useCase.systemInitializesGame();
@@ -371,6 +372,72 @@ class InitializeGameUseCaseTest {
         verifyNothingInitialized();
     }
 
+    // --- locked exits and the items that open them ----------------------------------------------
+
+    @Test
+    void spawnsAKeyOpeningALockDeclaredOnAnAuthoredExit() {
+        givenSeed(seed(scenesWithLockedStair("guest-room", "The door is locked."), "scn1",
+                key("itm6", "guest-room")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Scene> savedScenes = ArgumentCaptor.forClass(Scene.class);
+        verify(sceneOps, times(2)).saveScene(savedScenes.capture());
+        assertThat(savedScenes.getAllValues().get(0).exitNamed("up").orElseThrow().getLock())
+                .isEqualTo(new Lock("guest-room", "The door is locked."));
+        ArgumentCaptor<Item> savedItem = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps).saveItem(savedItem.capture());
+        assertThat(savedItem.getValue().getOpens()).isEqualTo("guest-room");
+    }
+
+    @Test
+    void rejectsAnItemOpeningAnUndeclaredLockAndDoesNotInitialize() {
+        givenSeed(seed(scenesWithLockedStair("guest-room", null), "scn1",
+                key("itm6", "guest-room"), key("itm7", "cellar")));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentItemOpensUnknownLock(captor.capture());
+        assertThat(captor.getValue()).containsExactly(Map.entry("itm7", "cellar"));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsALockedDescriptionWithoutALockAndDoesNotInitialize() {
+        List<SceneEntry> entries = List.of(
+                new SceneEntry("scn1", "Old Gate", "A weathered archway.", "The gate's hinges have rusted shut.",
+                        List.of(new ExitEntry("east", "scn1", null, "The door is locked.")), List.of()));
+        givenSeed(seed(entries, "scn1"));
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void acceptsALockThatNoItemOpens() {
+        // A sealed door: valid authoring, the world initializes.
+        givenSeed(seed(scenesWithLockedStair("guest-room", null), "scn1"));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        verify(presenter, never()).presentItemOpensUnknownLock(any());
+        verify(presenter).presentGameInitialized(anyList(), eq(PlayerId.of("plr1")), anyList(), anyList());
+    }
+
     // --- portability resolution at the gate -----------------------------------------------------
 
     @Test
@@ -398,7 +465,7 @@ class InitializeGameUseCaseTest {
     void anAuthoredPortableTrueMakesAContainerCarryable() {
         givenSeed(seed(twoConnectedScenes(), "scn1",
                 new ItemEntry("itm6", "A barnacled sea chest.", "A sea chest crusted white with barnacle.",
-                        true, Boolean.TRUE, List.of(), new SpawnEntry(List.of("scn1"), 1, 1, 1))));
+                        true, Boolean.TRUE, List.of(), new SpawnEntry(List.of("scn1"), 1, 1, 1), null)));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
@@ -418,7 +485,7 @@ class InitializeGameUseCaseTest {
     void anAuthoredPortableFalseAnchorsAPlainItem() {
         givenSeed(seed(twoConnectedScenes(), "scn1",
                 new ItemEntry("itm8", "A granite anvil.", "An anvil nobody carries anywhere.",
-                        false, Boolean.FALSE, null, new SpawnEntry(List.of("scn1"), 1, 1, 1))));
+                        false, Boolean.FALSE, null, new SpawnEntry(List.of("scn1"), 1, 1, 1), null)));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
@@ -635,7 +702,7 @@ class InitializeGameUseCaseTest {
         // scn1's only exit points at scn9, which the seed never defines — an inter-aggregate failure
         List<SceneEntry> entries = List.of(
                 new SceneEntry("scn1", "Old Gate", "A gate.", "A weathered stone archway.",
-                        List.of(new ExitEntry("east", "scn9")), List.of()));
+                        List.of(new ExitEntry("east", "scn9", null, null)), List.of()));
         givenSeed(seed(entries, "scn1"));
 
         useCase.systemInitializesGame();
@@ -744,7 +811,7 @@ class InitializeGameUseCaseTest {
     /** A corpse template: a container with no ground-spawn rule — placed only by the death drop. */
     private static ItemEntry corpseItem(String id) {
         return new ItemEntry(id, "The corpse of a hooded wanderer.", "The wanderer lies where it fell.",
-                true, null, null, null);
+                true, null, null, null, null);
     }
 
     private static NpcEntry npc(String id, int moveNumerator, int moveDenominator,
@@ -764,29 +831,46 @@ class InitializeGameUseCaseTest {
         return List.of(
                 new SceneEntry("scn1", "Old Gate", "A weathered archway.",
                         "The gate's iron hinges have long since rusted shut.",
-                        List.of(new ExitEntry("east", "scn2")), List.of()),
+                        List.of(new ExitEntry("east", "scn2", null, null)), List.of()),
                 new SceneEntry("scn2", "Courtyard", "A grass-cracked courtyard.",
                         "Weeds push between the flagstones of a drilling yard.",
-                        List.of(new ExitEntry("west", "scn1")), List.of("blackjack")));
+                        List.of(new ExitEntry("west", "scn1", null, null)), List.of("blackjack")));
+    }
+
+    /** scn1 with an "up" exit to scn2 barred by the given lock; scn2's way "down" is open. */
+    private static List<SceneEntry> scenesWithLockedStair(String lockRef, String lockedDescription) {
+        return List.of(
+                new SceneEntry("scn1", "The Crooked Lantern", "The common room of an inn.",
+                        "A fire crackles in a soot-black hearth.",
+                        List.of(new ExitEntry("up", "scn2", lockRef, lockedDescription)), List.of()),
+                new SceneEntry("scn2", "Guest Room", "A guest room under the eaves.",
+                        "A narrow bed and a washstand.",
+                        List.of(new ExitEntry("down", "scn1", null, null)), List.of()));
+    }
+
+    /** A certain ground-spawning item in scn1 that opens the given lock. */
+    private static ItemEntry key(String id, String opens) {
+        return new ItemEntry(id, "A small brass key.", "A small brass key on a loop of cord.", false, null, null,
+                new SpawnEntry(List.of("scn1"), 1, 1, 1), opens);
     }
 
     private static ItemEntry item(String id, int chanceNumerator, int chanceDenominator, int max,
                                   String... candidateScenes) {
         return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.", false, null, null,
-                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max));
+                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max), null);
     }
 
     /** A contained-only item: no spawn rule (never on the ground), appears only through containers. */
     private static ItemEntry containedOnlyItem(String id) {
         return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.",
-                false, null, null, null);
+                false, null, null, null, null);
     }
 
     /** A container with unauthored {@code portable} — the gate's container default (anchored) applies. */
     private static ItemEntry containerItem(String id, List<ContainsEntry> contains, int chanceNumerator,
                                            int chanceDenominator, int max, String... candidateScenes) {
         return new ItemEntry(id, "An oak chest.", "A heavy oak chest banded in black iron.", true, null, contains,
-                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max));
+                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max), null);
     }
 
     private static Player player(String id, String currentScene) {

@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.seed.SceneEntry;
@@ -54,21 +55,29 @@ class WorldSeedRoundTripIT extends AbstractPostgresIT {
         try (InputStream in = getClass().getResourceAsStream("/world/scenes.yaml")) {
             world = reader.read(in, "scn1", 30).getScenes().stream().map(WorldSeedRoundTripIT::toScene).toList();
         }
-        assertThat(world).hasSize(4);
+        assertThat(world).hasSize(6);
 
         // ... when the whole graph is persisted in file order (forward refs and all) ...
         world.forEach(scene -> aggregateTemplate.insert(mapper.toDbEntity(scene)));
 
         // ... then every scene is stored, and a scene with both a back-edge and a forward-edge
         // round-trips with its exits intact.
-        assertThat(repository.count()).isEqualTo(4);
+        assertThat(repository.count()).isEqualTo(6);
 
         Scene courtyard = mapper.toDomain(repository.findById("scn2").orElseThrow());
         assertThat(courtyard.getName()).isEqualTo("Courtyard");
         assertThat(courtyard.getExits())
                 .containsExactlyInAnyOrder(
                         new Exit("south", SceneId.of("scn1")),
-                        new Exit("up", SceneId.of("scn4")));
+                        new Exit("up", SceneId.of("scn4")),
+                        new Exit("west", SceneId.of("scn5")));
+
+        // ... and the inn's locked stair round-trips with its lock, while the way back down stays open.
+        Scene inn = mapper.toDomain(repository.findById("scn5").orElseThrow());
+        assertThat(inn.exitNamed("up").orElseThrow().getLock())
+                .isEqualTo(new Lock("guest-room", "The door at the head of the stair is locked."));
+        Scene guestRoom = mapper.toDomain(repository.findById("scn6").orElseThrow());
+        assertThat(guestRoom.exitNamed("down").orElseThrow().hasLock()).isFalse();
     }
 
     private static Scene toScene(SceneEntry entry) {
@@ -78,7 +87,8 @@ class WorldSeedRoundTripIT extends AbstractPostgresIT {
                 .shortDescription(entry.getShortDescription())
                 .fullDescription(entry.getFullDescription())
                 .exits(entry.getExits().stream()
-                        .map(e -> new Exit(e.getName(), SceneId.of(e.getTarget())))
+                        .map(e -> new Exit(e.getName(), SceneId.of(e.getTarget()),
+                                e.getLock() == null ? null : new Lock(e.getLock(), e.getLockedDescription())))
                         .toList())
                 .build();
     }

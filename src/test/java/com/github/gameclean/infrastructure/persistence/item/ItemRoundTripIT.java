@@ -14,8 +14,7 @@ import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.*;
 
 /**
  * Persistence round-trip for the {@code Item} aggregate against the real, running Dockerized Postgres
@@ -196,6 +195,25 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         // ... so a second write still carrying the original (now stale) version is rejected — the two-actor race.
         assertThatExceptionOfType(OptimisticLockingError.class)
                 .isThrownBy(() -> adapter.saveItem(loaded.takenBy(PlayerId.of("plr2"))));
+    }
+
+    @Test
+    void the_opens_handle_round_trips_and_its_absence_reads_back_as_none() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        Item key = Item.builder()
+                .id(ItemId.of("itm6"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("A small brass key.")
+                .fullDescription("A small brass key on a loop of frayed red cord.")
+                .opens("guest-room")
+                .build();
+
+        adapter.saveItem(key);
+        adapter.saveItem(groundItem("itm1", "A rusty dagger."));
+
+        assertThat(adapter.findItemsInScene(HERE))
+                .extracting(item -> item.getId().asString(), Item::getOpens)
+                .containsExactlyInAnyOrder(tuple("itm6", "guest-room"), tuple("itm1", null));
     }
 
     private static Item groundItem(String id, String shortDescription) {

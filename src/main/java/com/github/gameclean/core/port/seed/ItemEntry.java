@@ -16,6 +16,9 @@ import java.util.List;
  * it is deliberately <em>not</em> an item instance id. One template spawns several instances, each minted a
  * fresh generated {@code ItemId}, so the authored handle never becomes a persisted instance id.
  *
+ * <p>{@code opens} is the handle of the lock the item opens — {@code null} when it opens nothing. That the
+ * handle names a lock declared on some authored exit is an inter-template gate rule, not a parse-time concern.
+ *
  * <p>{@code contains}, {@code spawn} and {@code portable} may all be absent ({@code null}) — authored
  * absence, not invalid input: a plain item declares no containment, a <em>contained-only</em> item (one that
  * appears in the world exclusively inside containers) declares no ground-spawn rule, and an unauthored
@@ -36,4 +39,5 @@ public class ItemEntry {
     Boolean portable;
     List<ContainsEntry> contains;
     SpawnEntry spawn;
+    String opens;
 }
