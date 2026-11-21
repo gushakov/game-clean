@@ -1893,12 +1893,30 @@ nothing else writes *ground* items today either; `take` got its handler because 
 object any actor in the scene can reach, and `drop` stayed plain because only the holder reaches a held item.
 Loot in a corpse on the ground is in the first category, so `TakeFrom` (#107) uses the lock-aware
 transaction with its own `presentItemGotAway`, and a unit test pins that the
-loss is that stripe and never `presentError` — the `drop` pin's mirror image. The honest gap is the *other*
-aggregate: only the contained item's row is written and version-checked, so a portable container carried off
-between resolution and the write goes undetected (the loot would be taken out of a chest no longer here).
-Unreachable with one player, and closing it means the container must take part in the write — the same
-pressure as capacity, the flagged trigger for reopening the container↔contents boundary (§2). Recorded, not
-fixed.
+loss is that stripe and never `presentError` — the `drop` pin's mirror image. The *other* aggregate needs no
+guard. Only the contained item's row is written and version-checked, so a portable container carried off
+between resolution and the write goes undetected; but the end state is that of the serial order "taken out,
+then carried off", so there is no anomaly to detect (the argument of the sale, next). This note first
+recorded it as a gap; it is one only by the wall clock. The container must take part in the write when a
+rule relates the two aggregates (capacity), the flagged trigger for reopening the container↔contents
+boundary (§2).
+
+**A precondition which is only read needs no detector: the sale and its vendor (#119).** `[thread #3]` Buy
+checks that the vendor is here, alive and peaceful, and then writes coins and an item. Nothing of hers is
+written, so nothing detects her walking off or being slain between the check and the commit. Nothing needs
+to. The sale reads her and writes nothing that she or her writers read, so every interleaving ends in the
+state of the serial order "sold, then she left". An anomaly needs a dependency in both directions (each
+transaction reads what the other writes), and here there is one. A version touch on the vendor would detect
+no anomaly, and it would make sales lose to the wander tick. The trigger is the first sale which writes
+something of hers (a stock, a till): she is contested from then on, and the lock-aware block arrives with
+that write. *Before guarding a precondition, ask whether any serial order explains the result.*
+
+**Spending is deletion, so the coin is its own double-spend detector (#119).** `[thread #3]` The payment is a
+version-checked delete of the coin rows. Two purchases racing over the same coins would both read them, and
+the loser's delete would fail on the version. A balance field on `Player` would have needed a detector of
+its own; coins as items brought theirs. The write set is single-writer by reach (only the holder reaches a
+held item), so Buy uses the plain block, and a test pins that a lock loss reaches `presentError` as itself:
+the `drop` pin again.
 
 **`Npc` takes the contrast one step further — single-writer with *no version at all*.** `[thread #3]`
 Autonomous NPC movement writes NPCs, and today the movement ticker is their *only* writer, so `AnimateNpcs`
@@ -2943,6 +2961,42 @@ keeper, or the key *from* her, needs an NPC inventory (and a stock which can run
 reads yet: deferred until one does (a till to rob, a limited stock). The plain `int` price and the single
 currency are the same deferral: a `Price` value object and denominations wait for behaviour. Wares are
 restricted to portable non-containers so that the mint is one template with no contents to roll.
+
+**The candidate of a sale is a pairing, and the pairing owns the token (#119).** `[thread #1]` `[thread #4]`
+The selection dialogue asks a candidate two facts: whether a fragment designates it, and whether a token is
+its identity. An `Offer` can answer neither alone. Its ref is unique only within its NPC, and it does not
+know its NPC (it is a value copied from an authored template). The candidate is therefore `StandingOffer`,
+the offer as it stands at a vendor: it matches on the offer's name and flattens to `npcId:offerRef`. The
+token's grammar lives on the type which owns the identity, as `ItemId.asString()` does; the select concrete
+only calls its shape gate. The reading of the stance stays out of the model: `Npc.standingOffers()` returns
+a hostile NPC's offers too, and the provisioner drops them, as `talk` reads the same stance in the use case.
+
+**No repeat-sale guard: a guard is stock, counted per customer (#119).** `[thread #1]` Three rules were on the
+table, each a guess from one ware. "The buyer already holds an item which opens the same lock" is silent for
+bread and for any unique ware which is not a key, and it puts a lock rule into the trade goal. "The buyer
+already holds one like it" needs template provenance on `Item`, which instances deliberately do not carry,
+and it is the rule which is wrong for bread. A per-offer `once` flag is the offer kind phase 2 left out. All
+three are a stock of one per customer, and stock is deferred until an interaction reads it. The cost of
+having none is bounded by decisions already taken: a second key is inert because the lock is derived, and
+coins are finite. The guard arrives with the second ware whose repeatability differs, or with the first
+duplicate which has a consequence.
+
+**An empty market is not a stripe (#119).** "Nothing for sale here", an unknown ware and a hostile vendor all
+end in the selection dialogue's "no such target", rendered "Nobody here offers …", which is true of all
+three. Telling them apart would cost a second provisioning read in the use case, or a third outcome in a
+skeleton four concretes share, for a distinction `take` does not make over an empty ground either. The
+refusal which is Buy's own is the price: `presentNotEnoughCoins` tells the ware, its price and what the
+buyer holds, because that is what she needs to decide her next step.
+
+**`buy` and `rent` are one command (#119).** `[thread #4]` Verbs are delivery vocabulary, and the fact which
+would tell these two apart (an offer kind: a good, or access for a time) is not in the model. Until it is, a
+parser which refused `rent bread` would encode a domain rule the domain does not have.
+
+**One adapter, one parse, a port per pull (#119).** The delivered item's template comes through its own port,
+not through a widened corpse port. The two pulls share a file and a parse, which is the adapter's business.
+They do not share a contract: each re-asserts its own gate rule as drift detection (a corpse is a container
+with no ground spawn; a ware is a portable non-container), returns its own shape and serves its own use
+case. It is the persistence gateway's shape applied to authored data: narrow role interfaces, one adapter.
 
 **Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
 lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the

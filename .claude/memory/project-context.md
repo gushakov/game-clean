@@ -734,7 +734,7 @@ command naming **two** targets:
   gains `renderItemTakenFrom` (short descriptions recast mid-sentence), `renderNoSuchContainer`,
   `renderNoSuchContainedTarget`, `renderItemNoLongerContained`; guidance list entry.
 - **Deferred** — taking from a **held** container (the carried sea chest), `drop` into a container, a
-  container-annotated menu ("ring (in the corpse)"), and the unguarded container side of the race (see
+  container-annotated menu ("ring (in the corpse)"). The container side of the race needs no guard (see
   design-notes §5).
 
 `Locked exits` vertical **complete** (issue #115, inn scenario phase 1 of 4) — an exit may carry a lock,
