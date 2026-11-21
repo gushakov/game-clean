@@ -568,8 +568,9 @@ public class InitializeGameUseCase implements InitializeGameInputPort {
      * contributes nothing.
      *
      * <p>Note what stays <em>valid</em> on purpose: a delivered item that also has a ground-spawn rule of its own
-     * (the key lies on the inn floor and is still for sale); a world whose offers no currency item can pay for
-     * (currency is authored separately, and counting coins is a later phase); a currency item no offer prices.
+     * (ware can also lie where it was spawned); a world whose offers no currency item can pay for (buying such
+     * ware is a presented not-enough-coins outcome, not an authoring fault); a currency item no offer prices
+     * (unpriced money is still money).
      */
     private static Map<String, List<String>> findInvalidOfferItemRefs(List<AuthoredNpc> authoredNpcs,
                                                                        List<AuthoredItem> authoredItems) {

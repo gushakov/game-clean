@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.DomainValidation;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.Dice;
+import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.model.spawn.SpawnRule;
 import lombok.Builder;
@@ -101,6 +102,15 @@ public class ItemTemplate {
      */
     public Item instanceInside(ItemId id, ItemId container) {
         return instanceWith(id, new Location.Inside(container));
+    }
+
+    /**
+     * Builds one item instance of this template held by the given player, stamped with the given freshly
+     * generated id — the hands counterpart of {@link #instanceAt(ItemId, SceneId)}: the ware a purchase
+     * mints appears directly in the buyer's keeping, never on the ground it would have to be taken from.
+     */
+    public Item instanceHeldBy(ItemId id, PlayerId holder) {
+        return instanceWith(id, new Location.HeldBy(holder));
     }
 
     private Item instanceWith(ItemId id, Location location) {

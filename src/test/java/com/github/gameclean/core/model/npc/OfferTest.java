@@ -79,7 +79,7 @@ class OfferTest {
 
     @Test
     void rejects_two_offers_sharing_a_handle() {
-        // The handle is what a later phase's player will name, so it can mean only one thing within one NPC.
+        // The handle is the offer's half of the selection token, so it can mean only one thing within one NPC.
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> Offer.requireUniqueRefs(List.of(
                         room(), new Offer("room", "A bowl of yesterday's stew.", 1, "itm1"))))

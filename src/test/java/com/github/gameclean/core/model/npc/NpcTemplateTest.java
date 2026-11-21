@@ -170,8 +170,8 @@ class NpcTemplateTest {
 
     @Test
     void offers_are_copied_onto_every_spawned_instance_in_authored_order() {
-        // The catalogue is authored prose in a meaningful order (phase 4 renders it to the player), so both the
-        // template and every instance hold it as authored — the sayings rule applied to wares.
+        // The catalogue is authored prose in a meaningful order, so both the template and every instance
+        // hold it as authored — the sayings rule applied to wares.
         List<Offer> wares = List.of(roomOffer(), new Offer("stew", "A bowl of yesterday's stew.", 1, "itm1"));
         NpcTemplate template = template(rule(1, 1, 2, "scn1"), null, null, wares);
         ScriptedDice dice = new ScriptedDice().willRoll(true, true).willPick(

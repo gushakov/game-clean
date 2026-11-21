@@ -210,8 +210,8 @@ class ItemTest {
 
     @Test
     void the_currency_flag_defaults_false_and_survives_copy_on_write() {
-        // Nothing counts coins yet — the fact and its getter are all this phase asks of the model, and like
-        // every other instance-copied fact it rides the location moves (@With routes through the gate).
+        // Coins are counted and spent by the buy use case; pinned here is the fact, its getter, and that —
+        // like every other instance-copied fact — it rides the location moves (@With routes through the gate).
         assertThat(item("A rusty dagger.").isCurrency()).isFalse();
 
         assertThat(coin().build().takenBy(PlayerId.of("plr1")).isCurrency()).isTrue();

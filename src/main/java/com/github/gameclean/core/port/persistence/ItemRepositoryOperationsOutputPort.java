@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.item.Item;
 import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
+import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
 
 import java.util.List;
 
@@ -51,6 +52,18 @@ public interface ItemRepositoryOperationsOutputPort {
      * @throws PersistenceOperationsError if the save fails
      */
     void saveItem(Item item);
+
+    /**
+     * Deletes a single item, checked against the optimistic-locking version the given aggregate carries — the
+     * write a purchase performs on each coin it pays: the coin rows are removed in the same transaction that
+     * saves the delivered ware. Version-checked like {@link #saveItem(Item)}, and for the same reason the
+     * {@code take} update is: a held item can have concurrent writers, and a stale delete must not remove a
+     * row another writer has since moved past.
+     *
+     * @throws OptimisticLockingError     if the item was modified concurrently (a stale version)
+     * @throws PersistenceOperationsError if the delete fails otherwise
+     */
+    void deleteItem(Item item);
 
     /**
      * @return {@code true} once at least one item has been spawned into the world. The item-spawning

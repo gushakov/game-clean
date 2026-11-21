@@ -74,11 +74,12 @@ import java.util.Objects;
  * <p><b>Offers give the NPC wares (#117).</b> {@link #offers} are the things it stands ready to hand over for
  * coins — {@link Offer} value objects in authored order, empty when it sells nothing (authored absence, like
  * sayings). They are copied from the template onto every instance exactly like the sayings: each spawned NPC
- * owns its own list. An offer is a standing fact, not a state — no stock, no quantity, no sold-out flag — and in
- * this phase <em>nothing reads them</em>: buying is a later phase's interaction. The one rule the NPC enforces
- * over its own list is that no two offers share a {@code ref}, so a handle the player later names can mean only
- * one thing. Whether an offer's item handle <em>resolves</em> to a sellable item is an inter-template rule the
- * initialization gate checks, exactly like a corpse ref.
+ * owns its own list. An offer is a standing fact, not a state — no stock, no quantity, no sold-out flag. The
+ * buyer side is {@link #standingOffers()}: each offer paired with this NPC, the unit a {@code buy} transaction
+ * designates and completes. The one rule the NPC enforces over its own list is that no two offers share a
+ * {@code ref}, so the handle a selection token carries can mean only one thing. Whether an offer's item handle
+ * <em>resolves</em> to a sellable item is an inter-template rule the initialization gate checks, exactly like a
+ * corpse ref.
  *
  * <p>Equality is by identity (id) only — two NPCs are the same NPC when their ids match; the version and hit
  * points are naturally outside value equality.
@@ -201,6 +202,19 @@ public class Npc implements Designatable {
         List<Offer> owned = List.copyOf(offers);
         Offer.requireUniqueRefs(owned);
         return owned;
+    }
+
+    /**
+     * This NPC's wares as designation candidates: one {@link StandingOffer} per {@link #offer}, in authored
+     * order, each pairing the offer with this NPC as its vendor. Whether the NPC is hostile is <em>not</em>
+     * this list's fact — refusing a hostile vendor is the buying use case's reading of the {@link #hostile}
+     * stance, exactly as refusing to speak is {@code talk}'s — so the projection simply pairs what is offered
+     * with who stands behind it. An NPC that sells nothing yields the empty list.
+     *
+     * @return this NPC's offers paired with itself, in authored order
+     */
+    public List<StandingOffer> standingOffers() {
+        return offers.stream().map(offer -> new StandingOffer(this, offer)).toList();
     }
 
     /**

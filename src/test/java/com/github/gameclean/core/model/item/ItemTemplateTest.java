@@ -3,6 +3,7 @@ package com.github.gameclean.core.model.item;
 import com.github.gameclean.core.model.dice.Chance;
 import com.github.gameclean.core.model.dice.ScriptedDice;
 import com.github.gameclean.core.model.InvalidDomainObjectError;
+import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.model.spawn.SpawnRule;
 import org.junit.jupiter.api.Test;
@@ -153,6 +154,25 @@ class ItemTemplateTest {
         // Money bolted to the ground cannot be paid.
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> templateBuilder().currency(true).anchored(true).build());
+    }
+
+    @Test
+    void instanceHeldBy_places_the_instance_in_the_holders_keeping_and_copies_the_instance_facts() {
+        // The hands counterpart of spawnInto: the ware a purchase mints appears directly in the buyer's
+        // keeping. The id is handed in (the use case mints it), and every instance-copied fact rides onto the
+        // instance — here the opens handle and the currency flag, from the two wares the inn trades.
+        ItemTemplate key = templateBuilder().shortDescription("A small brass key.")
+                .opens("guest-room").build();
+        Item keyInHand = key.instanceHeldBy(ItemId.of("itm6"), PlayerId.of("plr1"));
+        assertThat(keyInHand.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
+        assertThat(keyInHand.getOpens()).isEqualTo("guest-room");
+        assertThat(keyInHand.getShortDescription()).isEqualTo("A small brass key.");
+
+        ItemTemplate coin = templateBuilder().shortDescription("A copper coin.")
+                .currency(true).build();
+        Item coinInHand = coin.instanceHeldBy(ItemId.of("itm3"), PlayerId.of("plr1"));
+        assertThat(coinInHand.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
+        assertThat(coinInHand.isCurrency()).isTrue();
     }
 
     @Test

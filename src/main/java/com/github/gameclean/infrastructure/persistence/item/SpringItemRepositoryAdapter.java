@@ -96,6 +96,22 @@ public class SpringItemRepositoryAdapter implements ItemRepositoryOperationsOutp
     }
 
     @Override
+    public void deleteItem(Item item) {
+        try {
+            // Spring Data JDBC's delete(aggregate) is version-checked when the entity carries @Version:
+            // it issues DELETE ... WHERE id = ? AND version = ? and raises OptimisticLockingFailureException
+            // when no row matches — the guarded write a payment needs, mirroring the npc adapter's deleteNpc.
+            repository.delete(mapper.toDbEntity(item));
+            log.debug("[Persistence] Deleted item {} (version {})", item.getId().asString(), item.getVersion());
+        } catch (OptimisticLockingFailureException e) {
+            throw new OptimisticLockingError(
+                    "Item %s was modified concurrently (stale version)".formatted(item.getId().asString()), e);
+        } catch (DataAccessException e) {
+            throw new PersistenceOperationsError("Cannot delete item %s".formatted(item.getId().asString()), e);
+        }
+    }
+
+    @Override
     public boolean itemsAlreadySpawned() {
         try {
             return repository.count() > 0;
