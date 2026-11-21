@@ -684,6 +684,31 @@ class InitializeGameUseCaseTest {
     }
 
     @Test
+    void anOfferedItemWithoutASpawnRulePassesTheGateAndSpawnsNoInstance() {
+        // The world's only route to the ware is the offer: authored with no ground-spawn rule at all (the key
+        // the keeper alone hands over), it sails through the offer gate — which asks only that the ware be
+        // neither a container nor anchored — and the spawn phase never mints an instance of it.
+        givenSeed(seedWithItemsAndNpcs(scenesWithLockedStair("guest-room", null), "scn1",
+                List.of(wareWithoutSpawnRule("itm6")),
+                List.of(npcWithOffers("npc2", List.of(offer("room", "A room for the night.", 2, "itm6")), "scn1"))));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        // Only the NPC rolls: hit, scene pick, 8 id glyphs — the spawn-rule-less ware never touches the dice.
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        verify(presenter, never()).presentNpcOfferItemInvalid(any());
+        verify(itemOps, never()).saveItem(any());   // no instance of the ware lies anywhere
+        ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
+        verify(npcOps).saveNpc(saved.capture());
+        assertThat(saved.getValue().getOffers())
+                .containsExactly(new Offer("room", "A room for the night.", 2, "itm6"));
+    }
+
+    @Test
     void acceptsAnNpcWithNoOffers() {
         // Authored absence: an NPC that sells nothing is an ordinary NPC (the silent-NPC twin).
         givenSeed(seedWithNpcs(twoConnectedScenes(), "scn1", npc("npc1", 1, 4, 1, 1, 1, "scn1")));
@@ -764,7 +789,7 @@ class InitializeGameUseCaseTest {
 
     @Test
     void rejectsADuplicateOfferHandleAndDoesNotInitialize() {
-        // A handle a later phase's player would name can mean only one thing within one NPC: an entry-shape
+        // A handle a selection token carries can mean only one thing within one NPC: an entry-shape
         // violation of the authored NPC, so it is invalid parameters, not a presented inter-template outcome.
         givenSeed(seedWithItemsAndNpcs(scenesWithLockedStair("guest-room", null), "scn1",
                 List.of(key("itm6", "guest-room")),
@@ -808,8 +833,8 @@ class InitializeGameUseCaseTest {
 
     @Test
     void spawnsACurrencyItemCarryingTheFlagThoughNoOfferPricesIt() {
-        // Valid on purpose: money nobody spends. Nothing counts a coin in this phase — the flag is authored,
-        // gated and copied onto the instance, and that is all.
+        // Valid on purpose: money nobody spends. The flag is authored, gated and copied onto the instance
+        // whether or not any offer prices it — a coin no one sells is still money.
         givenSeed(seed(twoConnectedScenes(), "scn1", coin("itm3")));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
@@ -1086,6 +1111,12 @@ class InitializeGameUseCaseTest {
     private static ItemEntry containedOnlyItem(String id) {
         return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.",
                 false, null, null, null, null, false);
+    }
+
+    /** An offered ware with no ground-spawn rule: the offer is the world's only route to it. */
+    private static ItemEntry wareWithoutSpawnRule(String id) {
+        return new ItemEntry(id, "A small brass key.", "A small brass key on a loop of cord.",
+                false, null, null, null, "guest-room", false);
     }
 
     /** A container with unauthored {@code portable} — the gate's container default (anchored) applies. */

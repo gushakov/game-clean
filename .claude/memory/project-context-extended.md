@@ -207,10 +207,14 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   — ids are assigned); Spring `DataAccessException` wrapped in `PersistenceOperationsError`, reads also
   wrapping a reconstitution `InvalidDomainObjectError` as an integrity fault (see Persistence above).
 - **Game seeding** — split into a *driven source adapter* and a *thin driving adapter*.
-  `infrastructure/world/YamlGameSeedSource` implements `GameSeedSourceOperationsOutputPort`: it reads
+  `infrastructure/world/YamlGameSeedSource` implements **three** ports over one lazily memoized seed snapshot:
+  `GameSeedSourceOperationsOutputPort` (it reads
   `world/scenes.yaml` via `GameSeedYamlReader` + the configured starting scene and returns the `GameSeed`,
   wrapping any `IOException` in `GameSeedSourceOperationsError` (presented, not fail-fast). The use case
-  *pulls* that as Checkpoint 1. `infrastructure/world/GameSeeder` (plain singleton, *not* an
+  *pulls* that as Checkpoint 1), `CorpseBlueprintSourceOperationsOutputPort` (#93) and
+  `WareTemplateSourceOperationsOutputPort` (#119) — each pull re-validates its kind-specific rules
+  (blueprint: container without a ground-spawn rule; ware: neither container nor anchored) and surfaces faults
+  in its own port-error currency, never double-wrapped. `infrastructure/world/GameSeeder` (plain singleton, *not* an
   `ApplicationRunner`) is now logic-free: it fires `InitializeGame` via `seed()` (one `getBean` prototype
   pull, no return used). Idempotent (the use case's seed-if-empty / create-if-absent / spawn-if-none
   guards), so it is invoked unconditionally by `BootSequence`'s ordered runner on every interactive boot.

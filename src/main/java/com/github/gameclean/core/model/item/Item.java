@@ -49,9 +49,10 @@ import java.util.Objects;
  * reference, is an explicit authored fact, never an accident); the seed gate translates.
  *
  * <p>An item may be <b>currency</b> — the {@link #currency} flag marks it as money: one instance counts as one
- * coin toward a price, whatever its template, because the world has a single currency and no denominations. The
- * flag is inert in this phase (nothing counts coins yet), carried from the template onto every instance like
- * {@link #container} and {@link #opens}. It is subject to an invariant, enforced here as elsewhere by the
+ * coin toward a price, whatever its template, because the world has a single currency and no denominations.
+ * Currency is ordinary held items — coins in the buyer's keeping are what a {@code buy} transaction counts and
+ * spends — carried from the template onto every instance like {@link #container} and {@link #opens}. It is
+ * subject to an invariant, enforced here as elsewhere by the
  * construction gate: a currency item is <em>neither</em> a container <em>nor</em> anchored — money that holds
  * other things is a purse (a container whose contents would ride along uncounted), and money fixed to the ground
  * cannot be paid. Both are authoring mistakes, rejected rather than modeled around.

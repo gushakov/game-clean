@@ -136,9 +136,9 @@ scenes:
 #
 # Currency (`currency`, optional): whether the item is money. There is ONE currency and no
 # denominations, so every currency item counts as exactly one coin toward a price, whatever
-# its template — the flag is all there is to being money. Nothing counts coins yet (buying is
-# a later phase); the fact is authored and persisted now so the phase that spends them has
-# something to spend. It is subject to an invariant: a currency item is neither a `container`
+# its template — the flag is all there is to being money. What a buyer carries flat in their
+# keeping is what a `buy` counts and pays; coins inside a carried container are not counted.
+# It is subject to an invariant: a currency item is neither a `container`
 # (money that holds other things is a purse, whose contents would ride along uncounted) nor
 # `portable: false` (money bolted to the ground cannot be paid), so `currency: true` together
 # with either is rejected at init.
@@ -171,8 +171,8 @@ items:
       is worn smooth, where a thumb has turned it over and over.
     spawn:
       scenes: scn1
-      chance: 40/50
-      max: 4
+      chance: 1/1
+      max: 3
 
   - id: itm4
     shortDescription: An oak chest.
@@ -202,20 +202,15 @@ items:
       - item: itm2         # the tarnished silver ring may be on the body
         chance: 1/2        # rolled once per slaying
 
-  # TEMPORARY placement: the guest-room key lies on the inn floor with certainty *and* is on
-  # offer from the keeper below (npcs npc2). Phase 3 of the inn scenario removes the ground spawn,
-  # leaving the offer as the only route to the key; until then both routes coexist — deliberately
-  # allowed by the offer gate, which asks only that an offered item be carryable and not a container.
+  # Delivered only by the innkeeper's offer (npc2 below, `buy room`): no ground spawn — the key
+  # changes hands for coins or not at all. The offer gate asks only that an offered ware be
+  # carryable and not a container, so a ware *may* also carry a spawn rule; this one does not.
   - id: itm6
     shortDescription: A small brass key.
     fullDescription: >
       A small brass key on a loop of frayed red cord. A wooden tag hangs from it,
       burned with the outline of a lantern.
     opens: guest-room      # the handle of the lock this item opens (see scn5's exit up)
-    spawn:
-      scenes: scn5
-      chance: 1/1
-      max: 1
 
 # Authored NPCs. Each is a *template*: its `spawn` rule places 0..max instances into
 # randomly chosen candidate scenes (one chance roll per try), exactly like items.
@@ -239,14 +234,14 @@ items:
 #
 # `offers:` (optional) lists what the NPC is prepared to hand over for coins. Each entry is
 # `{id, name, price, item}`: the offer's `id` is its handle, unique within this NPC; `name` is
-# how it reads to the player, a sentence like an item's short description; `price` counts
-# COINS (one each, from any item authored `currency: true` above); and `item` is the authoring
-# handle of the item delivered on purchase — which must resolve to an item that is neither a
-# `container` nor anchored (ware changes hands, so it must be a carryable single thing). It MAY
-# have a `spawn` rule of its own: the key below both lies on the inn floor and is for sale.
-# Nothing buys anything yet (phase 3 adds the verb) and nothing renders an offer (phase 4 adds
-# the pitch); an offer is a standing authored fact, with no stock and no sold-out state.
-# Unauthored = the NPC sells nothing.
+# how it reads to the player, a sentence like an item's short description, and what a `buy <ware>`
+# target designates it by; `price` counts COINS (one each, from any item authored `currency: true`
+# above), paid from the buyer's keeping; and `item` is the authoring handle of the item minted into
+# the buyer's hands on purchase — which must resolve to an item that is neither a `container` nor
+# anchored (ware changes hands, so it must be a carryable single thing). It MAY have a `spawn` rule
+# of its own — ware can also lie where it spawns — but the key below has none: the keeper's offer
+# is the only route to it. An offer is a standing authored fact, with no stock and no sold-out
+# state: the same ware can be bought as often as a buyer pays. Unauthored = the NPC sells nothing.
 npcs:
   - id: npc1
     shortDescription: A hooded wanderer.

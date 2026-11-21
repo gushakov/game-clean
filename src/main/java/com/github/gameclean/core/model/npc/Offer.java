@@ -12,11 +12,11 @@ import java.util.Set;
  * One thing an NPC offers for sale — a Value Object owned by the offering NPC.
  *
  * <p>An offer is a <em>standing authored fact</em>, written like an item's short description: a {@code ref}
- * (the authored handle the player will one day name when buying), a {@code name} (how the offer reads to the
- * player), a {@code price} counted in coins, and an {@code itemRef} — the authored handle of the item template
- * handed over on purchase. It holds <b>no state</b>: no stock, no quantity, no kind, no sold-out flag. Buying
- * is a later phase's interaction; the offer itself only records what the NPC is prepared to part with, and for
- * how many coins.
+ * (the authored handle — paired with its vendor's id it forms the {@link StandingOffer} candidate token), a
+ * {@code name} (how the offer reads to the player, and what a free-text {@code buy} target designates it by), a
+ * {@code price} counted in coins, and an {@code itemRef} — the authored handle of the item template minted into
+ * the buyer's hands on purchase. It holds <b>no state</b>: no stock, no quantity, no kind, no sold-out flag —
+ * the NPC stands ready to part with this ware, for this many coins, as often as a buyer pays.
  *
  * <p>Like {@code Npc.corpseRef} and {@code Item.opens}, {@code ref} and {@code itemRef} are <em>opaque authored
  * handles</em>, not identities: neither is resolvable in-model. {@code itemRef} names an {@code items:} entry of

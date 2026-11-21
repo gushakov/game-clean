@@ -321,7 +321,7 @@ class NpcTest {
 
     @Test
     void rejects_two_offers_sharing_a_handle() {
-        // The handle is what a later phase's player names when buying, so within one NPC it can mean one thing.
+        // The handle is the offer's half of the selection token, so within one NPC it can mean one thing.
         assertThatExceptionOfType(InvalidDomainObjectError.class)
                 .isThrownBy(() -> npc("scn1").withOffers(List.of(
                         roomOffer(), new Offer("room", "A bowl of yesterday's stew.", 1, "itm1"))))
@@ -344,5 +344,31 @@ class NpcTest {
         // The offers are as ordinary a field as the sayings: every mutator carries them forward.
         assertThat(keeper.moveTo(SceneId.of("scn2")).getOffers()).containsExactly(roomOffer());
         assertThat(keeper.takeDamage(1).provoked().getOffers()).containsExactly(roomOffer());
+    }
+
+    // --- standing offers (#119) ---------------------------------------------------------------------
+
+    @Test
+    void standing_offers_pair_every_offer_with_the_npc_in_authored_order() {
+        Offer stew = new Offer("stew", "A bowl of yesterday's stew.", 1, "itm1");
+        Npc keeper = npc("scn1").withOffers(List.of(roomOffer(), stew));
+        List<StandingOffer> wares = keeper.standingOffers();
+        // One per offer, authored order, each pairing the offer with this very NPC as its vendor.
+        assertThat(wares).extracting(StandingOffer::getOffer).containsExactly(roomOffer(), stew);
+        assertThat(wares).allSatisfy(ware -> assertThat(ware.getVendor()).isSameAs(keeper));
+    }
+
+    @Test
+    void standing_offers_are_empty_without_offers() {
+        assertThat(npc("scn1").standingOffers()).isEmpty();
+    }
+
+    @Test
+    void a_hostile_npc_still_stands_by_its_offers() {
+        // Refusing a hostile vendor is the buying use case's reading of the stance — the projection over the
+        // authored list knows nothing of it, the way pickSaying knows nothing of the talk refusal.
+        Npc provoked = npc("scn1").withOffers(List.of(roomOffer())).provoked();
+        assertThat(provoked.isHostile()).isTrue();
+        assertThat(provoked.standingOffers()).hasSize(1);
     }
 }
