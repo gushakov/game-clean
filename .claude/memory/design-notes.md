@@ -2884,6 +2884,66 @@ versioned aggregate and degrades the mode buffer to a correlation token; the mod
 input-thread-confined semantically — arming fixes the next line's interpretation — so cross-thread holders
 are legal only for interpretation-free, monotonic signals.*)
 
+**The third pole — a standing offer is a fact, not an event, and a conversation over facts has no state to
+home (the inn, #115/#117).** `[thread #1]` `[thread #4]` The first NPC trade was specified as a multi-turn
+conversation: the player talks to an innkeeper, who offers a room for the night; the player may walk off and
+do other things; later she accepts, pays, receives a key, and a locked way opens. The script reads as a
+*pending offer awaiting acceptance*, and the two tests above stand ready to home that state (an envelope if
+nobody owes memory of it, an aggregate otherwise). Neither is needed, because the premise is wrong: **a
+fixed-price offer is not *made* by the talk, it is *revealed* by it.** The ware and its price are authored
+facts of the NPC (`offers:`, copied onto the instance like `sayings`), standing whether or not anyone asks: a
+shop sign, not a speech act. Acceptance therefore resumes nothing. It is a self-grounding act of a different
+user goal (`rent room`, `buy bread`): valid for a player who never talked, grounded in the scene like `take`,
+and re-validated against live state like every other designation. The "conversation" decompresses into two
+independent interactions with no memory between them: **Talk** (the parley goal: the pitch plus the wares,
+arming an ordinary ephemeral selection menu which dies on focus loss) and **Buy** (the trade goal). The
+custody test passes vacuously (the domain owes no memory of "she offered", since the offer never stopped
+standing), and so does the animation test (the keeper is a real `Npc`, but a sale writes nothing of hers).
+This is the degenerate third pole beside the envelope and the aggregate: **no between-interaction state at
+all**. The discriminator against the haggle is exact, and it is capture-at-offer read backwards: a
+counter-offer is *decided at a moment* (dice, stats, the hour), so it must be captured, and captured state
+needs a home; a standing price was decided by the author, so there is nothing to capture. *Before homing a
+conversation's state, ask whether what was "offered" is an event or a fact.* The authoring half is in the code
+(#115, #117); the two interactions are the design, still to be confirmed by building them. The §12 falsifier
+stays ahead: this is not the haggle, and its ease shows only that the cheapest shape was available, not that
+a sequenced negotiation will stay free of a status enum.
+
+**What a real NPC costs the trade, and what it does not.** `[thread #3]` The interlocutor is a world `Npc`,
+not a system persona like the blackjack dealer, so the world may move under the trade: between the talk and
+the purchase the keeper can be struck, turn hostile or be slain, and a mobile vendor can walk away. Nothing
+pins her, by the corollary above (wanting the world to respect a conversation is the signal that its state
+has outgrown the envelope), and here there is not even an envelope. The whole absorption sits in what Buy
+*provisions*: its candidates are the offers of the peaceful, living NPCs in the player's scene, so an absent,
+hostile or dead vendor simply offers nothing, and a stale menu pick meets the selection dialogue's existing
+"no longer available" outcome. Hostility outranks commerce for the reason it outranks eloquence (§13, the
+`talk` record). Livelier vendors (hawking on the tick, eviction at dawn) are NPC decisions which ride the
+ticker later, never conversation state.
+
+**The first cross-goal arm, with per-choice tags still deferred.** `[thread #4]` Talk's menu is resumed by
+Buy: for the first time the interaction which arms and the interaction which resumes belong to different
+summary goals. Arm-time completeness covers it unchanged (Talk's presenter flattens the tokens, Buy
+re-validates them), and it is the first concrete step towards the "mode session spanning several Cockburn
+goals" predicted above. The per-choice routing tags are *not* introduced with it: with one kind of offer,
+every choice designates the same goal, so the affordance kind still maps to one use case. The tag arrives
+with the second kind of offer (a quest), counted per axis like every other abstraction here.
+
+**A ware is not the item it delivers.** `[thread #1]` The player rents *a room* and receives *a key*. The
+offer therefore has its own authored name, which is what designation by description matches, and its own
+identity: the vendor's id plus the offer's ref, the first composite selection token. The delivered item is an
+opaque handle on the offer (`itemRef`, the `corpseRef` precedent), checked once at the initialization gate and
+so valid by provenance at the sale (§3). Naming the offer after its item would have made `buy key` the phrase
+for renting a room, and it would break at the first ware which delivers no item at all (a service, a quest).
+
+**Money and delivery without new structure.** `[thread #1]` Coins are ordinary items flagged `currency`, one
+item one coin; a price is a count of them; paying *consumes* the coins; the delivered item is *minted* at the
+sale from its authored template (the corpse-blueprint pull, §3). Each is the choice which mints no concept
+ahead of a use case which reads it. A balance on `Player` would be a second custody structure beside the
+inventory, which already carries coins as things one can find, drop and loot. Moving the coins *to* the
+keeper, or the key *from* her, needs an NPC inventory (and a stock which can run out) that no interaction
+reads yet: deferred until one does (a till to rob, a limited stock). The plain `int` price and the single
+currency are the same deferral: a `Price` value object and denominations wait for behaviour. Wares are
+restricted to portable non-containers so that the mint is one template with no contents to roll.
+
 **Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
 lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the
 full round — hole card and deck included — must transit the presenter, because the presenter is the arming
@@ -3274,6 +3334,18 @@ two positions with different afforded-continuation sets force the name; prefer a
 then; reach for a sealed phase type only when the phases carry different *data* (the `Location` precedent,
 §2). A speculative status enum is exactly as illegitimate as the speculative exit-visibility field §2
 refused.
+
+**A lock is a derived predicate: the rule's first instance in world state (#115).** `[thread #1]`
+`[thread #3]` A locked exit carries no open/closed state. The exit names a lock (an authored ref), an item
+names the lock it `opens`, and passability is computed in `Move` from what the mover holds. The speculative
+alternative, a door-state field toggled by an `unlock` interaction, is this section's status enum in world
+form. It would add a transition which is nobody's goal (the player wants to pass, not to unlock), a
+world-shared mutable which every mover and the ticker contend on (a version, a lost race, a stripe for it),
+and a reset problem (who relocks, and when). Derived, the key in the pocket *is* the state: access is per
+holder for free, revocation is taking the key back (a dawn eviction needs no door to relock), and NPCs, who
+hold nothing, are kept out by leaving locked exits out of their wander set. A door state is minted only by
+the continuation-set criterion above: when two positions must afford different continuations which
+possession cannot express (a door left open behind the player for others to use).
 
 **Three bounds keep the theory honest.**
 
