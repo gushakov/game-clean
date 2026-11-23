@@ -64,7 +64,7 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase`/`SelectContainedItemSubcase`/`SelectSceneNpcSubcase`/`SelectSceneOfferSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `TakeFrom` (take an item out of a container lying here, #107) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72); `usecase/parley/` holds `TalkToNpc` (the player talks to an NPC, who answers with an authored saying — the first non-violent NPC interaction, read-only, #104); `usecase/trade/` holds `BuyFromNpc` (the player buys a ware on offer from a peaceful vendor standing in their scene — coins counted in the buyer's keeping, paid by deleting them and minting the ware into the buyer's hands in one plain transaction, #119)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase`/`SelectContainedItemSubcase`/`SelectSceneNpcSubcase`/`SelectSceneOfferSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `TakeFrom` (take an item out of a container lying here, #107) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72); `usecase/parley/` holds `TalkToNpc` (the player talks to an NPC, who answers with an authored saying — the first non-violent NPC interaction, read-only, #104 — and a peaceful vendor also shows its wares as a numbered menu a bare number buys from, #121); `usecase/trade/` holds `BuyFromNpc` (the player buys a ware on offer from a peaceful vendor standing in their scene — coins counted in the buyer's keeping, paid by deleting them and minting the ware into the buyer's hands in one plain transaction, #119)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -692,8 +692,8 @@ sayings; the first non-violent NPC interaction, and the project's first vertical
 - **Use case** — `TalkToNpc` (`core/usecase/parley/` — a new summary goal: talking with the inhabitants, distinct
   from `combat` and the system-actor `npc/`): `playerTalksToTarget(String)` + `playerTalksToChosenCandidate(int,
   List<String>)` over the shared `orient` + `select`-NPC opening (the third `SelectSceneNpcSubcase` consumer after
-  `hit`). **Read-only, no tx, no persistence port of its own**; holds a `Dice`. Three stripes decided in the use
-  case on domain facts, in fixed order: `presentNpcRefusesToTalk` (hostile — the combat stance outranks the
+  `hit`). **Read-only, no tx, no persistence port of its own**; holds a `Dice`. Three stripes (four since #121,
+  which inserts the wares stripe after the refusal) decided in the use case on domain facts, in fixed order: `presentNpcRefusesToTalk` (hostile — the combat stance outranks the
   lines), `presentNpcHasNothingToSay` (peaceful, nothing authored), `presentNpcSays(npc, saying)`.
 - **Persistence** — Flyway `V16__create_npc_saying.sql`: child table `npc_saying(npc_id, idx, text)` owned by
   the npc aggregate (the `exit`/`scene_mini_game` pattern); `@MappedCollection(idColumn, keyColumn = "idx")
@@ -773,8 +773,8 @@ passed only by a player carrying an item that opens it; NPCs carry nothing and n
   its volume reset to gain the new scenes. `scenes2.yaml` untouched.
 
 `Wares authoring` vertical **complete** (issue #117, inn scenario phase 2 of 4) — coins are currency and
-NPCs carry offers. Its consumer arrived with #119 (the `buy` verb counts and spends coins, selects wares and
-mints them); what still has no consumer is the **rendered offer** — the keeper's pitch (phase 4). Decided in the issue; the only open choice taken
+NPCs carry offers. Its consumers arrived with #119 (the `buy` verb counts and spends coins, selects wares and
+mints them) and #121 (`talk` shows a peaceful vendor's wares). Decided in the issue; the only open choice taken
 here was leaving `scenes2.yaml` (the harbour world, referenced by no test) unauthored:
 
 - **Domain** — `Offer` VO (`core/model/npc/`: non-blank `ref`/`name`/`itemRef`, `price ≥ 1`; equality by
@@ -817,7 +817,7 @@ here was leaving `scenes2.yaml` (the harbour world, referenced by no test) unaut
   a handful would be one coin); `npc2` (the innkeeper) offers `room` — "A room for the night." — for **2**
   coins, delivering `itm6` (the guest-room key, which at the time also lay on the inn floor — #119 removed
   that spawn). Header comments document both new keys.
-- **Deferred** — offer rendering / the keeper's pitch (phase 4), `buy <ware> from <vendor>`, a bare `buy`
+- **Deferred** — an authored pitch line (offer rendering itself landed in #121), `buy <ware> from <vendor>`, a bare `buy`
   listing wares, stock/sold-out, coins travelling to the vendor, coins inside held containers, denominations,
   a `Price` VO, offer kinds. A play DB seeded before this change needs its volume reset to gain the coin and offer.
 
@@ -863,7 +863,27 @@ coins from the buyer's keeping and mints the ware into their hands. All decided 
   play DB seeded before the change needs its volume reset. `InitializeGameIT` now pins: no key exists, three
   coins on the `scn1` ground.
 
-Tests: 691 unit (Surefire, DB-free) + 36 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Talk shows wares` vertical **complete** (issue #121, inn scenario phase 4 of 4) — `talk <npc>` to a peaceful
+NPC with offers shows its line (if any) and then its wares as a numbered list; a bare number buys through the
+existing purchase. Talk reveals standing facts: no state, no write, no read of the player's coins. All decided in
+the issue:
+
+- **Use case** — `TalkToNpcPresenterOutputPort.presentNpcShowsWares(Npc, Optional<String> saying,
+  List<StandingOffer> wares)`. `TalkToNpcUseCase.talkToResolvedNpc` now has **four** stripes, in order: hostile →
+  `presentNpcRefusesToTalk` (a hostile vendor shows nothing); `standingOffers()` non-empty →
+  `presentNpcShowsWares` (saying picked with the dice only when `hasSayings()`, else empty with no roll; wares in
+  authored order); no sayings → `presentNpcHasNothingToSay`; else `presentNpcSays`. Fields, interactions and
+  catches unchanged; no new port, no model member; `parley` imports nothing from `trade`.
+- **Terminal** — `OfferRenderer.renderWares(vendor, wares)` ("<vendor> offers:", numbered "<name> — N coins",
+  "Type the number to buy."); `TerminalTalkToNpcPresenter` gains `OfferRenderer` (after `NpcRenderer`) and, in
+  `presentNpcShowsWares`, renders the saying if present, the wares, then arms `AffordanceKind.BUY` with each
+  ware's `idToken()` in the order shown (no sorting). The existing dispatcher routes the number to
+  `BuyConversation` → `playerBuysChosenCandidate`, which re-validates against the live scene. The first menu armed
+  by one summary goal (parley) and resumed by another (trade). A `TALK` menu resumed onto a vendor re-arms as
+  `BUY` (the resume does not clear; `offer` replaces).
+- **No migration, no DDL, no seed change**; `scenes.yaml` header comments only. Every ArchUnit rule unchanged.
+
+Tests: 695 unit (Surefire, DB-free) + 36 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **container capacity** (the first

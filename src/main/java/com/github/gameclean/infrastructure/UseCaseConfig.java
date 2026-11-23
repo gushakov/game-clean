@@ -293,6 +293,7 @@ public class UseCaseConfig {
     public TalkToNpcInputPort talkToNpcUseCase(
             OrientRenderer orientRenderer,
             NpcRenderer npcRenderer,
+            OfferRenderer offerRenderer,
             Console console,
             AffordanceContext affordanceContext,
             PlayerOperationsOutputPort playerOps,
@@ -300,12 +301,13 @@ public class UseCaseConfig {
             SceneRepositoryOperationsOutputPort sceneOps,
             NpcRepositoryOperationsOutputPort npcOps) {
         // One presenter instance, shared with the orient and the scene-sourced NPC select subcases (as hit does),
-        // so every outcome — the NPC's answer, a refusal, nothing-to-say, the orient not-founds, the
-        // disambiguation outcomes — reaches the same one. Read-only: no transaction port, and no persistence
-        // port of the use case's own (the select subcase holds the NPC port). Dice is a domain collaborator (a
-        // fresh SystemDice, like the ticker) picking the NPC's line.
-        TerminalTalkToNpcPresenter presenter =
-                new TerminalTalkToNpcPresenter(orientRenderer, npcRenderer, console, affordanceContext);
+        // so every outcome — the NPC's answer, a refusal, nothing-to-say, a vendor's wares, the orient
+        // not-founds, the disambiguation outcomes — reaches the same one. The wares are rendered by the
+        // OfferRenderer the purchase shares, and armed as a BUY menu the buy conversation resumes. Read-only: no
+        // transaction port, and no persistence port of the use case's own (the select subcase holds the NPC
+        // port). Dice is a domain collaborator (a fresh SystemDice, like the ticker) picking the NPC's line.
+        TerminalTalkToNpcPresenter presenter = new TerminalTalkToNpcPresenter(
+                orientRenderer, npcRenderer, offerRenderer, console, affordanceContext);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneNpcSubcase select = new SelectSceneNpcSubcase(presenter, npcOps);
         return new TalkToNpcUseCase(presenter, orient, select, new SystemDice());

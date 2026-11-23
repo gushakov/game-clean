@@ -265,7 +265,10 @@ Established by the JLine entry-point work (issue #6).
   `Conversation` directly — the first *verb-continued* dialogue: `hit`/`hit me`, `stand`/`stay`,
   `game`/`table`, plus `play` folding to the anytime table view; it casts the payload back to
   `BlackjackRound`, the `SelectCommand` cast's twin). Each handler pulls a fresh prototype use case per
-  resume (`getBean`). Emergence ledger: kind-routing at the second number-continued dialogue (`take`),
+  resume (`getBean`). An affordance kind names the *resuming* conversation, not the arming use case: the `BUY`
+  menu is armed both by an ambiguous `buy` and by `talk` to a peaceful vendor showing its wares
+  (`TerminalTalkToNpcPresenter.presentNpcShowsWares`, #121), and a `TALK` menu resumed onto a vendor re-arms as
+  `BUY` — the dispatcher never clears after a resume, and `offer` replaces the armed affordance. Emergence ledger: kind-routing at the second number-continued dialogue (`take`),
   confirmed by the third (`drop`); `continuedBy` moved onto the handler at the first non-number continuation
   (`blackjack`), exactly as reserved. Rationale: design-notes §9.
 - **`GameConfigurationProperties`** (`infrastructure/`) — the single catalog of every `game.*` property,

@@ -7,9 +7,11 @@ import org.springframework.context.ApplicationContext;
 import java.util.List;
 
 /**
- * The {@code buy} disambiguation as a {@link Conversation}: a bare number while a ware offer is armed resumes
- * by buying the chosen candidate. Mirrors {@link TalkConversation} — the same scene-sourced disambiguation, a
- * different completion interaction. Wired in the composition root, collected by {@code ConsoleSession} as a
+ * The ware menu as a {@link Conversation}: a bare number while a ware offer is armed resumes by buying the
+ * chosen candidate. The menu may have been armed by an ambiguous {@code buy} or by a {@code talk} to a vendor
+ * showing its wares; either way it is a list of ware tokens, and the purchase re-validates the chosen one
+ * against the live scene. Mirrors {@link TalkConversation} — the same scene-sourced disambiguation, a different
+ * completion interaction. Wired in the composition root, collected by {@code ConsoleSession} as a
  * {@code Conversation}.
  */
 public class BuyConversation extends AbstractSelectionConversation {

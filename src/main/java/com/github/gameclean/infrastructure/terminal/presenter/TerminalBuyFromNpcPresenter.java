@@ -29,7 +29,9 @@ import java.util.List;
  *
  * <p>Every outcome here is the <b>synchronous</b> response to the player's {@code buy} (or {@code rent})
  * command, so it writes to the prompt directly; an ambiguous ware arms the {@link AffordanceContext} with
- * {@link AffordanceKind#BUY} so a subsequent bare number resumes the purchase of the chosen ware.
+ * {@link AffordanceKind#BUY} so a subsequent bare number resumes the purchase of the chosen ware. The menu a
+ * purchase resumes may instead have been armed by {@code TerminalTalkToNpcPresenter}, when a vendor showed its
+ * wares; the outcomes of that resumed purchase are rendered here all the same.
  *
  * <p>The disambiguation menu is ordered here once (stable by offer name, then composite token) and the same
  * order is both displayed and remembered, so the visible menu and the latent offer cannot drift — exactly as

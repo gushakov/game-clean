@@ -1,6 +1,7 @@
 package com.github.gameclean.infrastructure.terminal.render;
 
 import com.github.gameclean.core.model.item.Item;
+import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.StandingOffer;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -13,11 +14,12 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Renders commerce-facing output — the outcomes of a {@code buy}: the purchase confirmation, the coin
- * shortfall, and the ware-flavored disambiguation dialogue. The ware counterpart of {@link NpcRenderer}: a
- * shared, domain-aware collaborator (it knows {@link StandingOffer} and {@link Item}) over the domain-agnostic
- * {@link Console}. All of it is the <em>synchronous</em> response to a player command, so every line is a
- * plain {@link Console#write} or {@link Console#printError} — nothing is narrated above the prompt.
+ * Renders commerce-facing output — the outcomes of a {@code buy} (the purchase confirmation, the coin shortfall,
+ * the ware-flavored disambiguation dialogue) and the wares a peaceful vendor shows when the player talks to it.
+ * The ware counterpart of {@link NpcRenderer}: a shared, domain-aware collaborator (it knows {@link Npc},
+ * {@link StandingOffer} and {@link Item}) over the domain-agnostic {@link Console}. All of it is the
+ * <em>synchronous</em> response to a player command, so every line is a plain {@link Console#write} or
+ * {@link Console#printError} — nothing is narrated above the prompt.
  *
  * <p>The success line names no verb: the same renderer answers {@code buy} and its synonym {@code rent}, so it
  * speaks only the transaction's facts — coins paid, vendor paid, ware received. A purchase is an exchange,
@@ -84,6 +86,27 @@ public class OfferRenderer {
         console.write(sb);
     }
 
+    /**
+     * The wares a vendor shows when the player talks to it: a header naming the vendor, then the wares numbered
+     * 1..N in the order given (the authored order the use case presented), each its name and price, then how to
+     * buy one. The numbers are the ones a following bare number designates.
+     */
+    public void renderWares(Npc vendor, List<StandingOffer> wares) {
+        AttributedStringBuilder sb = new AttributedStringBuilder();
+        sb.style(MENU).append("%s offers:".formatted(bareName(vendor.getShortDescription())))
+                .style(AttributedStyle.DEFAULT);
+        int number = 1;
+        for (StandingOffer ware : wares) {
+            sb.append(System.lineSeparator())
+                    .append("  %d. ".formatted(number++))
+                    .append("%s — %s".formatted(
+                            bareName(ware.getOffer().getName()),
+                            English.quantity(ware.getOffer().getPrice(), "coin")));
+        }
+        sb.append(System.lineSeparator()).append("Type the number to buy.");
+        console.write(sb);
+    }
+
     /** A chosen ware no longer on offer here (its vendor moved on or fell since the menu was shown). */
     public void renderWareNoLongerAvailable() {
         console.printError("That ware is no longer on offer here.");
@@ -95,8 +118,9 @@ public class OfferRenderer {
     }
 
     /**
-     * Short descriptions are authored as standalone sentences ("A stout innkeeper."); strip the trailing
-     * period so the name reads cleanly embedded in a sentence — the {@link NpcRenderer} twin.
+     * Short descriptions and offer names are authored as standalone sentences ("A stout innkeeper.", "A room
+     * for the night."); strip the trailing period so the name reads cleanly embedded in a sentence or a menu
+     * line — the {@link NpcRenderer} twin.
      */
     private static String bareName(String shortDescription) {
         String who = shortDescription.strip();

@@ -260,7 +260,8 @@ public class ConsoleSession {
 
     private void talkTo(String target) {
         // Same idiom as hit: a fresh prototype use case per interaction. An ambiguous target makes the use case
-        // present a menu and arm the AffordanceContext (kind TALK), so the next bare number resumes talking.
+        // present a menu and arm the AffordanceContext (kind TALK), so the next bare number resumes talking; a
+        // vendor showing its wares arms it with kind BUY, so the next bare number buys the chosen ware.
         TalkToNpcInputPort talkToNpcUseCase = applicationContext.getBean(TalkToNpcInputPort.class);
         talkToNpcUseCase.playerTalksToTarget(target);
     }

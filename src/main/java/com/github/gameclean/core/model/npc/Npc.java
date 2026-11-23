@@ -75,8 +75,8 @@ import java.util.Objects;
  * coins — {@link Offer} value objects in authored order, empty when it sells nothing (authored absence, like
  * sayings). They are copied from the template onto every instance exactly like the sayings: each spawned NPC
  * owns its own list. An offer is a standing fact, not a state — no stock, no quantity, no sold-out flag. The
- * buyer side is {@link #standingOffers()}: each offer paired with this NPC, the unit a {@code buy} transaction
- * designates and completes. The one rule the NPC enforces over its own list is that no two offers share a
+ * buyer side is {@link #standingOffers()}: each offer paired with this NPC, the unit a {@code talk} shows and a
+ * {@code buy} transaction designates and completes. The one rule the NPC enforces over its own list is that no two offers share a
  * {@code ref}, so the handle a selection token carries can mean only one thing. Whether an offer's item handle
  * <em>resolves</em> to a sellable item is an inter-template rule the initialization gate checks, exactly like a
  * corpse ref.
