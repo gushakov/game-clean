@@ -14,10 +14,12 @@
  * its authored sayings, picked by a {@code Dice} the use case holds as a domain collaborator — the entropy of a
  * reply, like the entropy of a spawn or a day-phase announcement, is in-model.
  *
- * <p><b>Three stripes, decided here on domain facts.</b> A <em>hostile</em> NPC (one the player has struck)
+ * <p><b>Four stripes, decided here on domain facts.</b> A <em>hostile</em> NPC (one the player has struck)
  * refuses to talk — the combat stance shuts the conversation, an interaction-shape decision the use case makes
- * by reading {@code Npc.isHostile()}, never the presenter; a peaceful NPC with no authored sayings has nothing
- * to say ({@code Npc.hasSayings()}); otherwise it speaks. The NPC owns the pick; the use case owns the
- * branching; the presenter only phrases.
+ * by reading {@code Npc.isHostile()}, never the presenter; a peaceful NPC with wares
+ * ({@code Npc.standingOffers()}) shows them, after one of its sayings when it has any; a peaceful NPC with no
+ * authored sayings has nothing to say ({@code Npc.hasSayings()}); otherwise it speaks. The NPC owns the pick;
+ * the use case owns the branching; the presenter only phrases. Showing the wares writes nothing and keeps no
+ * state: they are standing facts, and the purchase a following number makes is the trade goal's interaction.
  */
 package com.github.gameclean.core.usecase.parley;

@@ -2921,8 +2921,10 @@ This is the degenerate third pole beside the envelope and the aggregate: **no be
 all**. The discriminator against the haggle is exact, and it is capture-at-offer read backwards: a
 counter-offer is *decided at a moment* (dice, stats, the hour), so it must be captured, and captured state
 needs a home; a standing price was decided by the author, so there is nothing to capture. *Before homing a
-conversation's state, ask whether what was "offered" is an event or a fact.* The authoring half is in the code
-(#115, #117); the two interactions are the design, still to be confirmed by building them. The §12 falsifier
+conversation's state, ask whether what was "offered" is an event or a fact.* Building it confirmed the
+design without amendment: Buy (#119) and Talk-shows-wares (#121) are two interactions with no memory between
+them, and the whole scripted conversation (talk, walk away, come back with coins, pay, pass the locked way)
+runs on no state but the ephemeral menu, which any other command drops. The §12 falsifier
 stays ahead: this is not the haggle, and its ease shows only that the cheapest shape was available, not that
 a sequenced negotiation will stay free of a status enum.
 
@@ -2943,7 +2945,12 @@ summary goals. Arm-time completeness covers it unchanged (Talk's presenter flatt
 re-validates them), and it is the first concrete step towards the "mode session spanning several Cockburn
 goals" predicted above. The per-choice routing tags are *not* introduced with it: with one kind of offer,
 every choice designates the same goal, so the affordance kind still maps to one use case. The tag arrives
-with the second kind of offer (a quest), counted per axis like every other abstraction here.
+with the second kind of offer (a quest), counted per axis like every other abstraction here. The build
+(#121) is the evidence for arm-time completeness: the cross-goal arm cost one presenter method and one
+renderer method, and nothing in the router (no new kind, no new conversation, no dispatcher change). It
+also sharpened what a kind names: the **resuming** conversation, never the arming use case. `BUY` is armed by
+two goals (an ambiguous `buy`, a vendor's wares shown by `talk`), and a `TALK` menu resumed onto a vendor
+re-arms as `BUY` in the same turn, because the router never clears after a resume and arming replaces.
 
 **A ware is not the item it delivers.** `[thread #1]` The player rents *a room* and receives *a key*. The
 offer therefore has its own authored name, which is what designation by description matches, and its own

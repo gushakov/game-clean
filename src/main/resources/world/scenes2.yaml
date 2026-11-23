@@ -30,7 +30,7 @@ scenes:
     fullDescription: >
       Empty trestle tables still smell of brine and old catch. Gulls have the run of
       the place now. Lanes lead back south, west into a row of cottages, and north to
-      a leaning chapel.
+      a leaning chapel; lantern-light glows down an alley to the east.
     exits:
       - name: south
         target: scn1
@@ -38,6 +38,8 @@ scenes:
         target: scn4
       - name: north
         target: scn5
+      - name: east
+        target: scn11
 
   - id: scn3
     name: Salt Wharf
@@ -134,6 +136,17 @@ scenes:
     exits:
       - name: east
         target: scn9
+
+  - id: scn11
+    name: Lantern Alley
+    shortDescription: A narrow alley of lantern-lit stalls.
+    fullDescription: >
+      Two stalls face each other across a gutter-wide alley, each hung with a guttering
+      lantern — the one place on this coast where anything is still sold. The fish
+      market lies back west.
+    exits:
+      - name: west
+        target: scn2
 
 # Authored items — tuned to exercise `examine` and its disambiguation. Every spawn is
 # *certain* (chance 1/1) and lands in the starting scene scn1 (a single candidate scene,
@@ -312,8 +325,49 @@ items:
       A heavy brass ring, its face cut with an anchor fouled in its own chain. The
       band is worn thin on one side.
 
-# Authored NPCs — like the items, tuned so you actually see them without hunting. All three
-# spawn *certainly* (chance 1/1, max 1) into the starting scene scn1, so a fresh game
+  # Trading surface (Lantern Alley, scn11 — from the Harbor Steps: `go north`, `go east`).
+  # Money: five coins always lie in the alley itself, so buying needs no hunting. `take coin`
+  # is a menu of identical coins each time until one is left (pick any number).
+  - id: itm15
+    shortDescription: A green-crusted coin.
+    fullDescription: >
+      A thin coin of some old harbor mint, its face lost under green crust. It still
+      spends here.
+    currency: true         # counts as one coin toward a price
+    spawn:
+      scenes: scn11
+      chance: 1/1
+      max: 5
+
+  # Wares — no `spawn` rule: each exists only once bought from a vendor below (see npcs).
+  - id: itm16
+    shortDescription: A loaf of dark rye bread.
+    fullDescription: >
+      A dense, heavy loaf with a crust like bark, still faintly warm from somewhere.
+
+  - id: itm17
+    shortDescription: A hard ship's biscuit.
+    fullDescription: >
+      A square of twice-baked biscuit hard enough to crack a tooth. It will keep longer
+      than you will.
+
+  - id: itm18
+    shortDescription: A tallow candle.
+    fullDescription: >
+      A greasy yellow candle that smells of mutton when you hold it close.
+
+  - id: itm19
+    shortDescription: A beeswax candle.
+    fullDescription: >
+      A slim, honey-coloured candle, smooth and sweet-smelling — a small luxury here.
+
+  - id: itm20
+    shortDescription: A smoked herring.
+    fullDescription: >
+      A whole herring smoked gold and stiff as a board, tail tied with twine.
+
+# Authored NPCs — like the items, tuned so you actually see them without hunting. The first
+# three spawn *certainly* (chance 1/1, max 1) into the starting scene scn1, so a fresh game
 # lists them under "Also here:" the moment you `look`. Each then wanders on the NPC ticker,
 # which fires every second: `moveChance` is the per-tick odds it steps to a random adjacent
 # scene, so watch over tens of seconds and they drift off into the fog (and, if you follow,
@@ -371,5 +425,69 @@ npcs:
     # no `sayings:` — talked to, the watchman has nothing to say (the silent path)
     spawn:
       scenes: scn1
+      chance: 1/1
+      max: 1
+
+  # The two Lantern Alley vendors — peaceful, never wandering, certain to spawn in scn11 —
+  # tuned to exercise every disambiguation the trade offers:
+  #   - `talk vendor`   matches both -> a 2-way NPC menu; picking one shows THAT vendor's wares
+  #                     (the talk menu resumed onto a vendor re-arms as a ware menu; a number buys)
+  #   - `talk bread`    -> no one: wares are designated by `buy`, NPCs by their description
+  #   - `buy bread`     matches a ware of EACH vendor -> a cross-vendor 2-way ware menu
+  #   - `buy candle`    matches two wares of the SAME vendor -> a 2-way menu within one stall
+  #   - `buy herring`   -> exactly one ware -> straight to the purchase
+  #   - `talk widow`    -> the bread-vendor, who has no sayings: her wares with no line
+  #   - `buy lamp oil`  -> "Nobody here offers 'lamp oil'."
+  # Five coins lie in the alley (itm15): enough to buy, and to run short on the beeswax.
+  - id: npc4
+    shortDescription: A widowed bread-vendor.
+    fullDescription: >
+      A small woman in mourning black behind a board of loaves and smoked fish. She
+      counts your coins before you have finished taking them out.
+    moveChance: 0/1        # never wanders — she minds her stall
+    attackChance: 1/5
+    hitPoints: 14
+    # no `sayings:` — talked to, she shows her wares without a word (the silent vendor)
+    offers:
+      - id: rye
+        name: A loaf of dark rye bread.
+        price: 2
+        item: itm16
+      - id: herring
+        name: A smoked herring.
+        price: 1
+        item: itm20
+    spawn:
+      scenes: scn11
+      chance: 1/1
+      max: 1
+
+  - id: npc5
+    shortDescription: A one-eyed candle-vendor.
+    fullDescription: >
+      A big man with a leather patch over one eye and wax under every fingernail, his
+      stall a forest of candles and a crate of ship's stores.
+    moveChance: 0/1        # never wanders — he minds his stall
+    attackChance: 1/3
+    hitPoints: 20
+    sayings:
+      - Light's dear on this coast. Dearer every year.
+      - Tallow burns, beeswax shines. Pick your poison.
+      - Biscuit off the last ship that made it in. Don't ask which.
+    offers:
+      - id: biscuit
+        name: A hard ship's bread.   # `buy bread` also matches the widow's rye loaf
+        price: 1
+        item: itm17
+      - id: tallow
+        name: A tallow candle.
+        price: 1
+        item: itm18
+      - id: beeswax
+        name: A beeswax candle.
+        price: 3
+        item: itm19
+    spawn:
+      scenes: scn11
       chance: 1/1
       max: 1
