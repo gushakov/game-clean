@@ -64,6 +64,23 @@ class YamlCorpseBlueprintSourceTest {
                 contains:
                   - item: itm99
                     chance: 1/2
+              - id: itm9
+                shortDescription: The corpse of a pedlar.
+                fullDescription: The pedlar lies where it fell, its pack still buckled.
+                container: true
+                contains:
+                  - item: itm10
+                    chance: 1/4
+                  - item: itm11
+                    chance: 1/2
+              - id: itm10
+                shortDescription: A copper coin.
+                fullDescription: A single dull copper coin.
+                currency: true
+              - id: itm11
+                shortDescription: A small brass key.
+                fullDescription: A small brass key on a loop of cord.
+                opens: guest-room
             """;
 
     private final GameConfigurationProperties properties =
@@ -104,6 +121,23 @@ class YamlCorpseBlueprintSourceTest {
         // The same authoring polarity the boot gate applies: `portable: true` overrides the container default.
         assertThat(blueprint.getCorpseTemplate().isAnchored()).isFalse();
         assertThat(blueprint.getLoot()).isEmpty();
+    }
+
+    @Test
+    void lootTemplatesCarryEveryInstanceCopiedFact() {
+        givenSeed(SEED);
+
+        // The pedlar's corpse drops the coin and the key, in authored order.
+        CorpseBlueprint blueprint = source.loadCorpseBlueprint("itm9");
+
+        // The blueprint drops the ground-spawn rule, never an instance fact: the minted instance copies them from
+        // the template, so a coin minted as loot is still money and a key minted as loot still opens its lock
+        // (the lost `opens` was the phase-1 gap this pins).
+        assertThat(blueprint.getLoot()).extracting(loot -> loot.getTemplate().isCurrency())
+                .containsExactly(true, false);
+        assertThat(blueprint.getLoot()).extracting(loot -> loot.getTemplate().getOpens())
+                .containsExactly(null, "guest-room");
+        assertThat(blueprint.getLoot()).allSatisfy(loot -> assertThat(loot.getTemplate().spawnsOnGround()).isFalse());
     }
 
     @Test

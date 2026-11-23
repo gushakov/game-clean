@@ -86,6 +86,13 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
     void presentItemContainmentTargetInvalid(Map<String, List<String>> invalidContainmentTargetsByItem);
 
     /**
+     * Inter-template consistency failure: one or more authored items declare an {@code opens} handle naming no
+     * lock declared on any authored exit — a key to no door. (The converse, a lock no item opens, is valid: a
+     * sealed door.) Keyed by the item's authoring id, each mapped to its offending {@code opens} handle.
+     */
+    void presentItemOpensUnknownLock(Map<String, String> unknownLocksByItem);
+
+    /**
      * Inter-template consistency failure: one or more authored NPCs declare a {@code corpse} ref that is not a
      * valid corpse template — the referenced authoring id resolves to no authored item, or it resolves to a
      * non-container (a corpse must be able to hold its loot), or to a template with its own ground-spawn rule
@@ -95,6 +102,17 @@ public interface InitializeGamePresenterOutputPort extends ErrorHandlingPresente
      * its offending {@code corpse} ref.
      */
     void presentNpcCorpseRefInvalid(Map<String, String> invalidCorpseRefsByNpc);
+
+    /**
+     * Inter-template consistency failure: one or more authored NPCs declare an offer whose {@code item} handle is
+     * not a sellable authored item — the handle resolves to no authored item, or to a <em>container</em> (ware is
+     * handed over as one thing, not as a bundle whose contents ride along), or to an <em>anchored</em> item (ware
+     * fixed to the ground cannot be paid for and carried off). One stripe covers all flavors — the diagnostic
+     * names the offending refs, and the author inspects them — mirroring
+     * {@link #presentItemContainmentTargetInvalid}. Keyed by the NPC's authoring id, each mapped to the offending
+     * {@code item} refs of its offers.
+     */
+    void presentNpcOfferItemInvalid(Map<String, List<String>> invalidOfferItemsByNpc);
 
     /**
      * Validation failure while constructing value objects from authored input — a blank scene name, a

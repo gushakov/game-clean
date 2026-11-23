@@ -10,9 +10,11 @@ import com.github.gameclean.core.model.item.ItemId;
 import com.github.gameclean.core.model.item.Location;
 import com.github.gameclean.core.model.npc.Npc;
 import com.github.gameclean.core.model.npc.NpcId;
+import com.github.gameclean.core.model.npc.Offer;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
@@ -31,6 +33,7 @@ import com.github.gameclean.core.port.seed.GameSeedSourceOperationsError;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.seed.ItemEntry;
 import com.github.gameclean.core.port.seed.NpcEntry;
+import com.github.gameclean.core.port.seed.OfferEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
@@ -48,10 +51,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionWithResult;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -112,7 +113,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -127,7 +128,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(false);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -145,7 +146,7 @@ class InitializeGameUseCaseTest {
                 .thenReturn(Optional.of(player("plr1", "scn1")));
         when(gameClockRepositoryOps.findClock()).thenReturn(Optional.of(GameClock.initial()));
         when(dayPhaseLogRepositoryOps.findDayPhaseLog()).thenReturn(Optional.of(DayPhaseLog.initial()));
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -163,7 +164,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // The clock is absent (default Optional.empty), so it is created at time zero.
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -178,7 +179,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // The day-phase log is absent (default Optional.empty), so it is created at the "nothing announced" sentinel.
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -197,7 +198,7 @@ class InitializeGameUseCaseTest {
         // One item over two candidate scenes, always-hit chance, one try: roll hits, pick scene index 1
         // (scn2), then mint the id by picking 8 alphabet glyphs — all index 0 ('0') -> "itm00000000".
         dice.willRoll(true).willPick(1, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -224,7 +225,7 @@ class InitializeGameUseCaseTest {
         // The rolls still happen (outside the transaction) — scene pick + 8 id glyphs — but the guard means
         // nothing is saved.
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -278,7 +279,7 @@ class InitializeGameUseCaseTest {
         // 8 zero-glyphs -> "itm00000000"; then its one containment entry rolls a hit and mints the contained
         // instance from 8 one-glyphs -> "itm11111111".
         dice.willRoll(true, true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -312,7 +313,7 @@ class InitializeGameUseCaseTest {
         // The chest spawns (roll, scene pick, 8 glyphs); its containment roll misses, so no id is minted for
         // the dagger — the pick script would throw on an unscripted ninth-plus pull.
         dice.willRoll(true, false).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -326,7 +327,7 @@ class InitializeGameUseCaseTest {
         // itm1 declares contents without the container capability — an authoring shape violation at the gate.
         givenSeed(seed(twoConnectedScenes(), "scn1",
                 new ItemEntry("itm1", "A rusty dagger.", "A plain iron dagger.", false, null,
-                        List.of(new ContainsEntry("itm2", 1, 2)), null)));
+                        List.of(new ContainsEntry("itm2", 1, 2)), null, null, false)));
         when(playerOps.currentPlayerId()).thenReturn("plr1");
 
         useCase.systemInitializesGame();
@@ -373,6 +374,72 @@ class InitializeGameUseCaseTest {
         verifyNothingInitialized();
     }
 
+    // --- locked exits and the items that open them ----------------------------------------------
+
+    @Test
+    void spawnsAKeyOpeningALockDeclaredOnAnAuthoredExit() {
+        givenSeed(seed(scenesWithLockedStair("guest-room", "The door is locked."), "scn1",
+                key("itm6", "guest-room")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Scene> savedScenes = ArgumentCaptor.forClass(Scene.class);
+        verify(sceneOps, times(2)).saveScene(savedScenes.capture());
+        assertThat(savedScenes.getAllValues().get(0).exitNamed("up").orElseThrow().getLock())
+                .isEqualTo(new Lock("guest-room", "The door is locked."));
+        ArgumentCaptor<Item> savedItem = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps).saveItem(savedItem.capture());
+        assertThat(savedItem.getValue().getOpens()).isEqualTo("guest-room");
+    }
+
+    @Test
+    void rejectsAnItemOpeningAnUndeclaredLockAndDoesNotInitialize() {
+        givenSeed(seed(scenesWithLockedStair("guest-room", null), "scn1",
+                key("itm6", "guest-room"), key("itm7", "cellar")));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentItemOpensUnknownLock(captor.capture());
+        assertThat(captor.getValue()).containsExactly(Map.entry("itm7", "cellar"));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsALockedDescriptionWithoutALockAndDoesNotInitialize() {
+        List<SceneEntry> entries = List.of(
+                new SceneEntry("scn1", "Old Gate", "A weathered archway.", "The gate's hinges have rusted shut.",
+                        List.of(new ExitEntry("east", "scn1", null, "The door is locked.")), List.of()));
+        givenSeed(seed(entries, "scn1"));
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void acceptsALockThatNoItemOpens() {
+        // A sealed door: valid authoring, the world initializes.
+        givenSeed(seed(scenesWithLockedStair("guest-room", null), "scn1"));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        verify(presenter, never()).presentItemOpensUnknownLock(any());
+        verify(presenter).presentGameInitialized(anyList(), eq(PlayerId.of("plr1")), anyList(), anyList());
+    }
+
     // --- portability resolution at the gate -----------------------------------------------------
 
     @Test
@@ -385,7 +452,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // Each template consumes a spawn roll, a scene pick, and 8 id glyphs (dagger all-zero, chest all-one).
         dice.willRoll(true, true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -400,12 +467,12 @@ class InitializeGameUseCaseTest {
     void anAuthoredPortableTrueMakesAContainerCarryable() {
         givenSeed(seed(twoConnectedScenes(), "scn1",
                 new ItemEntry("itm6", "A barnacled sea chest.", "A sea chest crusted white with barnacle.",
-                        true, Boolean.TRUE, List.of(), new SpawnEntry(List.of("scn1"), 1, 1, 1))));
+                        true, Boolean.TRUE, List.of(), new SpawnEntry(List.of("scn1"), 1, 1, 1), null, false)));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -420,12 +487,12 @@ class InitializeGameUseCaseTest {
     void anAuthoredPortableFalseAnchorsAPlainItem() {
         givenSeed(seed(twoConnectedScenes(), "scn1",
                 new ItemEntry("itm8", "A granite anvil.", "An anvil nobody carries anywhere.",
-                        false, Boolean.FALSE, null, new SpawnEntry(List.of("scn1"), 1, 1, 1))));
+                        false, Boolean.FALSE, null, new SpawnEntry(List.of("scn1"), 1, 1, 1), null, false)));
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -446,7 +513,7 @@ class InitializeGameUseCaseTest {
         // One NPC over two candidate scenes, always-hit spawn chance, one try: roll hits, pick scene index 1
         // (scn2), then mint the id by picking 8 alphabet glyphs — all index 0 ('0') -> "npc00000000".
         dice.willRoll(true).willPick(1, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -474,7 +541,7 @@ class InitializeGameUseCaseTest {
         // The rolls still happen (outside the transaction) — scene pick + 8 id glyphs — but the guard means
         // nothing is saved.
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -525,7 +592,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         // The corpse template never rolls (no spawn rule); the NPC rolls: hit, scene pick, 8 id glyphs.
         dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -585,6 +652,240 @@ class InitializeGameUseCaseTest {
         verifyNothingInitialized();
     }
 
+    // --- offer items resolve to sellable authored items (issue #117) ------------------------------
+
+    @Test
+    void spawnsAnNpcCarryingItsOffersInAuthoredOrder() {
+        // The keeper of the inn sells the guest-room key (which also lies on the inn floor: an offered item MAY
+        // carry a ground-spawn rule — the placement routes are independent) and a contained-only dagger.
+        givenSeed(seedWithItemsAndNpcs(scenesWithLockedStair("guest-room", null), "scn1",
+                List.of(key("itm6", "guest-room"), containedOnlyItem("itm2")),
+                List.of(npcWithOffers("npc2", List.of(
+                        offer("room", "A room for the night.", 2, "itm6"),
+                        offer("blade", "A rusty dagger for the road.", 5, "itm2")), "scn1"))));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        // The key rolls first (the item spawn, outside the transaction): hit, scene pick, 8 id glyphs. The
+        // contained-only knife never rolls. Then the NPC: hit, scene pick, 8 id glyphs.
+        dice.willRoll(true, true)
+                .willPick(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
+        verify(npcOps).saveNpc(saved.capture());
+        // Copied from the template onto the instance, in authored order — the sayings rule applied to wares.
+        assertThat(saved.getValue().getOffers()).containsExactly(
+                new Offer("room", "A room for the night.", 2, "itm6"),
+                new Offer("blade", "A rusty dagger for the road.", 5, "itm2"));
+        verify(presenter, never()).presentNpcOfferItemInvalid(any());
+    }
+
+    @Test
+    void anOfferedItemWithoutASpawnRulePassesTheGateAndSpawnsNoInstance() {
+        // The world's only route to the ware is the offer: authored with no ground-spawn rule at all (the key
+        // the keeper alone hands over), it sails through the offer gate — which asks only that the ware be
+        // neither a container nor anchored — and the spawn phase never mints an instance of it.
+        givenSeed(seedWithItemsAndNpcs(scenesWithLockedStair("guest-room", null), "scn1",
+                List.of(wareWithoutSpawnRule("itm6")),
+                List.of(npcWithOffers("npc2", List.of(offer("room", "A room for the night.", 2, "itm6")), "scn1"))));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        // Only the NPC rolls: hit, scene pick, 8 id glyphs — the spawn-rule-less ware never touches the dice.
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        verify(presenter, never()).presentNpcOfferItemInvalid(any());
+        verify(itemOps, never()).saveItem(any());   // no instance of the ware lies anywhere
+        ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
+        verify(npcOps).saveNpc(saved.capture());
+        assertThat(saved.getValue().getOffers())
+                .containsExactly(new Offer("room", "A room for the night.", 2, "itm6"));
+    }
+
+    @Test
+    void acceptsAnNpcWithNoOffers() {
+        // Authored absence: an NPC that sells nothing is an ordinary NPC (the silent-NPC twin).
+        givenSeed(seedWithNpcs(twoConnectedScenes(), "scn1", npc("npc1", 1, 4, 1, 1, 1, "scn1")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Npc> saved = ArgumentCaptor.forClass(Npc.class);
+        verify(npcOps).saveNpc(saved.capture());
+        assertThat(saved.getValue().getOffers()).isEmpty();
+        verify(presenter, never()).presentNpcOfferItemInvalid(any());
+    }
+
+    @Test
+    void rejectsAnOfferForAnUnknownItemAndDoesNotInitialize() {
+        // No authored item is named itm9 — the delivered ware dangles, the offer twin of an unknown spawn scene.
+        // No item is authored at all and nothing is scripted on the dice, so a spawn roll for the NPC — which
+        // the checkpoint must preempt — would pull from an empty script and fail the test.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(), List.of(npcWithOffers("npc2", List.of(offer("room", "A room.", 2, "itm9")), "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        assertOfferItemRejected("npc2", "itm9");
+    }
+
+    @Test
+    void rejectsAnOfferForAContainerAndDoesNotInitialize() {
+        // Ware is handed over as one thing, not as a bundle whose contents ride along uncounted. The chest is
+        // authored `portable: true`, so portability is satisfied and the container capability alone condemns it.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(new ItemEntry("itm4", "An oak chest.", "A heavy oak chest.", true, Boolean.TRUE,
+                        List.of(), null, null, false)),
+                List.of(npcWithOffers("npc2", List.of(offer("chest", "A sea-worthy chest.", 4, "itm4")), "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        assertOfferItemRejected("npc2", "itm4");
+    }
+
+    @Test
+    void rejectsAnOfferForAnAnchoredItemAndDoesNotInitialize() {
+        // Ware fixed to the ground cannot be paid for and carried off. The anvil's own ground-spawn roll (before
+        // this checkpoint) is scripted to miss, and nothing more is scripted — so an NPC spawn roll would fail.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(anchoredItem("itm8")),
+                List.of(npcWithOffers("npc2", List.of(offer("anvil", "A granite anvil.", 9, "itm8")), "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        dice.willRoll(false);
+
+        useCase.systemInitializesGame();
+
+        assertOfferItemRejected("npc2", "itm8");
+    }
+
+    @Test
+    void rejectsEveryOffendingOfferOfAnNpcInOnePresentation() {
+        // One NPC, two offers, both bad (one dangling, one a container): the stripe carries both refs — the
+        // containment-target shape, not the corpse check's one-ref-per-NPC map.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(new ItemEntry("itm4", "An oak chest.", "A heavy oak chest.", true, Boolean.TRUE,
+                        List.of(), null, null, false)),
+                List.of(npcWithOffers("npc2", List.of(
+                        offer("room", "A room.", 2, "itm9"),
+                        offer("chest", "A sea-worthy chest.", 4, "itm4")), "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        assertOfferItemRejected("npc2", "itm9", "itm4");
+    }
+
+    @Test
+    void rejectsADuplicateOfferHandleAndDoesNotInitialize() {
+        // A handle a selection token carries can mean only one thing within one NPC: an entry-shape
+        // violation of the authored NPC, so it is invalid parameters, not a presented inter-template outcome.
+        givenSeed(seedWithItemsAndNpcs(scenesWithLockedStair("guest-room", null), "scn1",
+                List.of(key("itm6", "guest-room")),
+                List.of(npcWithOffers("npc2", List.of(
+                        offer("room", "A room for the night.", 2, "itm6"),
+                        offer("room", "A loft over the stable.", 3, "itm6")), "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        dice.willRoll(false);   // the key's own ground spawn, scripted to miss, before the NPC gate
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsAnOfferPricedBelowOneCoinAndDoesNotInitialize() {
+        // A free offer sells nothing — the Offer gate rejects it at the NPC template checkpoint.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(), List.of(npcWithOffers("npc2", List.of(offer("room", "A room.", 0, "itm6")), "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsAnOfferWithoutAnItemAndDoesNotInitialize() {
+        // The missing `item:` of the seed arrives as a null handle on the carrier and is refused by the gate.
+        givenSeed(seedWithItemsAndNpcs(twoConnectedScenes(), "scn1",
+                List.of(), List.of(npcWithOffers("npc2", List.of(offer("room", "A room.", 2, null)), "scn1"))));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void spawnsACurrencyItemCarryingTheFlagThoughNoOfferPricesIt() {
+        // Valid on purpose: money nobody spends. The flag is authored, gated and copied onto the instance
+        // whether or not any offer prices it — a coin no one sells is still money.
+        givenSeed(seed(twoConnectedScenes(), "scn1", coin("itm3")));
+        when(sceneOps.worldIsEmpty()).thenReturn(true);
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+        when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
+        dice.willRoll(true).willPick(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        runTransactionWithResult(txOps);
+
+        useCase.systemInitializesGame();
+
+        ArgumentCaptor<Item> saved = ArgumentCaptor.forClass(Item.class);
+        verify(itemOps).saveItem(saved.capture());
+        assertThat(saved.getValue().isCurrency()).isTrue();
+        assertThat(saved.getValue().isAnchored()).isFalse();   // unauthored portable, a plain item: carryable
+    }
+
+    @Test
+    void rejectsACurrencyItemThatIsAContainerAndDoesNotInitialize() {
+        // A purse is not a coin: currency holds nothing (and, by the container default, is anchored besides).
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                new ItemEntry("itm7", "A coin purse.", "A purse heavy with coins.",
+                        true, null, List.of(), null, null, true)));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    @Test
+    void rejectsACurrencyItemAuthoredNotPortableAndDoesNotInitialize() {
+        // `currency: true` together with `portable: false` is invalid parameters: money bolted down cannot be paid.
+        givenSeed(seed(twoConnectedScenes(), "scn1",
+                new ItemEntry("itm7", "A heavy millstone coin.", "A coin as big as a millstone.",
+                        false, Boolean.FALSE, null, null, null, true)));
+        when(playerOps.currentPlayerId()).thenReturn("plr1");
+
+        useCase.systemInitializesGame();
+
+        verify(presenter).presentInvalidParametersError(any(InvalidDomainObjectError.class));
+        verifyNothingInitialized();
+    }
+
+    private void assertOfferItemRejected(String expectedNpcId, String... expectedItemRefs) {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, List<String>>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(presenter).presentNpcOfferItemInvalid(captor.capture());
+        assertThat(captor.getValue()).containsExactly(entry(expectedNpcId, List.of(expectedItemRefs)));
+        verifyNothingInitialized();
+    }
+
     // --- authored mini-games pass the gate onto the scene aggregate -----------------------------
 
     @Test
@@ -593,7 +894,7 @@ class InitializeGameUseCaseTest {
         when(sceneOps.worldIsEmpty()).thenReturn(true);
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
-        runTransactionAndFireAfterCommit(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -637,7 +938,7 @@ class InitializeGameUseCaseTest {
         // scn1's only exit points at scn9, which the seed never defines — an inter-aggregate failure
         List<SceneEntry> entries = List.of(
                 new SceneEntry("scn1", "Old Gate", "A gate.", "A weathered stone archway.",
-                        List.of(new ExitEntry("east", "scn9")), List.of()));
+                        List.of(new ExitEntry("east", "scn9", null, null)), List.of()));
         givenSeed(seed(entries, "scn1"));
 
         useCase.systemInitializesGame();
@@ -698,7 +999,7 @@ class InitializeGameUseCaseTest {
         when(playerOps.currentPlayerId()).thenReturn("plr1");
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(sceneOps).saveScene(any());
-        runTransaction(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -714,7 +1015,7 @@ class InitializeGameUseCaseTest {
         when(playerRepositoryOps.findPlayer(PlayerId.of("plr1"))).thenReturn(Optional.empty());
         PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
         doThrow(boom).when(playerRepositoryOps).savePlayer(any());
-        runTransaction(txOps);
+        runTransactionWithResult(txOps);
 
         useCase.systemInitializesGame();
 
@@ -746,49 +1047,95 @@ class InitializeGameUseCaseTest {
     /** A corpse template: a container with no ground-spawn rule — placed only by the death drop. */
     private static ItemEntry corpseItem(String id) {
         return new ItemEntry(id, "The corpse of a hooded wanderer.", "The wanderer lies where it fell.",
-                true, null, null, null);
+                true, null, null, null, null, false);
     }
 
     private static NpcEntry npc(String id, int moveNumerator, int moveDenominator,
                                 int chanceNumerator, int chanceDenominator, int max, String... candidateScenes) {
         return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
                 new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max),
-                moveNumerator, moveDenominator, 1, 3, 10, null, List.of());
+                moveNumerator, moveDenominator, 1, 3, 10, null, List.of(), List.of());
     }
 
     /** An always-spawning NPC (one try, certain) declaring the given corpse ref. */
     private static NpcEntry npcWithCorpse(String id, String corpseRef, String... candidateScenes) {
         return new NpcEntry(id, "A hooded wanderer.", "A cloaked figure.",
-                new SpawnEntry(List.of(candidateScenes), 1, 1, 1), 1, 4, 1, 3, 10, corpseRef, List.of());
+                new SpawnEntry(List.of(candidateScenes), 1, 1, 1), 1, 4, 1, 3, 10, corpseRef, List.of(), List.of());
+    }
+
+    /** An always-spawning NPC (one try, certain) declaring the given offers — the keeper of the authored inn. */
+    private static NpcEntry npcWithOffers(String id, List<OfferEntry> offers, String... candidateScenes) {
+        return new NpcEntry(id, "A stout innkeeper.", "A broad-shouldered woman in a flour-dusted apron.",
+                new SpawnEntry(List.of(candidateScenes), 1, 1, 1), 0, 1, 1, 4, 25, null, List.of(), offers);
+    }
+
+    /** One authored offer: the handle, the line the player reads, the price in coins, the delivered item. */
+    private static OfferEntry offer(String id, String name, int price, String item) {
+        return new OfferEntry(id, name, price, item);
     }
 
     private static List<SceneEntry> twoConnectedScenes() {
         return List.of(
                 new SceneEntry("scn1", "Old Gate", "A weathered archway.",
                         "The gate's iron hinges have long since rusted shut.",
-                        List.of(new ExitEntry("east", "scn2")), List.of()),
+                        List.of(new ExitEntry("east", "scn2", null, null)), List.of()),
                 new SceneEntry("scn2", "Courtyard", "A grass-cracked courtyard.",
                         "Weeds push between the flagstones of a drilling yard.",
-                        List.of(new ExitEntry("west", "scn1")), List.of("blackjack")));
+                        List.of(new ExitEntry("west", "scn1", null, null)), List.of("blackjack")));
+    }
+
+    /** scn1 with an "up" exit to scn2 barred by the given lock; scn2's way "down" is open. */
+    private static List<SceneEntry> scenesWithLockedStair(String lockRef, String lockedDescription) {
+        return List.of(
+                new SceneEntry("scn1", "The Crooked Lantern", "The common room of an inn.",
+                        "A fire crackles in a soot-black hearth.",
+                        List.of(new ExitEntry("up", "scn2", lockRef, lockedDescription)), List.of()),
+                new SceneEntry("scn2", "Guest Room", "A guest room under the eaves.",
+                        "A narrow bed and a washstand.",
+                        List.of(new ExitEntry("down", "scn1", null, null)), List.of()));
+    }
+
+    /** A certain ground-spawning item in scn1 that opens the given lock. */
+    private static ItemEntry key(String id, String opens) {
+        return new ItemEntry(id, "A small brass key.", "A small brass key on a loop of cord.", false, null, null,
+                new SpawnEntry(List.of("scn1"), 1, 1, 1), opens, false);
     }
 
     private static ItemEntry item(String id, int chanceNumerator, int chanceDenominator, int max,
                                   String... candidateScenes) {
         return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.", false, null, null,
-                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max));
+                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max), null, false);
     }
 
     /** A contained-only item: no spawn rule (never on the ground), appears only through containers. */
     private static ItemEntry containedOnlyItem(String id) {
         return new ItemEntry(id, "A rusty dagger.", "A plain iron dagger, rusty but usable.",
-                false, null, null, null);
+                false, null, null, null, null, false);
+    }
+
+    /** An offered ware with no ground-spawn rule: the offer is the world's only route to it. */
+    private static ItemEntry wareWithoutSpawnRule(String id) {
+        return new ItemEntry(id, "A small brass key.", "A small brass key on a loop of cord.",
+                false, null, null, null, "guest-room", false);
     }
 
     /** A container with unauthored {@code portable} — the gate's container default (anchored) applies. */
     private static ItemEntry containerItem(String id, List<ContainsEntry> contains, int chanceNumerator,
                                            int chanceDenominator, int max, String... candidateScenes) {
         return new ItemEntry(id, "An oak chest.", "A heavy oak chest banded in black iron.", true, null, contains,
-                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max));
+                new SpawnEntry(List.of(candidateScenes), chanceNumerator, chanceDenominator, max), null, false);
+    }
+
+    /** A plain item the author explicitly anchors — ware an NPC cannot hand over, so it cannot be offered. */
+    private static ItemEntry anchoredItem(String id) {
+        return new ItemEntry(id, "A granite anvil.", "An anvil nobody carries anywhere.",
+                false, Boolean.FALSE, null, new SpawnEntry(List.of("scn1"), 1, 1, 1), null, false);
+    }
+
+    /** A currency item: the authored money flag, unauthored portable (a plain item, so carryable). */
+    private static ItemEntry coin(String id) {
+        return new ItemEntry(id, "A copper coin.", "A single dull copper coin.",
+                false, null, null, new SpawnEntry(List.of("scn1"), 1, 1, 1), null, true);
     }
 
     private static Player player(String id, String currentScene) {
@@ -828,7 +1175,7 @@ class InitializeGameUseCaseTest {
     }
 
     private void verifyNothingInitialized() {
-        verify(txOps, never()).doInTransaction(anyBoolean(), any());
+        verifyNoInteractions(txOps);
         verify(sceneOps, never()).saveScene(any());
         verify(playerRepositoryOps, never()).savePlayer(any());
         verify(itemOps, never()).saveItem(any());

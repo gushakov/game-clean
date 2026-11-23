@@ -110,7 +110,8 @@ class YamlGameSeedSourceTest {
 
     /** A parsed seed carrying one authored corpse (a container, no ground-spawn rule) for the blueprint pull. */
     private GameSeed seedWithACorpse() {
-        ItemEntry corpse = new ItemEntry("crp1", "A corpse.", "A slain thing lies here.", true, null, null, null);
+        ItemEntry corpse = new ItemEntry("crp1", "A corpse.", "A slain thing lies here.", true, null, null, null, null,
+                false);
         return new GameSeed(List.of(), "scn1", 30, List.of(corpse), List.of());
     }
 }

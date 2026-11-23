@@ -750,15 +750,16 @@ violation described above — the private phase helper that *presented* its outc
 invites, which is why naming the rule interaction-globally was what surfaced it here.
 
 **Transaction corollary.** `[thread #3]` When the single outcome is a success behind a write, the
-rule takes a concrete shape: at most **one** `txOps.doAfterCommit(() -> present*)` is ever
-activated in an interaction, registered inside the one `doInTransaction`, and that
-`doInTransaction` call is *followed by `return`* — the deferred presentation is the interaction's
-terminal act, so nothing may run after it commits. Failures *before* the transaction
+rule takes a concrete shape: the one transaction block holds the write set and nothing else, and
+the success is the **statement after it** — the interaction's terminal act, so nothing runs after
+it. Statement order is the after-commit order, and a rollback skips what follows by throwing; no
+hook is involved (§5). Where the block can settle more than one fate (a lost race), it returns
+which one, and the stripes are an `if`/`else` after it. Failures *before* the transaction
 present-and-return directly (each its own stripe); a failure *inside* it throws, rolling back and
 unwinding to the single outermost `catch → presentError`, so even the error path presents exactly
 once. One outcome also invited **one atomic unit**: the world-seed and player-create guards-plus-
 writes that were two transactions collapsed into a single `doInTransaction`. The boundary that
-keeps the rule from over-reaching: a `doAfterCommit(present)` and a domain-event dispatch are
+keeps the rule from over-reaching: a success presentation and a domain-event dispatch are
 **not** a second presentation — scheduling deferred work, or dispatching an event that later
 triggers a *different* interaction, is allowed (that is the §8 event spine); the invariant governs
 an interaction's own forward `present*` calls, not the causal chain it may set in motion.
@@ -962,6 +963,23 @@ subcase may return a result on its non-presenting success branch**. This has sin
 `SubcaseAlreadyPresented` name), and the methodology log carries a retroactive pointer entry for it.
 The composition-root consequence — parent and subcase share one ad-hoc-`new`ed presenter instance — is
 in §6.
+
+**The parent's swallow is a build-time check, and the check is lexical.** `[thread #4]` The contract above
+has one silent failure: a parent without the dedicated catch lets the marker fall into `catch (Exception)`
+and presents an error on top of the outcome already shown. A checked marker was rejected (the catch-all
+satisfies the compiler, so it guarantees nothing). Instead an ArchUnit rule (#110) requires every call to a
+`*SubcaseInputPort` method, from a class that is not itself a subcase, to sit inside a `try` catching
+exactly `SubcaseAlreadyPresented`; ArchUnit exposes the enclosing try blocks of each call
+(`JavaAccess.getContainingTryBlocks()` / `TryCatchBlock.getCaughtThrowables()`). Three findings from the
+fixtures. First, "inside" means *the call's own bytecode, in the same method*: a subcase call moved into a
+lambda (a transaction callback) or into a private helper is reported even when a guarded `try` invokes it,
+because the rule cannot follow the call graph. That false positive is accepted as a convention, not fought:
+**subcase calls stay directly in the interaction method**, which is where all of them already are and where
+the checkpoint ladder is readable. Second, nesting is invisible: an inner `try` with only a catch-all inside
+an outer guarded `try` passes although the inner catch-all gets the marker first. Third, the catch body is
+not inspected, and a returning-only subcase port method is treated like a presenting one. The last two are
+stated limits; the parents' interaction tests keep covering what the catch does. The rule also makes the
+`SubcaseInputPort` suffix load-bearing: it is how a subcase port, and so a subcase, is recognized.
 
 **The first *multi-interaction* use case — `examine`, and where conversational state lives.** `[thread #4]`
 `[thread #3]` `look <target>` / `examine <target>` is the project's first goal whose presentation in *one*
@@ -1530,7 +1548,7 @@ episode" event, because the outcome stripes are what the player needs to choose 
 over `take` is the **contestant**: `take`'s race is against any actor who might grab the same ground item;
 `hit`'s is against the wandering *ticker* — a system writer mutating the very same aggregate on its own clock,
 the first place two writer *kinds* collide. Yet the close is identical machinery
-(`doInTransaction(action, onLockDetected)` → `presentNpcGotAway`), and that is the point: the transactional
+(the lock-aware transaction → `presentNpcGotAway`), and that is the point: the transactional
 idiom the item slice built for a contested *resource* carries over unchanged to a contested *actor*, so thread
 #3's "who wins the write" stays answered by the optimistic version, never a lock held across the read. Like
 `take`, there is no construction checkpoint — every input is already a domain object. (Promotion candidate —
@@ -1544,10 +1562,10 @@ actors" but "does a second writer touch this aggregate," and a live system write
 **Principle.** Transactions are demarcated *explicitly* through a
 `TransactionOperationsOutputPort`, never a blanket `@Transactional` over the interaction.
 Validation and reads run **outside** the transaction; only persistence (and, later, event
-dispatch) runs **inside** `doInTransaction`; presentation runs in `doAfterCommit`, so the
-actor is never told "success" before the commit actually happens. The port is a lean
-three-method canon over plain `Runnable`/`Supplier`; `doAfterCommit` runs immediately when no
-transaction is active, there being nothing to wait for.
+dispatch) runs **inside** `doInTransaction`; presentation is the statement *after* the block,
+so the actor is never told "success" before the commit actually happens. The port is a lean
+three-method canon over plain `Runnable`/`Supplier` — plain, result-returning, and lock-aware
+result-returning demarcation — with no after-commit or after-rollback hook at all.
 
 **Departure from the reference (cargo-clean is the *legacy* shape).** Four deliberate
 cuts: (1) no `*WithResult` after-commit/rollback variants — their `AtomicReference` is read
@@ -1555,51 +1573,40 @@ before the callback fills it, and presenter calls are `void` anyway; (2) no `rol
 method — failure is expressed by *throwing*, caught at the use case's single outermost
 checkpoint, and an imperative `rollback()` would bypass that path; (3) no `CacheManager`
 coupling — game-clean has no cache, so the `CacheInvalidationOnRollback` seam is introduced
-only if/when one appears (YAGNI); (4) no `doAfterRollback` at all — see the fail-loud
-paragraph below, which retired it.
+only if/when one appears (YAGNI); (4) no `doAfterRollback` at all, and since #112 no
+`doAfterCommit` either — see the fail-loud paragraph below, which retired them.
 
-**The deferred hook must fail loudly — and the port keeps no hook that cannot.** `[thread #3]`
-`doAfterCommit` is implemented with Spring's `TransactionSynchronization.afterCommit()`, **never**
-`afterCompletion(STATUS_COMMITTED)`. The two read as interchangeable and are not: Spring runs
-`afterCompletion(int)` callbacks inside a `catch (Throwable)` that logs at ERROR and carries on, so a
-presenter that throws there is a *log line* and nothing more while the caller sees a normal return —
-the actor is told nothing at all. `afterCommit()` has no such catch. Because `TransactionTemplate`
-commits *outside* its own try block, the exception leaves `execute()` raw, misses the adapter's
-deliberately narrow `TransactionException` catch (a port error is not a `TransactionException` — the
-narrowness above is what lets it through, not an accident) and reaches the use case's outermost
-checkpoint. This makes the deferred-presentation guarantee **two-sided**: the actor is never told
-"success" *before* the commit, *and* never told "success" when the deferred act *itself* failed.
+**The deferred hook had to fail loudly — and the port ended up keeping no hook at all.** `[thread #3]`
+While presentations were still registered inside the block, `doAfterCommit` was implemented with Spring's
+`TransactionSynchronization.afterCommit()`, **never** `afterCompletion(STATUS_COMMITTED)`. The two read as
+interchangeable and are not: Spring runs `afterCompletion(int)` callbacks inside a `catch (Throwable)` that logs
+at ERROR and carries on, so a presenter that throws there is a *log line* and nothing more while the caller sees
+a normal return — the actor is told nothing at all. `afterCommit()` has no such catch: because
+`TransactionTemplate` commits *outside* its own try block, the exception leaves `execute()` raw, misses the
+adapter's deliberately narrow `TransactionException` catch and reaches the use case's outermost checkpoint. That
+made the deferred-presentation guarantee **two-sided** — never "success" before the commit, *and* never
+"success" when the deferred act itself failed — at a price: callbacks queued behind a throwing one are skipped,
+so statement order inside a deferred block became load-bearing, and a throwing presenter could produce a
+`presentError` after a partially rendered success.
 
-The rule generalizes past the one method: **the port offers no hook whose failure the machinery can
-swallow.** Both branches of `doAfterCommit` therefore share one contract — the no-transaction branch
-runs the action inline, so whatever it throws, the caller sees. Applying that test to
-`doAfterRollback` **retired it**: Spring offers no `afterRollback()` at all, only
-`afterCompletion(STATUS_ROLLED_BACK)`, the very form just ruled out, so the method could not be made
-to honour the contract. It had no production caller — every rollback-side presentation here already
-happens from an ordinary `catch` *outside* `doInTransaction`, where the thrown error carries the
-context the presentation needs. Keeping an un-fail-loud hook for a use it did not have would have
-been the worse of the two asymmetries.
+The rule that came out of it generalizes: **the port offers no hook whose failure the machinery can swallow.**
+Applied to `doAfterRollback` it **retired that method** (#99): Spring offers no `afterRollback()`, only the
+swallowing `afterCompletion(STATUS_ROLLED_BACK)`, and every rollback-side presentation already happened from an
+ordinary `catch` outside `doInTransaction`. #112 then retired `doAfterCommit` itself, by removing its consumers
+rather than its failure mode: once every presentation is the statement after its block, statement order *is* the
+after-commit order, a rollback skips what follows by throwing, and a throwing presenter reaches the outermost
+`catch` like any other statement. Both two-sided guarantees hold with no hook involved — the best hook is no
+hook.
 
-**Two consequences accepted knowingly.** First, **statement order inside a deferred block is
-load-bearing**: callbacks queued behind a throwing one are skipped, so when a block both signals an
-external system and presents, the signal goes first — a throwing presenter must not skip it, and a
-rejected signal must skip the success message rather than be followed by one. Second, a throwing
-presenter now produces a `presentError` *after* a partially rendered success, which brushes against
-§4's *presentation is terminal*. That is the right trade rather than a violation: the alternative is
-not "one clean presentation" but *silence* — the actor left believing nothing happened while the
-transaction committed. The invariant governs the paths an interaction *chooses*; a presenter blowing
-up mid-render is a defect, and the catch-all's job is exactly to surface defects.
-
-**Why the hazard survived an otherwise well-tested adapter — the double matters.** The unit tests
-drove a real `TransactionTemplate` over a **mocked** `PlatformTransactionManager`, which never
-initializes `TransactionSynchronizationManager` and so **never fires synchronizations at all**: every
-after-commit assertion was vacuous, and swapping the two hook forms changed nothing. The fix is a
-minimal *real* `AbstractPlatformTransactionManager` with no-op resources, which supplies the genuine
-synchronization lifecycle. Verified by reverting the adapter to `afterCompletion` and watching exactly
-the two transaction-branch tests go red (the immediate-branch one correctly stayed green — it never
-reaches a synchronization). The general lesson, worth carrying: **a swallowing hook makes its own
-tests pass**, because test doubles usually run deferred callbacks inline and so assert semantics
-production does not have. When double and production diverge, production is the side that is wrong.
+**Why the hazard had survived an otherwise well-tested adapter — the double matters.** The unit tests drove a
+real `TransactionTemplate` over a **mocked** `PlatformTransactionManager`, which never initializes
+`TransactionSynchronizationManager` and so **never fires synchronizations at all**: every after-commit assertion
+was vacuous, and swapping the two hook forms changed nothing. The fix was a minimal *real*
+`AbstractPlatformTransactionManager` with no-op resources (it survives in the adapter test, where the
+outermost-block refusal needs a transaction that is actually active). The general lesson, worth carrying:
+**a swallowing hook makes its own tests pass**, because test doubles usually run deferred callbacks inline and so
+assert semantics production does not have. When double and production diverge, production is the side that is
+wrong.
 
 **A domain contract bent to fit the transaction mechanism — knowingly.** Spring's
 `TransactionTemplate` callback cannot throw checked exceptions and rolls back only on
@@ -1635,11 +1642,11 @@ decision and its effect atomic is what stops two concurrent constructions from b
 reason about concurrency.
 
 **The symmetric data point: a pure read takes *no* transaction at all.** `Look` reads through
-the persistence ports and presents, with no write — so it opens neither `doInTransaction` nor
-an after-commit hook. "Reads run outside the transaction" taken to its limit: when an
-interaction is *only* reads, the transaction port is not a collaborator it touches at all
-(its unit test has no tx port to stub). The after-commit presentation rule exists to avoid
-reporting success before durability; with nothing to commit, presentation is simply immediate.
+the persistence ports and presents, with no write — so it opens no `doInTransaction`.
+"Reads run outside the transaction" taken to its limit: when an interaction is *only* reads, the
+transaction port is not a collaborator it touches at all (its unit test has no tx port to stub).
+The present-after-the-block rule exists to avoid reporting success before durability; with
+nothing to commit, presentation is simply immediate.
 
 **A consumer-less port built ahead of its use case — justified.** The transaction port was
 built before its first consumer, which inverts the usual inside-out order. Acceptable here
@@ -1718,7 +1725,9 @@ detector — unique constraint, version, or row lock — and optimistic `@Versio
 canonical one, demarcated by the use case and reacted to as an outcome*.)
 
 **The lock-catch generalized into `doInTransaction(action, onLockDetected)` — and the neutral `concurrency`
-package it forced.** `[thread #3]` The reaction to a lost optimistic-lock race began as an explicit
+package it forced.** `[thread #3]` (The handler form recorded here was superseded by a loss *value* — next
+paragraph group, #112 — but the reasoning that put the reaction in the port, and the package it forced, stand.)
+The reaction to a lost optimistic-lock race began as an explicit
 `catch (OptimisticLockingError)` in the use case. The question was whether to lift it into
 `TransactionOperationsOutputPort` as an idiom beside `doAfterCommit`. The first answer was *no*, on an
 asymmetry worth recording because it is the right test for *which* reactions deserve machinery: `doAfterCommit`
@@ -1762,18 +1771,79 @@ argument — (A) cannot work: the throw from the failing `save` short-circuits t
 in-body registration *after* the write never takes effect; the handler must be established *before* the body
 runs, i.e. it must be a parameter. That (A) cannot mirror `doAfterCommit`'s in-body shape is the structural
 proof the two hooks are not the same kind of thing — the first *no*'s asymmetry, now expressed as an API
-constraint. **A presenting handler must be the interaction's terminal act.** Unlike a propagating error (which
-unwinds the whole interaction, *guaranteeing* exactly-once presentation), the handler *swallows* the loss and
-returns control to the caller, which continues past the call — so a handler that *presents* must sit on the
-interaction's last `doInTransaction`, the same discipline `doAfterCommit` carries (§4, presentation is
-terminal). That is the cost the distinguish-benefit is paid against: the multi-block future motivating the
-idiom is exactly where a swallow-and-continue handler could present twice if the discipline is ignored. The
+constraint. **A presenting handler had to be the interaction's terminal act.** Unlike a propagating error
+(which unwinds the whole interaction, *guaranteeing* exactly-once presentation), the handler *swallowed* the
+loss and returned control to the caller, which continued past the call — so a handler that *presented* had to
+sit on the interaction's last `doInTransaction`, the same discipline the old `doAfterCommit` registration
+carried (§4, presentation is terminal). That was the cost the distinguish-benefit was paid against, and the
+discipline #112 removed rather than policed (below). The
 predicted **`ConcurrencyConflictError` parent** (a unique-constraint race, a serialization failure are sibling
 detectors per the detector lens) is left unbuilt — deferred by emergence until a second detector needs a home;
 the `concurrency` package is its eventual address. The one behaviour still *not* generalized is a **retry**
 policy (re-read, recompute, re-save) — intricate and footgun-prone (unbounded retry, re-presentation) — which
 `AnnounceTimeOfDay` deliberately forgoes (the loser's goal is already met), so it too waits for a contended
 aggregate that wants it.
+
+**The handler became a value — and the last presentation left the transaction block.** `[thread #3]` (#112) The
+preferred shape of a writing interaction is *loads and asserts → one transaction → one presentation as the
+statement after it*: statement order is the after-commit order, and no hook is involved. The lock-aware block
+was the one place that could not adopt it, for the reason recorded just above — a *presenting* handler swallows
+the loss and returns control past the call, so a success written after the block would present a second time
+and had to stay registered inside it. The result-returning overload
+`doInTransactionWithResult(action, onLockDetected)` does not manage that exception, it dissolves it: the block
+holds the write set and returns what it settled, and both stripes are presented after it. Nothing in the block
+presents, so there is no swallow-and-continue hazard left for a terminal-act discipline to police.
+
+The loss side is a **value, not a handler**, and the argument is about the handler's information set. The
+adapter's catch sits around the template, which has already rolled back and rethrown — so a handler would run
+in exactly the state the statement after the call runs in: same thread, no transaction, same locals. It can
+draw on three sources. Locals resolved before the block: the code after the block sees the same ones. A fresh
+read (to name the winner, say): it returns the same thing a moment later, neither place having isolation. And
+the fact *that* the race was lost: one bit, which is precisely what the returned value carries. So nothing is
+learnable in a handler that is not learnable after the block, and a lambda there is pure affordance — for a
+presentation, a subcase call, a nested transaction. Passing a value removes the affordance rather than
+forbidding the misuse; a re-read that names the winner goes in the conflict branch after the block. The earlier
+finding that the reaction "must be a parameter" (shape (B) over (A)) still stands — the loss value *is* a
+parameter, established before the body runs — but what had to be a parameter was never behaviour, only the
+classification. The stated limit: the claim would break if the error carried *which* aggregate lost and one
+block held several contested writes. No block does; deferred by emergence.
+
+`T` is the **interaction's own outcome type, private to its use case** — never a shared generic bag of flags
+and attributes. Three reasons. A bag is a product where a sum is meant (§2's sealed-over-nullable ruling):
+nothing ties which attributes are populated to which fate occurred, and an `if … return; if … return;` tail
+over two flags leaves a path that presents nothing. It is also the *shape* of the forbidden `Result<T, Error>`,
+legitimate here only because it never crosses the input port — a private nested type makes that structural,
+where a public one in `core` is a step from being returned by a helper. And the cost is small: at every
+contested site so far the presentation's data is resolved *before* the block (reads and computation stay
+outside the transaction), so the block contributes only "committed or lost" and `T` is a two-constant enum
+branched by `if`/`else` — the `else` arm being the exactly-one-presentation guarantee, since Java does not check
+a `switch` statement over a plain enum for exhaustiveness. A sealed type with value cases and a pattern
+`switch`, which the compiler does check, is for three or more fates or a block that genuinely yields data.
+
+Two things carry over unchanged in substance. **Scenario-indexing survives**: the loss value is still supplied
+per block, so one detector still surfaces as differently named outcomes per write and per branch — what moved
+to the end is the rendering, not the classification. And **the block must be outermost**, which was always true
+of the handler form and is now executable: joined to an active transaction, a swallowed loss would hand back
+the loss value while the enclosing transaction is already rollback-only, so the adapter refuses to run the
+overload inside one — on every run, not only when the race is lost. The consequence worth naming is on the
+hook side: once every site followed (`TakeFrom`, `FightNpc` ×3, `Wander`, `AnnounceTimeOfDay`, and the plain
+blocks of `Move`, `Drop`, `SuspendGame`, `InitializeGame` — the last returning a private `SpawnReport` because
+its presentation needs what the block decided to spawn), `doAfterCommit` had no structural consumer left in
+this project (no presenting subcase owns a transaction), and it was deleted together with the deprecated
+handler overload — the best hook is no hook. The test double follows the port: one stub per overload, mirroring
+the adapter, serves the success, lost-race and error tests alike, where the hook form needed a
+fire-after-commit variant kept apart from the error paths.
+
+The shape is now pinned by an ArchUnit rule (`PresentationOutsideTransactionArchitectureTest`): in a class
+holding the transaction port, no presenter-port call from a lambda body and no presenter method reference. Two
+findings from writing it. **ArchUnit 1.4 does not import a lambda's synthetic `lambda$…` method as a code unit**
+— it attributes the body's accesses to the enclosing method and flags them `isDeclaredInLambda()`, so a rule
+keyed on `lambda$` names silently matches nothing (the fixture caught it); a method reference is a separate
+access kind (`getMethodReferencesFromSelf`). And the bytecode does not link a lambda to the call it is passed
+to, so the rule **over-approximates** — no lambda presents in a transaction collaborator, handed to the port or
+not — which costs nothing today (no use case presents from any lambda) and is stated next to the rule, with the
+other limit: a presenting private helper called from inside a block is not followed. The use cases' "a fault
+inside the block presents only the error" tests cover that gap.
 
 **`Item` is the first aggregate contended *by design* — so `@Version` finally meets the contention it was
 parked for, and the lost race is a *new* outcome with a read-side twin.** `[thread #3]` The `@Version` deferred
@@ -1785,7 +1855,8 @@ select-then-mutate where two actors can really race, and the detector lens says 
 part is that the same player-facing fact — "someone got there first" — now surfaces at **two layers**, kept as
 **distinct outcomes** rather than collapsed: the **read-side** advisory (`select` re-provisions for a menu pick
 and finds the item gone → `presentItemNoLongerHere`) and the **write-side** authoritative (the versioned
-`saveItem` loses the commit race → `onLockDetected` → a *new* `presentItemGotAway`). They are reachable on
+`saveItem` loses the commit race → the lock-aware block returns its loss value → a *new*
+`presentItemGotAway`). They are reachable on
 *different paths* — the single-match `take rusty` does no read-side re-check, so the write-side guard is its
 only net — which is exactly why they are two methods a renderer happens to collapse to one line, not one method
 (the "distinct outcomes get distinct present-methods" rule applied to a concurrency pair). And `take` *adds* an
@@ -1806,7 +1877,7 @@ first interaction to *exercise* that default deliberately: a held item is **sing
 own `drop` writes it), so there is no race to lose and a handler would be machinery for an unreachable
 outcome. The versioned save still guards integrity; were a lock loss ever to fire it would be a wiring
 surprise, and it *propagates* to the outermost `catch → presentError` like any fault. The codebase now carries
-the contrast as a matched pair — contested aggregate → per-block handler and a presented outcome (`take`);
+the contrast as a matched pair — contested aggregate → per-block loss value and a presented outcome (`take`);
 single-writer aggregate → plain overload and propagation (`drop`) — mirroring the version-less `GameClock` /
 versioned `DayPhaseLog` contrast one level up. And the decision is executable doctrine, not a comment: a
 `DropUseCaseTest` pins that an `OptimisticLockingError` reaches `presentError` and never a player outcome, so
@@ -1820,14 +1891,32 @@ the choice into doctrine.*)
 `[thread #3]` The tempting argument for the plain overload was "nothing else writes contained items". But
 nothing else writes *ground* items today either; `take` got its handler because a ground item is a world
 object any actor in the scene can reach, and `drop` stayed plain because only the holder reaches a held item.
-Loot in a corpse on the ground is in the first category, so `TakeFrom` (#107) uses
-`doInTransaction(action, onLockDetected)` with its own `presentItemGotAway`, and a unit test pins that the
-loss is that stripe and never `presentError` — the `drop` pin's mirror image. The honest gap is the *other*
-aggregate: only the contained item's row is written and version-checked, so a portable container carried off
-between resolution and the write goes undetected (the loot would be taken out of a chest no longer here).
-Unreachable with one player, and closing it means the container must take part in the write — the same
-pressure as capacity, the flagged trigger for reopening the container↔contents boundary (§2). Recorded, not
-fixed.
+Loot in a corpse on the ground is in the first category, so `TakeFrom` (#107) uses the lock-aware
+transaction with its own `presentItemGotAway`, and a unit test pins that the
+loss is that stripe and never `presentError` — the `drop` pin's mirror image. The *other* aggregate needs no
+guard. Only the contained item's row is written and version-checked, so a portable container carried off
+between resolution and the write goes undetected; but the end state is that of the serial order "taken out,
+then carried off", so there is no anomaly to detect (the argument of the sale, next). This note first
+recorded it as a gap; it is one only by the wall clock. The container must take part in the write when a
+rule relates the two aggregates (capacity), the flagged trigger for reopening the container↔contents
+boundary (§2).
+
+**A precondition which is only read needs no detector: the sale and its vendor (#119).** `[thread #3]` Buy
+checks that the vendor is here, alive and peaceful, and then writes coins and an item. Nothing of hers is
+written, so nothing detects her walking off or being slain between the check and the commit. Nothing needs
+to. The sale reads her and writes nothing that she or her writers read, so every interleaving ends in the
+state of the serial order "sold, then she left". An anomaly needs a dependency in both directions (each
+transaction reads what the other writes), and here there is one. A version touch on the vendor would detect
+no anomaly, and it would make sales lose to the wander tick. The trigger is the first sale which writes
+something of hers (a stock, a till): she is contested from then on, and the lock-aware block arrives with
+that write. *Before guarding a precondition, ask whether any serial order explains the result.*
+
+**Spending is deletion, so the coin is its own double-spend detector (#119).** `[thread #3]` The payment is a
+version-checked delete of the coin rows. Two purchases racing over the same coins would both read them, and
+the loser's delete would fail on the version. A balance field on `Player` would have needed a detector of
+its own; coins as items brought theirs. The write set is single-writer by reach (only the holder reaches a
+held item), so Buy uses the plain block, and a test pins that a lock loss reaches `presentError` as itself:
+the `drop` pin again.
 
 **`Npc` takes the contrast one step further — single-writer with *no version at all*.** `[thread #3]`
 Autonomous NPC movement writes NPCs, and today the movement ticker is their *only* writer, so `AnimateNpcs`
@@ -1863,21 +1952,21 @@ in an IT, so it reads as doctrine, not as a bug awaiting discovery.
 comparative reading of `FightNpc`'s two sides pins a corollary of one-outcome-one-unit. `strikeResolvedNpc`
 forks into *two* transaction blocks — survivor (one provoked save) vs. slain (version-checked delete + corpse
 and loot inserts) — because the branches' **write sets differ**; `npcStrikesPlayer` keeps *one* block and
-chooses its stripe (player struck vs. slain) *inside* `doAfterCommit`, because both stripes share the same
+chooses its stripe (player struck vs. slain) *after* the block, because both stripes share the same
 single write (`savePlayer`). Not an inconsistency: the fork point tracks where the difference lives —
 differing consequences fork the atomic unit; differing narrations of one consequence fork at presentation
-time. Each block remains its interaction's terminal act, and a stripe chosen inside the after-commit is still
-exactly one `present*` per path. The same reading also names how far the scenario-indexing of lock losses has
+time. Each branch ends in exactly one `present*` per path. The same reading also names how far the scenario-indexing of lock losses has
 come: the one detector (an optimistic version check failing) now surfaces as **four different business
 outcomes** across the codebase — `presentNpcGotAway` (the player's strike), the counterstrike's quiet
 `presentNothingHappened`, `presentNothingToAnnounce` (the watermark), `presentItemGotAway` (`take`). The
 mapping is scenario-indexed, which is the structural proof the reaction cannot live in a generic translation
 layer: an exception-to-HTTP-409 adviser sees the loss only after the interaction has unwound, when the
-scenario context (which write, which branch, dying or surviving) is gone; the `onLockDetected` handler is the
-reaction written *lexically inside* the branch whose write can lose. (Promotion candidate — logged as
+scenario context (which write, which branch, dying or surviving) is gone; the loss value is supplied, and
+branched on, *lexically inside* the branch whose write can lose. (Promotion candidate — logged as
 `[active]` in the methodology log, folded into the detector-lens entry, not yet promoted: *the transaction unit
 is shaped by the write set — branches whose write sets differ fork into their
-own atomic units, branches differing only in narration fork inside `doAfterCommit`; and a lock-loss reaction
+own atomic units, branches differing only in narration fork at the presentation after the block; and a
+lock-loss reaction
 is scenario-indexed, handled lexically inside the interaction that can lose, never in a generic exception
 translator.*)
 
@@ -2138,7 +2227,7 @@ the *same* transaction as the reaction.
 
 **Orchestration for fixed sequences, choreography for causation — and boot is the former.**
 `[thread #3]` A tempting shortcut to that end state is to chain *boot* through events too —
-have `InitializeGame` dispatch a domain event in `doAfterCommit` and let a listener-adapter
+have `InitializeGame` dispatch a domain event after its commit and let a listener-adapter
 fire the next step. We weighed it and **deferred it deliberately**, and the reasons sharpen
 *when* events earn their place. Boot is a *fixed, deterministic, precondition-ordered* sequence
 with one producer and one consumer — the worst possible fit for a notification mechanism:
@@ -2249,7 +2338,7 @@ methodology's own table, which has secondary actors *initiating steps*), and the
 the console; the NPC's mind is a policy interaction *inside* it and speaks through the channel — same command
 grammar, same use cases, different sides of the boundary for the deciding mind. And full symmetry has a
 structural dividend: the animate interaction's only writes were the moves, now behind commands, so the policy
-is **read-only** — no transaction, no version contention, no `doAfterCommit`; every write lives in an
+is **read-only** — no transaction, no version contention, nothing waiting on a commit; every write lives in an
 executing interaction.
 
 Why a *command* and not an event, when the paragraph above just rejected events: the message crosses *after
@@ -2294,8 +2383,8 @@ carries a decision **derived from persisted stance, re-derived every tick** — 
 derivation and execution, a rolled-back strike), it costs one round and nothing more: the next tick
 re-derives it from state that never went anywhere. At-most-once execution per tick, at-least-once-eventually
 overall — *the polling loop is the outbox*. The same recovery serves an optimistic-lock loss inside an
-executing interaction: the strike's `(action, onLockDetected)` overload presents the quiet stripe and the
-loop retries by re-derivation — the watermark lesson replayed. A proposed `active` flag on `Npc` ("filter out
+executing interaction: the strike's lock-aware block returns its loss value, the quiet stripe is presented,
+and the loop retries by re-derivation — the watermark lesson replayed. A proposed `active` flag on `Npc` ("filter out
 NPCs already doing something") was examined and **rejected**: under synchronous dispatch the race it guards
 cannot occur — `send()` returns only after the executing interaction has completed, and the fixed-delay
 single-thread scheduler serializes ticks, so no later derivation can observe an NPC mid-action — while the
@@ -2813,6 +2902,109 @@ versioned aggregate and degrades the mode buffer to a correlation token; the mod
 input-thread-confined semantically — arming fixes the next line's interpretation — so cross-thread holders
 are legal only for interpretation-free, monotonic signals.*)
 
+**The third pole — a standing offer is a fact, not an event, and a conversation over facts has no state to
+home (the inn, #115/#117).** `[thread #1]` `[thread #4]` The first NPC trade was specified as a multi-turn
+conversation: the player talks to an innkeeper, who offers a room for the night; the player may walk off and
+do other things; later she accepts, pays, receives a key, and a locked way opens. The script reads as a
+*pending offer awaiting acceptance*, and the two tests above stand ready to home that state (an envelope if
+nobody owes memory of it, an aggregate otherwise). Neither is needed, because the premise is wrong: **a
+fixed-price offer is not *made* by the talk, it is *revealed* by it.** The ware and its price are authored
+facts of the NPC (`offers:`, copied onto the instance like `sayings`), standing whether or not anyone asks: a
+shop sign, not a speech act. Acceptance therefore resumes nothing. It is a self-grounding act of a different
+user goal (`rent room`, `buy bread`): valid for a player who never talked, grounded in the scene like `take`,
+and re-validated against live state like every other designation. The "conversation" decompresses into two
+independent interactions with no memory between them: **Talk** (the parley goal: the pitch plus the wares,
+arming an ordinary ephemeral selection menu which dies on focus loss) and **Buy** (the trade goal). The
+custody test passes vacuously (the domain owes no memory of "she offered", since the offer never stopped
+standing), and so does the animation test (the keeper is a real `Npc`, but a sale writes nothing of hers).
+This is the degenerate third pole beside the envelope and the aggregate: **no between-interaction state at
+all**. The discriminator against the haggle is exact, and it is capture-at-offer read backwards: a
+counter-offer is *decided at a moment* (dice, stats, the hour), so it must be captured, and captured state
+needs a home; a standing price was decided by the author, so there is nothing to capture. *Before homing a
+conversation's state, ask whether what was "offered" is an event or a fact.* Building it confirmed the
+design without amendment: Buy (#119) and Talk-shows-wares (#121) are two interactions with no memory between
+them, and the whole scripted conversation (talk, walk away, come back with coins, pay, pass the locked way)
+runs on no state but the ephemeral menu, which any other command drops. The §12 falsifier
+stays ahead: this is not the haggle, and its ease shows only that the cheapest shape was available, not that
+a sequenced negotiation will stay free of a status enum.
+
+**What a real NPC costs the trade, and what it does not.** `[thread #3]` The interlocutor is a world `Npc`,
+not a system persona like the blackjack dealer, so the world may move under the trade: between the talk and
+the purchase the keeper can be struck, turn hostile or be slain, and a mobile vendor can walk away. Nothing
+pins her, by the corollary above (wanting the world to respect a conversation is the signal that its state
+has outgrown the envelope), and here there is not even an envelope. The whole absorption sits in what Buy
+*provisions*: its candidates are the offers of the peaceful, living NPCs in the player's scene, so an absent,
+hostile or dead vendor simply offers nothing, and a stale menu pick meets the selection dialogue's existing
+"no longer available" outcome. Hostility outranks commerce for the reason it outranks eloquence (§13, the
+`talk` record). Livelier vendors (hawking on the tick, eviction at dawn) are NPC decisions which ride the
+ticker later, never conversation state.
+
+**The first cross-goal arm, with per-choice tags still deferred.** `[thread #4]` Talk's menu is resumed by
+Buy: for the first time the interaction which arms and the interaction which resumes belong to different
+summary goals. Arm-time completeness covers it unchanged (Talk's presenter flattens the tokens, Buy
+re-validates them), and it is the first concrete step towards the "mode session spanning several Cockburn
+goals" predicted above. The per-choice routing tags are *not* introduced with it: with one kind of offer,
+every choice designates the same goal, so the affordance kind still maps to one use case. The tag arrives
+with the second kind of offer (a quest), counted per axis like every other abstraction here. The build
+(#121) is the evidence for arm-time completeness: the cross-goal arm cost one presenter method and one
+renderer method, and nothing in the router (no new kind, no new conversation, no dispatcher change). It
+also sharpened what a kind names: the **resuming** conversation, never the arming use case. `BUY` is armed by
+two goals (an ambiguous `buy`, a vendor's wares shown by `talk`), and a `TALK` menu resumed onto a vendor
+re-arms as `BUY` in the same turn, because the router never clears after a resume and arming replaces.
+
+**A ware is not the item it delivers.** `[thread #1]` The player rents *a room* and receives *a key*. The
+offer therefore has its own authored name, which is what designation by description matches, and its own
+identity: the vendor's id plus the offer's ref, the first composite selection token. The delivered item is an
+opaque handle on the offer (`itemRef`, the `corpseRef` precedent), checked once at the initialization gate and
+so valid by provenance at the sale (§3). Naming the offer after its item would have made `buy key` the phrase
+for renting a room, and it would break at the first ware which delivers no item at all (a service, a quest).
+
+**Money and delivery without new structure.** `[thread #1]` Coins are ordinary items flagged `currency`, one
+item one coin; a price is a count of them; paying *consumes* the coins; the delivered item is *minted* at the
+sale from its authored template (the corpse-blueprint pull, §3). Each is the choice which mints no concept
+ahead of a use case which reads it. A balance on `Player` would be a second custody structure beside the
+inventory, which already carries coins as things one can find, drop and loot. Moving the coins *to* the
+keeper, or the key *from* her, needs an NPC inventory (and a stock which can run out) that no interaction
+reads yet: deferred until one does (a till to rob, a limited stock). The plain `int` price and the single
+currency are the same deferral: a `Price` value object and denominations wait for behaviour. Wares are
+restricted to portable non-containers so that the mint is one template with no contents to roll.
+
+**The candidate of a sale is a pairing, and the pairing owns the token (#119).** `[thread #1]` `[thread #4]`
+The selection dialogue asks a candidate two facts: whether a fragment designates it, and whether a token is
+its identity. An `Offer` can answer neither alone. Its ref is unique only within its NPC, and it does not
+know its NPC (it is a value copied from an authored template). The candidate is therefore `StandingOffer`,
+the offer as it stands at a vendor: it matches on the offer's name and flattens to `npcId:offerRef`. The
+token's grammar lives on the type which owns the identity, as `ItemId.asString()` does; the select concrete
+only calls its shape gate. The reading of the stance stays out of the model: `Npc.standingOffers()` returns
+a hostile NPC's offers too, and the provisioner drops them, as `talk` reads the same stance in the use case.
+
+**No repeat-sale guard: a guard is stock, counted per customer (#119).** `[thread #1]` Three rules were on the
+table, each a guess from one ware. "The buyer already holds an item which opens the same lock" is silent for
+bread and for any unique ware which is not a key, and it puts a lock rule into the trade goal. "The buyer
+already holds one like it" needs template provenance on `Item`, which instances deliberately do not carry,
+and it is the rule which is wrong for bread. A per-offer `once` flag is the offer kind phase 2 left out. All
+three are a stock of one per customer, and stock is deferred until an interaction reads it. The cost of
+having none is bounded by decisions already taken: a second key is inert because the lock is derived, and
+coins are finite. The guard arrives with the second ware whose repeatability differs, or with the first
+duplicate which has a consequence.
+
+**An empty market is not a stripe (#119).** "Nothing for sale here", an unknown ware and a hostile vendor all
+end in the selection dialogue's "no such target", rendered "Nobody here offers …", which is true of all
+three. Telling them apart would cost a second provisioning read in the use case, or a third outcome in a
+skeleton four concretes share, for a distinction `take` does not make over an empty ground either. The
+refusal which is Buy's own is the price: `presentNotEnoughCoins` tells the ware, its price and what the
+buyer holds, because that is what she needs to decide her next step.
+
+**`buy` and `rent` are one command (#119).** `[thread #4]` Verbs are delivery vocabulary, and the fact which
+would tell these two apart (an offer kind: a good, or access for a time) is not in the model. Until it is, a
+parser which refused `rent bread` would encode a domain rule the domain does not have.
+
+**One adapter, one parse, a port per pull (#119).** The delivered item's template comes through its own port,
+not through a widened corpse port. The two pulls share a file and a parse, which is the adapter's business.
+They do not share a contract: each re-asserts its own gate rule as drift detection (a corpse is a container
+with no ground spawn; a ware is a portable non-container), returns its own shape and serves its own use
+case. It is the persistence gateway's shape applied to authored data: narrow role interfaces, one adapter.
+
 **Licensed custody vs. structural secrecy — the hole card, and where information asymmetry between actors
 lives.** `[thread #2]` `[thread #4]` The dealer's hole card must stay hidden while the hand is live, yet the
 full round — hole card and deck included — must transit the presenter, because the presenter is the arming
@@ -3203,6 +3395,18 @@ two positions with different afforded-continuation sets force the name; prefer a
 then; reach for a sealed phase type only when the phases carry different *data* (the `Location` precedent,
 §2). A speculative status enum is exactly as illegitimate as the speculative exit-visibility field §2
 refused.
+
+**A lock is a derived predicate: the rule's first instance in world state (#115).** `[thread #1]`
+`[thread #3]` A locked exit carries no open/closed state. The exit names a lock (an authored ref), an item
+names the lock it `opens`, and passability is computed in `Move` from what the mover holds. The speculative
+alternative, a door-state field toggled by an `unlock` interaction, is this section's status enum in world
+form. It would add a transition which is nobody's goal (the player wants to pass, not to unlock), a
+world-shared mutable which every mover and the ticker contend on (a version, a lost race, a stripe for it),
+and a reset problem (who relocks, and when). Derived, the key in the pocket *is* the state: access is per
+holder for free, revocation is taking the key back (a dawn eviction needs no door to relock), and NPCs, who
+hold nothing, are kept out by leaving locked exits out of their wander set. A door state is minted only by
+the continuation-set criterion above: when two positions must afford different continuations which
+possession cannot express (a door left open behind the player for others to use).
 
 **Three bounds keep the theory honest.**
 

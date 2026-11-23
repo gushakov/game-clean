@@ -68,10 +68,24 @@ public class LoggingInitializeGamePresenter implements InitializeGamePresenterOu
     }
 
     @Override
+    public void presentItemOpensUnknownLock(Map<String, String> unknownLocksByItem) {
+        unknownLocksByItem.forEach((itemId, lockRef) -> log.warn(
+                "[InitializeGame] Item {} opens lock '{}', which no authored exit declares",
+                itemId, lockRef));
+    }
+
+    @Override
     public void presentNpcCorpseRefInvalid(Map<String, String> invalidCorpseRefsByNpc) {
         invalidCorpseRefsByNpc.forEach((npcId, corpseRef) -> log.warn(
                 "[InitializeGame] Npc {} declares invalid corpse ref '{}' (unresolved, not a container, or it has its own ground-spawn rule)",
                 npcId, corpseRef));
+    }
+
+    @Override
+    public void presentNpcOfferItemInvalid(Map<String, List<String>> invalidOfferItemsByNpc) {
+        invalidOfferItemsByNpc.forEach((npcId, itemRefs) -> log.warn(
+                "[InitializeGame] Npc {} declares offer(s) for invalid item ref(s) {} (unresolved, a container, or anchored — ware must be a carryable single item)",
+                npcId, itemRefs));
     }
 
     @Override

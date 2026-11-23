@@ -35,6 +35,14 @@ import java.util.Set;
  * <p>The optional {@code sayings} (authored absence when empty) are the lines an instance answers with when the
  * player talks to it (#104); they are copied onto every spawned instance like the descriptions. A blank line is
  * rejected here, at the template, for the same reason a blank description is.
+ *
+ * <p>The optional {@code offers} (authored absence when empty) are the things an instance stands ready to hand
+ * over for coins (#117); they are copied onto every spawned instance like the sayings. An offer element is
+ * rejected here for a blank handle or name, a missing item handle, or a price below one coin, and two offers of
+ * one template may not share a handle — the NPC's own gate repeats both rules, since an instance can also be
+ * built (or read back from storage) without its template ever being seen. Whether an offer's item handle
+ * <em>resolves</em> to a sellable item is an inter-template rule the use-case gate checks, exactly like a
+ * {@code corpseRef}.
  */
 @Value
 public class NpcTemplate {
@@ -52,8 +60,12 @@ public class NpcTemplate {
     /** The authored lines every spawned instance may answer with when talked to — empty when none are authored. */
     List<String> sayings;
 
+    /** What every spawned instance offers for sale, in authored order — empty when none are authored. */
+    List<Offer> offers;
+
     public NpcTemplate(String shortDescription, String fullDescription, SpawnRule spawnRule, Chance moveChance,
-                       Chance attackChance, int maxHitPoints, String corpseRef, List<String> sayings) {
+                       Chance attackChance, int maxHitPoints, String corpseRef, List<String> sayings,
+                       List<Offer> offers) {
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
         this.fullDescription = requireNonBlank(fullDescription, "npc full description");
         this.spawnRule = DomainValidation.requireNonNull(spawnRule, "npc spawn rule must not be null");
@@ -76,12 +88,22 @@ public class NpcTemplate {
             sayings.forEach(saying -> requireNonBlank(saying, "npc saying"));
             this.sayings = List.copyOf(sayings);
         }
+        // Authored absence is the empty list. Each element carries its own gate (a blank handle or name, a
+        // missing item handle, a price below one coin) by being constructed; what the list itself owes this
+        // template is that no two of its offers share a handle.
+        if (offers == null) {
+            this.offers = List.of();
+        } else {
+            offers.forEach(offer -> DomainValidation.requireNonNull(offer, "npc offer must not be null"));
+            this.offers = List.copyOf(offers);
+            Offer.requireUniqueRefs(this.offers);
+        }
     }
 
     /**
      * Builds one NPC instance of this template at the given scene, stamped with the given freshly generated id.
-     * The descriptions, move chance, attack chance, corpse ref and sayings are copied onto the instance — instances hold
-     * their own state and do not reference the template. The instance spawns at full health
+     * The descriptions, move chance, attack chance, corpse ref, sayings and offers are copied onto the instance
+     * — instances hold their own state and do not reference the template. The instance spawns at full health
      * ({@link HitPoints#full(int)} of {@link #maxHitPoints}), <em>non-hostile</em>, and version {@code 0} (a
      * new, not-yet-persisted row).
      */
@@ -97,6 +119,7 @@ public class NpcTemplate {
                 .hostile(false)
                 .corpseRef(corpseRef)
                 .sayings(sayings)
+                .offers(offers)
                 .version(0)
                 .build();
     }

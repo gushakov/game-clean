@@ -15,6 +15,7 @@ import com.github.gameclean.core.port.npccommands.NpcCommandsOutputPort;
 import com.github.gameclean.core.port.player.PlayerOperationsOutputPort;
 import com.github.gameclean.core.port.seed.GameSeedSourceOperationsOutputPort;
 import com.github.gameclean.core.port.transaction.TransactionOperationsOutputPort;
+import com.github.gameclean.core.port.ware.WareTemplateSourceOperationsOutputPort;
 import com.github.gameclean.core.usecase.blackjack.PlayBlackjackInputPort;
 import com.github.gameclean.core.usecase.blackjack.PlayBlackjackUseCase;
 import com.github.gameclean.core.usecase.clock.AnnounceTimeOfDayInputPort;
@@ -54,9 +55,13 @@ import com.github.gameclean.core.usecase.select.SelectContainedItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectInventoryItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneItemSubcase;
 import com.github.gameclean.core.usecase.select.SelectSceneNpcSubcase;
+import com.github.gameclean.core.usecase.select.SelectSceneOfferSubcase;
+import com.github.gameclean.core.usecase.trade.BuyFromNpcInputPort;
+import com.github.gameclean.core.usecase.trade.BuyFromNpcUseCase;
 import com.github.gameclean.infrastructure.terminal.AffordanceContext;
 import com.github.gameclean.infrastructure.terminal.GameLifecycle;
 import com.github.gameclean.infrastructure.terminal.conversation.BlackjackConversation;
+import com.github.gameclean.infrastructure.terminal.conversation.BuyConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.Conversation;
 import com.github.gameclean.infrastructure.terminal.conversation.DropConversation;
 import com.github.gameclean.infrastructure.terminal.conversation.ExamineConversation;
@@ -67,6 +72,7 @@ import com.github.gameclean.infrastructure.terminal.conversation.TalkConversatio
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnimateNpcsPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAnnounceTimeOfDayPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalAskForTimePresenter;
+import com.github.gameclean.infrastructure.terminal.presenter.TerminalBuyFromNpcPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalDropPresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalExaminePresenter;
 import com.github.gameclean.infrastructure.terminal.presenter.TerminalFightNpcPresenter;
@@ -86,6 +92,7 @@ import com.github.gameclean.infrastructure.terminal.render.Console;
 import com.github.gameclean.infrastructure.terminal.render.CurrentSceneRenderer;
 import com.github.gameclean.infrastructure.terminal.render.ItemRenderer;
 import com.github.gameclean.infrastructure.terminal.render.NpcRenderer;
+import com.github.gameclean.infrastructure.terminal.render.OfferRenderer;
 import com.github.gameclean.infrastructure.terminal.render.OrientRenderer;
 import com.github.gameclean.infrastructure.world.LoggingInitializeGamePresenter;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
@@ -153,6 +160,7 @@ public class UseCaseConfig {
     public MoveInputPort moveUseCase(
             OrientRenderer orientRenderer,
             CurrentSceneRenderer sceneRenderer,
+            ItemRenderer itemRenderer,
             Console console,
             PlayerOperationsOutputPort playerOps,
             PlayerRepositoryOperationsOutputPort playerRepositoryOps,
@@ -160,7 +168,8 @@ public class UseCaseConfig {
             ItemRepositoryOperationsOutputPort itemOps,
             NpcRepositoryOperationsOutputPort npcOps,
             TransactionOperationsOutputPort txOps) {
-        TerminalMovePresenter presenter = new TerminalMovePresenter(orientRenderer, sceneRenderer, console);
+        TerminalMovePresenter presenter =
+                new TerminalMovePresenter(orientRenderer, sceneRenderer, itemRenderer, console);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         return new MoveUseCase(presenter, playerRepositoryOps, sceneOps, itemOps, npcOps, txOps, orient);
     }
@@ -284,6 +293,7 @@ public class UseCaseConfig {
     public TalkToNpcInputPort talkToNpcUseCase(
             OrientRenderer orientRenderer,
             NpcRenderer npcRenderer,
+            OfferRenderer offerRenderer,
             Console console,
             AffordanceContext affordanceContext,
             PlayerOperationsOutputPort playerOps,
@@ -291,15 +301,45 @@ public class UseCaseConfig {
             SceneRepositoryOperationsOutputPort sceneOps,
             NpcRepositoryOperationsOutputPort npcOps) {
         // One presenter instance, shared with the orient and the scene-sourced NPC select subcases (as hit does),
-        // so every outcome — the NPC's answer, a refusal, nothing-to-say, the orient not-founds, the
-        // disambiguation outcomes — reaches the same one. Read-only: no transaction port, and no persistence
-        // port of the use case's own (the select subcase holds the NPC port). Dice is a domain collaborator (a
-        // fresh SystemDice, like the ticker) picking the NPC's line.
-        TerminalTalkToNpcPresenter presenter =
-                new TerminalTalkToNpcPresenter(orientRenderer, npcRenderer, console, affordanceContext);
+        // so every outcome — the NPC's answer, a refusal, nothing-to-say, a vendor's wares, the orient
+        // not-founds, the disambiguation outcomes — reaches the same one. The wares are rendered by the
+        // OfferRenderer the purchase shares, and armed as a BUY menu the buy conversation resumes. Read-only: no
+        // transaction port, and no persistence port of the use case's own (the select subcase holds the NPC
+        // port). Dice is a domain collaborator (a fresh SystemDice, like the ticker) picking the NPC's line.
+        TerminalTalkToNpcPresenter presenter = new TerminalTalkToNpcPresenter(
+                orientRenderer, npcRenderer, offerRenderer, console, affordanceContext);
         OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
         SelectSceneNpcSubcase select = new SelectSceneNpcSubcase(presenter, npcOps);
         return new TalkToNpcUseCase(presenter, orient, select, new SystemDice());
+    }
+
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public BuyFromNpcInputPort buyFromNpcUseCase(
+            OrientRenderer orientRenderer,
+            OfferRenderer offerRenderer,
+            Console console,
+            AffordanceContext affordanceContext,
+            PlayerOperationsOutputPort playerOps,
+            PlayerRepositoryOperationsOutputPort playerRepositoryOps,
+            SceneRepositoryOperationsOutputPort sceneOps,
+            NpcRepositoryOperationsOutputPort npcOps,
+            ItemRepositoryOperationsOutputPort itemOps,
+            WareTemplateSourceOperationsOutputPort wareTemplateSourceOps,
+            TransactionOperationsOutputPort txOps) {
+        // One presenter instance, shared with the orient and the scene-sourced ware-select subcases (as talk
+        // does with NPCs), so every outcome — the purchase, the shortfall, the orient not-founds, the
+        // disambiguation outcomes — reaches the same one. The vendor is read once, by the select subcase
+        // through the NPC port; the use case itself holds only the item port (coins and ware) plus the ware
+        // template port served by the YAML seed adapter. One plain transaction pays and delivers; a held
+        // coin is single-writer, so there is no lock-aware machinery. Dice is a domain collaborator (a fresh
+        // SystemDice, like the ticker) minting the ware's id.
+        TerminalBuyFromNpcPresenter presenter =
+                new TerminalBuyFromNpcPresenter(orientRenderer, offerRenderer, console, affordanceContext);
+        OrientPlayerSubcase orient = new OrientPlayerSubcase(presenter, playerOps, playerRepositoryOps, sceneOps);
+        SelectSceneOfferSubcase select = new SelectSceneOfferSubcase(presenter, npcOps);
+        return new BuyFromNpcUseCase(
+                presenter, orient, select, itemOps, wareTemplateSourceOps, txOps, new SystemDice());
     }
 
     @Bean
@@ -374,6 +414,11 @@ public class UseCaseConfig {
     @Bean
     public Conversation talkConversation(ApplicationContext applicationContext) {
         return new TalkConversation(applicationContext);
+    }
+
+    @Bean
+    public Conversation buyConversation(ApplicationContext applicationContext) {
+        return new BuyConversation(applicationContext);
     }
 
     /**

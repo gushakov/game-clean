@@ -70,6 +70,11 @@ public class CommandParser {
         // designation. Bare 'talk' (or a bare preposition) names no one and falls through to unknown.
         register("talk", CommandParser::talkCommand);
         register("speak", CommandParser::talkCommand);
+        // 'buy'/'rent' name a ware on offer in the scene, the remainder as the target like 'take <target>' —
+        // the two verbs are plain synonyms (you rent a room and buy a key with the same word). Bare 'buy'
+        // names nothing and falls through to unknown.
+        register("buy", args -> args.isEmpty() ? null : new BuyCommand(joinRemainder(args)));
+        register("rent", args -> args.isEmpty() ? null : new BuyCommand(joinRemainder(args)));
         // Mini-game verbs. 'play' sits down at the table; 'stand'/'stay' and 'game'/'table' continue an armed
         // blackjack conversation (unarmed they fold into guidance). All argument-free.
         register("play", args -> args.isEmpty() ? new PlayCommand() : null);
@@ -167,17 +172,23 @@ public class CommandParser {
 
     /**
      * Joins the argument tokens back into one target phrase (whitespace collapsed to single spaces), dropping
-     * a leading article when something follows it — {@code take the dagger} / {@code talk to the wanderer}
-     * designate "dagger" / "wanderer". The article is grammar, not designation: left in, it would defeat the
-     * domain's substring match against a short description that begins "A …". A bare {@code the} is kept as
-     * the (nonsense) target it is, so the player is told nothing matches rather than nothing was typed.
+     * one leading article — {@code the}, {@code a} or {@code an} — when something follows it:
+     * {@code take the dagger} / {@code buy a room} designate "dagger" / "room". The article is grammar, not
+     * designation: left in, it would defeat the domain's substring match against a short description that
+     * begins "A …". A bare article is kept as the (nonsense) target it is, so the player is told nothing
+     * matches rather than nothing was typed.
      */
     private static String joinRemainder(List<String> args) {
         List<String> target = args;
-        if (target.size() > 1 && target.getFirst().equalsIgnoreCase("the")) {
+        if (target.size() > 1 && isArticle(target.getFirst())) {
             target = target.subList(1, target.size());
         }
         return String.join(" ", target);
+    }
+
+    /** Whether the token is one of the English articles the target phrase may begin with. */
+    private static boolean isArticle(String token) {
+        return token.equalsIgnoreCase("the") || token.equalsIgnoreCase("a") || token.equalsIgnoreCase("an");
     }
 
     /** A short, all-digits token that parses to a strictly positive int — a 1-based menu pick. */

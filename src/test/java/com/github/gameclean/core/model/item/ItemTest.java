@@ -2,6 +2,7 @@ package com.github.gameclean.core.model.item;
 
 import com.github.gameclean.core.model.InvalidDomainObjectError;
 import com.github.gameclean.core.model.player.PlayerId;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.SceneId;
 import org.junit.jupiter.api.Test;
 
@@ -139,6 +140,47 @@ class ItemTest {
         assertThat(chest.droppedAt(SceneId.of("scn2")).isContainer()).isTrue();
     }
 
+    private static Item key(String opens) {
+        return Item.builder()
+                .id(ItemId.of("itm6"))
+                .location(new Location.HeldBy(PlayerId.of("plr1")))
+                .shortDescription("A small brass key.")
+                .fullDescription("A longer description.")
+                .opens(opens)
+                .build();
+    }
+
+    @Test
+    void rejects_a_blank_opens_handle() {
+        assertThatExceptionOfType(InvalidDomainObjectError.class).isThrownBy(() -> key("   "));
+    }
+
+    @Test
+    void opens_the_lock_whose_ref_equals_its_handle() {
+        assertThat(key("guest-room").opens(new Lock("guest-room", null))).isTrue();
+    }
+
+    @Test
+    void does_not_open_a_lock_with_another_ref() {
+        assertThat(key("guest-room").opens(new Lock("cellar", null))).isFalse();
+    }
+
+    @Test
+    void an_item_that_opens_nothing_opens_no_lock() {
+        assertThat(item("A rusty dagger.").getOpens()).isNull();
+        assertThat(item("A rusty dagger.").opens(new Lock("guest-room", null))).isFalse();
+    }
+
+    @Test
+    void opens_rejects_a_null_lock_as_a_caller_bug() {
+        assertThatNullPointerException().isThrownBy(() -> key("guest-room").opens(null));
+    }
+
+    @Test
+    void the_opens_handle_survives_copy_on_write() {
+        assertThat(key("guest-room").droppedAt(SceneId.of("scn5")).getOpens()).isEqualTo("guest-room");
+    }
+
     @Test
     void the_anchored_fact_defaults_false_and_survives_copy_on_write() {
         assertThat(item("A rusty dagger.").isAnchored()).isFalse();
@@ -155,5 +197,38 @@ class ItemTest {
         // The mutators stay mechanism, not policy: refusing to take an anchored item is the use case's
         // checkpoint, so the fact simply rides the copy-on-write like every other field.
         assertThat(anchoredChest.droppedAt(SceneId.of("scn2")).isAnchored()).isTrue();
+    }
+
+    private static Item.ItemBuilder coin() {
+        return Item.builder()
+                .id(ItemId.of("itm3"))
+                .location(new Location.OnGround(SceneId.of("scn1")))
+                .shortDescription("A copper coin.")
+                .fullDescription("A single dull copper coin.")
+                .currency(true);
+    }
+
+    @Test
+    void the_currency_flag_defaults_false_and_survives_copy_on_write() {
+        // Coins are counted and spent by the buy use case; pinned here is the fact, its getter, and that —
+        // like every other instance-copied fact — it rides the location moves (@With routes through the gate).
+        assertThat(item("A rusty dagger.").isCurrency()).isFalse();
+
+        assertThat(coin().build().takenBy(PlayerId.of("plr1")).isCurrency()).isTrue();
+        assertThat(coin().build().droppedAt(SceneId.of("scn2")).isCurrency()).isTrue();
+    }
+
+    @Test
+    void rejects_currency_that_is_a_container() {
+        // Money that holds other things is a purse: its contents would ride along uncounted.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> coin().container(true).build());
+    }
+
+    @Test
+    void rejects_currency_that_is_anchored() {
+        // Money fixed to the ground cannot be paid.
+        assertThatExceptionOfType(InvalidDomainObjectError.class)
+                .isThrownBy(() -> coin().anchored(true).build());
     }
 }

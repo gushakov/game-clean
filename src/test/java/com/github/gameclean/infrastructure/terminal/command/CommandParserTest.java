@@ -208,6 +208,37 @@ class CommandParserTest {
     }
 
     @Test
+    void parses_buy_and_its_rent_synonym_carrying_the_ware_target() {
+        // The verbs are plain synonyms — you rent a room and buy a key — and the article is grammar, not
+        // designation, dropped whenever something follows it (shared joinRemainder with take/hit/talk).
+        assertThat(parser.parse("buy room")).contains(new BuyCommand("room"));
+        assertThat(parser.parse("rent room")).contains(new BuyCommand("room"));
+        assertThat(parser.parse("rent a room")).contains(new BuyCommand("room"));
+        assertThat(parser.parse("buy the room")).contains(new BuyCommand("room"));
+        assertThat(parser.parse("buy an apple")).contains(new BuyCommand("apple"));
+        assertThat(parser.parse("BUY A Room")).contains(new BuyCommand("Room"));
+        // A multi-word fragment survives whole — designation is a substring match, not a single word.
+        assertThat(parser.parse("buy yesterday's stew")).contains(new BuyCommand("yesterday's stew"));
+    }
+
+    @Test
+    void bare_buy_or_rent_names_no_ware_and_is_unknown() {
+        // No bare 'buy' listing: without a ware the verb is grammar without content, unknown like bare 'take'.
+        assertThat(parser.parse("buy")).contains(new UnknownCommand("buy"));
+        assertThat(parser.parse("rent")).contains(new UnknownCommand("rent"));
+        // And the lone article stays the (nonsense) target it is — nothing follows it to designate.
+        assertThat(parser.parse("buy a")).contains(new BuyCommand("a"));
+    }
+
+    @Test
+    void an_indefinite_article_is_dropped_like_the_definite_one() {
+        // The generalization of the article rule reaches the other verbs too, in both genders.
+        assertThat(parser.parse("take a dagger")).contains(new TakeCommand("dagger"));
+        assertThat(parser.parse("take an apple")).contains(new TakeCommand("apple"));
+        assertThat(parser.parse("drop the ring")).contains(new DropCommand("ring"));
+    }
+
+    @Test
     void bare_talk_or_a_bare_preposition_names_no_one_and_is_unknown() {
         assertThat(parser.parse("talk")).contains(new UnknownCommand("talk"));
         assertThat(parser.parse("talk to")).contains(new UnknownCommand("talk to"));

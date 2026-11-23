@@ -32,7 +32,10 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   `ScalarConverter` (`infrastructure/mapping/`, layer-neutral) for single-scalar text forms (id VOs,
   `Chance` as `num/den`), and `CompositeDbConverter` (`infrastructure/persistence/common/`) for `@Embedded`
   composites (`HitPointsDbEntity`; `LocationDbEntity`, the sealed VO's `(kind, ref)` encoding with the
-  exhaustive `switch` inside the converter). Re-wrapping runs the VO's own validation. Builds the domain
+  exhaustive `switch` inside the converter; `LockDbEntity`, an exit's nullable lock — embedded in an owned
+  child entity, `@Embedded.Nullable`, both columns null = no lock). A VO with a convenience constructor beside
+  its canonical one (`Exit`) puts `@Builder` on the canonical constructor: MapStruct then builds through the
+  builder instead of failing on ambiguous constructors. Re-wrapping runs the VO's own validation. Builds the domain
   aggregate through its Lombok builder — requires `lombok-mapstruct-binding` in the annotation-processor
   path (order: lombok → binding → mapstruct). Gotcha: restructuring a DB-entity property ripples into
   derived-query method names (embedded fields are reached by path, e.g. `…HitPointsCurrent…`).
@@ -57,7 +60,12 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   table, `V10` npc move chance collapsed to one `move_chance` varchar (`num/den` text + shape CHECK, backfilled
   from the V7 pair), `V11` npc `hostile` boolean + `attack_chance` varchar (`num/den` text + shape CHECK, #66),
   `V12` player `(hit_points, max_hit_points)` embedded pool + `version` (#66 — an NPC counterstrike makes the
-  player a second writer). A composite PK on an owned child
+  player a second writer), `V13` item `container`, `V14` item `anchored` (#90), `V15` npc `corpse_ref` (#93),
+  `V16` `npc_saying` child table (#104), `V17` exit `(lock_ref, locked_description)` nullable (#115 — the embedded
+  `LockDbEntity`), `V18` item `opens` nullable (#115), `V19` item `currency` boolean not null default false
+   (#117), `V20` `npc_offer` child table `(npc_id, idx)` PK + `unique (npc_id, ref)` (#117 — the `npc_saying`
+   pattern applied to wares; no CHECK on `price`, the `npc.max_hit_points` precedent: its lower bound is the
+   domain gate's). A composite PK on an owned child
   `(scene_id, name)` enforces a domain uniqueness invariant at the DB level. A merged migration is immutable
   (fix forward with a new `Vxx`); `V6` is the first to *alter* an existing table. Cross-aggregate references (`exit.target_scene_id`, `player.current_scene_id`)
   carry **no FK** — resolution is a use-case rule yielding a domain outcome, not an FK violation.
@@ -82,7 +90,10 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
   — the **version-driven `save`** (mirrors the item adapter; wraps `OptimisticLockingFailureException →
   OptimisticLockingError`); reads catch `DataAccessException | InvalidDomainObjectError` (a corrupt row is an
   integrity fault). `findNpc(NpcId)` loads a single living NPC (`findById` + filter `!isDead()`) for the
-  counterstrike execution.
+  counterstrike execution. **Owned children are lists** keyed by an `idx` column so authored order survives
+  (`sayings` V16, `offers` V20); their element ↔ VO conversion rides two `default` methods on the mapper
+  (`toOffer` / `toOfferEntity`, no `@Mapping`, no `expression`) — which re-runs the VO's own gate on the way
+  back, so a stored row the domain would refuse is a `PersistenceOperationsError` integrity fault of the read.
 
 ### Test layering — Surefire (unit) vs Failsafe (integration)
 
@@ -106,24 +117,24 @@ Established by the scenes persistence spike, repeated for each aggregate. Lives 
 ## Transactions (explicit demarcation, no blanket `@Transactional`)
 
 `core/port/transaction/TransactionOperationsOutputPort` — lean 3-method canon over plain
-`Runnable`/`Supplier`: `doInTransaction(readOnly, …)`, `doInTransactionWithResult(readOnly, …)`,
-`doAfterCommit(…)` (+ no-readOnly `default` overloads, and the lock-aware
-`doInTransaction(action, onLockDetected)`). Usage rule: validation
-and reads run **outside** the transaction; only persistence (later, event dispatch) runs **inside**;
-present in `doAfterCommit` (never before commit). Failure is expressed by **throwing** (unchecked) —
-caught at the use case's outermost checkpoint; there is deliberately no `rollback()`.
+`Runnable`/`Supplier`: `doInTransaction(readOnly, …)`, `doInTransactionWithResult(readOnly, …)`, and the
+lock-aware `doInTransactionWithResult(action, onLockDetected)` (+ no-readOnly `default` overloads). Usage
+rule: validation and reads run **outside** the transaction; only persistence (later, event dispatch) runs
+**inside**; the presentation is the **statement after the block** (branching on what a result-returning
+block settled — a use-case-private enum or value type), never inside it. There is **no after-commit or
+after-rollback hook**. Failure is expressed by **throwing** (unchecked) — caught at the use case's outermost
+checkpoint; there is deliberately no `rollback()`.
 
 - Adapter — `infrastructure/transaction/SpringTransactionAdapter` (plain Lombok class, not
-  component-scanned), backed by Spring `TransactionTemplate` + `TransactionSynchronizationManager`.
-  `doAfterCommit` runs immediately when no tx is active. **No cache coupling** (project has no cache);
+  component-scanned), backed by Spring `TransactionTemplate` (`TransactionSynchronizationManager` only to
+  refuse a lock-aware block joined to an active tx). **No cache coupling** (project has no cache);
   the methodology's `CacheInvalidationOnRollback` seam is added only when a cache appears.
-- The after-commit hook is registered as `afterCommit()`, **never** `afterCompletion(STATUS_COMMITTED)`
-  — the latter's `catch (Throwable)` turns a failing presenter into a log line. Whatever the deferred
-  action throws, the caller sees (both branches). `doAfterRollback` was **retired** for failing that
-  same test: Spring has no `afterRollback()` hook, only the swallowing form (issue #99, design-notes §5).
-  Pinned by `SpringTransactionAdapterTest.AfterCommitFailsLoudly`, which drives a minimal real
-  `AbstractPlatformTransactionManager` — a **mocked** `PlatformTransactionManager` never fires
-  synchronizations at all, so after-commit assertions over one are vacuous.
+- The lock-aware overload catches `OptimisticLockingError` around the template (already rolled back) and
+  returns the caller's loss value; a `null` loss value is rejected, and a block joined to an active
+  transaction is refused with `TransactionOperationsError`. The outermost-refusal test drives a minimal real
+  `AbstractPlatformTransactionManager` — a **mocked** `PlatformTransactionManager` never marks a transaction
+  active. Use case tests stub the port through `core/usecase/TransactionPortStubs` (one stub per overload,
+  shared by success and error paths).
 - Demarcation faults have their own currency — a begin/commit/unexpected-rollback failure surfaces as a Spring
   `TransactionException`, which the two `doInTransaction*` methods catch **narrowly** (`TransactionException`,
   never `Exception`) and wrap into `core/port/transaction/TransactionOperationsError` (unchecked, mirroring
@@ -153,8 +164,7 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   not the use-case package — design-notes §3). Either way, value objects are constructed inside the use
   case, never by adapters.
 - **Read-only use cases take no transaction.** `Look` (`core/usecase/explore/`) reads through the
-  persistence ports and presents directly — no `TransactionOperationsOutputPort` collaborator at all,
-  no after-commit hook. Outcomes (missing player, dangling current scene) are reached by
+  persistence ports and presents directly — no `TransactionOperationsOutputPort` collaborator at all. Outcomes (missing player, dangling current scene) are reached by
   branch-and-present, the error catch-all by the outermost `try`. Summary-goal package `explore/`
   (looking around; later `look <target>` / `move`).
 - **Subcase (shared, reusable interaction logic)** — `core/usecase/orient/` holds the project's first
@@ -165,7 +175,10 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   presenter instance the subcase shares. On a missing player / dangling current scene
   it presents the outcome and throws the marker `SubcaseAlreadyPresented` (`core/port/`); on success it
   *returns* `OrientPlayerResult` (player + scene). Parents delegate their opening and swallow the marker in
-  a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all. Tested directly
+  a dedicated `catch (SubcaseAlreadyPresented)` ahead of the catch-all — enforced by
+  `SubcaseMarkerGuardArchitectureTest` (#110), whose guard is lexical: **call a subcase port directly in the
+  interaction method's `try`**, never from a lambda or a private helper (reported even when a guarded `try`
+  invokes it), and keep the `SubcaseInputPort` suffix, by which the rule recognizes ports. Tested directly
   (`OrientPlayerSubcaseTest`); parent unit tests mock the subcase (design-notes §4). The second subcase
   family, `core/usecase/select/`, owns the target-disambiguation dialogue: `AbstractSelectTargetSubcase<C, T extends Designatable>`
   (one-level Template Method, generic in its coordinate *and* candidate type, #67; `final` template methods,
@@ -194,10 +207,14 @@ Established by the `ConstructWorld` vertical, now the `InitializeGame` use case 
   — ids are assigned); Spring `DataAccessException` wrapped in `PersistenceOperationsError`, reads also
   wrapping a reconstitution `InvalidDomainObjectError` as an integrity fault (see Persistence above).
 - **Game seeding** — split into a *driven source adapter* and a *thin driving adapter*.
-  `infrastructure/world/YamlGameSeedSource` implements `GameSeedSourceOperationsOutputPort`: it reads
+  `infrastructure/world/YamlGameSeedSource` implements **three** ports over one lazily memoized seed snapshot:
+  `GameSeedSourceOperationsOutputPort` (it reads
   `world/scenes.yaml` via `GameSeedYamlReader` + the configured starting scene and returns the `GameSeed`,
   wrapping any `IOException` in `GameSeedSourceOperationsError` (presented, not fail-fast). The use case
-  *pulls* that as Checkpoint 1. `infrastructure/world/GameSeeder` (plain singleton, *not* an
+  *pulls* that as Checkpoint 1), `CorpseBlueprintSourceOperationsOutputPort` (#93) and
+  `WareTemplateSourceOperationsOutputPort` (#119) — each pull re-validates its kind-specific rules
+  (blueprint: container without a ground-spawn rule; ware: neither container nor anchored) and surfaces faults
+  in its own port-error currency, never double-wrapped. `infrastructure/world/GameSeeder` (plain singleton, *not* an
   `ApplicationRunner`) is now logic-free: it fires `InitializeGame` via `seed()` (one `getBean` prototype
   pull, no return used). Idempotent (the use case's seed-if-empty / create-if-absent / spawn-if-none
   guards), so it is invoked unconditionally by `BootSequence`'s ordered runner on every interactive boot.
@@ -243,12 +260,15 @@ Established by the JLine entry-point work (issue #6).
   **first crack** at each parsed line through its `continuedBy` predicate (default: a bare-number
   `SelectCommand`, suiting the selection family on `AbstractSelectionConversation`); a refused line clears the
   affordance (abandonment — the forfeit for an ephemeral dialogue) and dispatches normally. Handlers:
-  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`TalkConversation` (Template-Method base; `TakeFrom` has its own
+  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`Talk`/`BuyConversation` (Template-Method base; `TakeFrom` has its own
   `AffordanceKind.TAKE_FROM` because its resume re-validates against containers, not the ground) and `BlackjackConversation` (implements
   `Conversation` directly — the first *verb-continued* dialogue: `hit`/`hit me`, `stand`/`stay`,
   `game`/`table`, plus `play` folding to the anytime table view; it casts the payload back to
   `BlackjackRound`, the `SelectCommand` cast's twin). Each handler pulls a fresh prototype use case per
-  resume (`getBean`). Emergence ledger: kind-routing at the second number-continued dialogue (`take`),
+  resume (`getBean`). An affordance kind names the *resuming* conversation, not the arming use case: the `BUY`
+  menu is armed both by an ambiguous `buy` and by `talk` to a peaceful vendor showing its wares
+  (`TerminalTalkToNpcPresenter.presentNpcShowsWares`, #121), and a `TALK` menu resumed onto a vendor re-arms as
+  `BUY` — the dispatcher never clears after a resume, and `offer` replaces the armed affordance. Emergence ledger: kind-routing at the second number-continued dialogue (`take`),
   confirmed by the third (`drop`); `continuedBy` moved onto the handler at the first non-number continuation
   (`blackjack`), exactly as reserved. Rationale: design-notes §9.
 - **`GameConfigurationProperties`** (`infrastructure/`) — the single catalog of every `game.*` property,
@@ -318,6 +338,11 @@ The app reads from a TTY; to drive it without one (Claude sessions, CI smoke che
   this verifies output **content and ordering**, not visual rendering. The redraw-preserves-your-input
   nicety stays a human-at-a-real-terminal check.
 - **Pace the input** (interleaved `sleep`) to let time-based / async `printAbove` events fire.
+- **Movement is `go <exit>` / `move <exit>`** — a bare direction (`north`) is an unrecognized command.
+- **Start from a fresh play DB** for a scripted scenario: seeding is idempotent and world-wide, so a DB seeded
+  earlier (or seeded from the other world) keeps its old spawns. `docker compose down -v && docker compose up -d`
+  (wipes all play state), then launch — add `--world scenes2.yaml` for the harbour world. Em dashes print as `�`
+  in the dumb terminal; that is the non-TTY encoding, not a renderer bug.
 - **Never via Maven** — `mvn spring-boot:run` / `exec:java` make Maven own stdin/stdout ⇒ forced dumb mode.
 - Use this for **adapter smoke checks** and the wall-clock / concurrency exploration of thread `#3`; test
   game *logic* via JUnit on the use-case layer. See the testability stance in `design-notes.md`.

@@ -7,6 +7,7 @@ import com.github.gameclean.core.model.npc.NpcId;
 import com.github.gameclean.core.model.player.Player;
 import com.github.gameclean.core.model.player.PlayerId;
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.concurrency.OptimisticLockingError;
@@ -25,8 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionWithResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -70,7 +70,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn1");   // player watches from the source scene
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 
@@ -88,7 +88,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn2");   // player watches from the target scene
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 
@@ -103,7 +103,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(gate()));
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn3");   // player is elsewhere — the move touches neither their scene
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 
@@ -146,6 +146,24 @@ class WanderUseCaseTest {
     }
 
     @Test
+    void isQuietWhenTheNamedExitIsLocked() {
+        Scene innWithLockedStair = Scene.builder()
+                .id(SceneId.of("scn1")).name("The Crooked Lantern")
+                .shortDescription("An inn.").fullDescription("A common room.")
+                .exits(List.of(new Exit("up", SceneId.of("scn2"), new Lock("guest-room", null))))
+                .build();
+        when(npcOps.findNpc(NpcId.of("npc1"))).thenReturn(Optional.of(npc("npc1", "scn1")));
+        when(sceneOps.findScene(SceneId.of("scn1"))).thenReturn(Optional.of(innWithLockedStair));
+
+        useCase.npcWandersThrough("npc1", "up");     // an NPC carries nothing, so the lock never opens to it
+
+        verify(presenter).presentNothingHappened();
+        verify(sceneOps, never()).findScene(SceneId.of("scn2"));
+        verify(npcOps, never()).saveNpc(any());
+        verifyNoInteractions(txOps);
+    }
+
+    @Test
     void isQuietWhenTheExitTargetDangles() {
         Scene gateToNowhere = Scene.builder()
                 .id(SceneId.of("scn1")).name("Old Gate")
@@ -169,7 +187,7 @@ class WanderUseCaseTest {
         when(sceneOps.findScene(SceneId.of("scn2"))).thenReturn(Optional.of(courtyard()));
         playerInScene("scn1");
         doThrow(new OptimisticLockingError("stale version")).when(npcOps).saveNpc(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.npcWandersThrough("npc1", "north");
 

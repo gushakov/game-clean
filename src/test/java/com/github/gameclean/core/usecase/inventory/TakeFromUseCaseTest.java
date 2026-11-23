@@ -25,8 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionWithResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -70,7 +69,7 @@ class TakeFromUseCaseTest {
         Item ring = contained("itm9", "A tarnished silver ring.", corpse);
         when(itemOps.findItemsInScene(HERE)).thenReturn(List.of(corpse, groundItem("itm1", "A rusty dagger.")));
         when(selectTargetSubcase.playerDesignatesTarget("ring", List.of(corpse.getId()))).thenReturn(ring);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesTargetFrom("ring", "corpse");
 
@@ -79,7 +78,7 @@ class TakeFromUseCaseTest {
         assertThat(saved.getId()).isEqualTo(ItemId.of("itm9"));
         assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(SELF));
         assertThat(saved.getVersion()).isEqualTo(ring.getVersion());
-        // ... and the success, naming the container it came out of, is presented only after commit.
+        // ... and the success, naming the container it came out of, is presented after the block.
         verify(presenter).presentItemTakenFrom(saved, corpse);
         verify(presenter, never()).presentItemGotAway(any());
     }
@@ -94,7 +93,7 @@ class TakeFromUseCaseTest {
         Item ring = contained("itm9", "A tarnished silver ring.", corpse);
         when(itemOps.findItemsInScene(HERE)).thenReturn(List.of(corpse));
         when(selectTargetSubcase.playerDesignatesTarget("ring", List.of(corpse.getId()))).thenReturn(ring);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesTargetFrom("ring", "corpse");
 
@@ -114,7 +113,7 @@ class TakeFromUseCaseTest {
         when(itemOps.findItemsInScene(HERE)).thenReturn(List.of(emptyCorpse, ladenCorpse, chest));
         when(selectTargetSubcase.playerDesignatesTarget("ring", List.of(emptyCorpse.getId(), ladenCorpse.getId())))
                 .thenReturn(ring);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesTargetFrom("ring", "corpse");
 
@@ -179,7 +178,7 @@ class TakeFromUseCaseTest {
         when(itemOps.findItemsInScene(HERE)).thenReturn(List.of(corpse));
         when(selectTargetSubcase.playerDesignatesTarget("ring", List.of(corpse.getId()))).thenReturn(ring);
         doThrow(new OptimisticLockingError("stale version")).when(itemOps).saveItem(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesTargetFrom("ring", "corpse");
 
@@ -187,6 +186,25 @@ class TakeFromUseCaseTest {
         verify(presenter, never()).presentItemTakenFrom(any(), any());
         verify(presenter, never()).presentError(any());
         verify(txOps, never()).doInTransaction(anyBoolean(), any(Runnable.class));
+    }
+
+    @Test
+    void presentsOnlyTheErrorWhenTheWriteFailsInsideTheTransaction() {
+        orientedAtScn1();
+        Item corpse = container("itm5", "The corpse of a hooded wanderer.");
+        Item ring = contained("itm9", "A tarnished silver ring.", corpse);
+        when(itemOps.findItemsInScene(HERE)).thenReturn(List.of(corpse));
+        when(selectTargetSubcase.playerDesignatesTarget("ring", List.of(corpse.getId()))).thenReturn(ring);
+        PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
+        doThrow(boom).when(itemOps).saveItem(any());
+        runLockAwareTransactionWithResult(txOps);
+
+        useCase.playerTakesTargetFrom("ring", "corpse");
+
+        // A fault is not a lost race: it unwinds past the statements after the block.
+        verify(presenter).presentError(boom);
+        verify(presenter, never()).presentItemTakenFrom(any(), any());
+        verify(presenter, never()).presentItemGotAway(any());
     }
 
     // --- playerTakesChosenContent (designation by choosing from the offer) --------------------------
@@ -203,7 +221,7 @@ class TakeFromUseCaseTest {
                 .thenReturn(List.of(corpse, chest, groundItem("itm1", "A rusty dagger.")));
         when(selectTargetSubcase.playerDesignatesChosenCandidate(
                 2, List.of("itm8", "itm9"), List.of(corpse.getId(), chest.getId()))).thenReturn(ring);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesChosenContent(2, List.of("itm8", "itm9"));
 

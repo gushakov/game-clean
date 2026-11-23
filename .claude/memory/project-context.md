@@ -58,12 +58,13 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   `InvalidDomainObjectError` + the `DomainValidation` helper (constructors/factories throw it; behaviour-method
   arg guards stay plain `Objects.requireNonNull`/NPE — design-notes §2), `port/{operation}/` (output ports — `port/persistence/`, `port/transaction/`, `port/player/`,
   `port/corpse/` (the corpse-blueprint source port — `CorpseBlueprintSourceOperationsOutputPort.loadCorpseBlueprint(ref)` returning the **valid-out** `CorpseBlueprint` carrier + its own error; the first runtime consumer of authored world data, #93),
+  `port/ware/` (the ware-template source port — `WareTemplateSourceOperationsOutputPort.loadWareTemplate(itemRef)` returning the **valid-out** `ItemTemplate` + its own error; the purchase-time consumer of authored world data, #119),
   `port/npccommands/` (the NPC command channel's driven port — `NpcCommandsOutputPort.dispatchStrike`/`dispatchWander`; the port methods ARE the core-side command vocabulary, #66),
   `port/seed/`, `port/calendar/` (calendar-source port + error), `port/daytime/`
   (day-phase-schedule source port + error), `port/clock/`
   (time-source port) — the seed package holds the seed-source port and the
   `GameSeed`/`*Entry` carriers it returns; the day-phase-log repository port lives in `port/persistence/` with the other repos), `usecase/{summarygoal}/` (use-case class + its input and presenter ports;
-  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase`/`SelectContainedItemSubcase`/`SelectSceneNpcSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `TakeFrom` (take an item out of a container lying here, #107) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72); `usecase/parley/` holds `TalkToNpc` (the player talks to an NPC, who answers with an authored saying — the first non-violent NPC interaction, read-only, #104)).
+  a reusable **subcase** gets its own peer package, e.g. `usecase/orient/` and `usecase/select/` (the `AbstractSelectTargetSubcase<C, T>` Template-Method base — generic in coordinate *and* candidate, `T extends Designatable` — + its `SelectSceneItemSubcase`/`SelectInventoryItemSubcase`/`SelectContainedItemSubcase`/`SelectSceneNpcSubcase`/`SelectSceneOfferSubcase` concretes); `usecase/clock/` holds `AskForTime` + `SuspendGame` + `AnnounceTimeOfDay`; `usecase/guidance/` holds the presenter-only `Guidance` use case; `usecase/inventory/` holds `Take` + `Drop` (move an item between the ground and the player's keeping) + `TakeFrom` (take an item out of a container lying here, #107) + `Inventory` (list the keeping); `usecase/combat/` holds `FightNpc` (the multi-actor combat use case — the player strikes an NPC, and a provoked NPC strikes back via the secondary-actor `npcStrikesPlayer`, #66; a lethal player strike atomically replaces the NPC row with its minted corpse + rolled loot, #93); `usecase/npc/` holds `AnimateNpcs` (system-actor **read-only policy**: derives each NPC's action from persisted stance and dispatches it as a command, #66) + `Wander` (the executing interaction for a dispatched wander); `usecase/blackjack/` holds `PlayBlackjack` (play a hand against the dealer persona — the ephemeral conversation, #72); `usecase/parley/` holds `TalkToNpc` (the player talks to an NPC, who answers with an authored saying — the first non-violent NPC interaction, read-only, #104 — and a peaceful vendor also shows its wares as a numbered menu a bare number buys from, #121); `usecase/trade/` holds `BuyFromNpc` (the player buys a ware on offer from a peaceful vendor standing in their scene — coins counted in the buyer's keeping, paid by deleting them and minting the ware into the buyer's hands in one plain transaction, #119)).
 - `infrastructure/` — adapters, Spring wiring. At the **root**: `GameCleanApplication` (entry point;
   here so component scanning never reaches `core`), `UseCaseConfig` (composition root), `BootSequence`
   (boot orchestrator), `GameConfigurationProperties` (single `game.*` config catalog — nested `World`,
@@ -80,11 +81,18 @@ Text-based RPG that showcases Clean DDD. Public repo on `github.com`
   first driven→driving back-channel a background actor writes; separate from `AffordanceContext`, #87);
   `command/` the sealed `Command` + `CommandParser`; `conversation/` the kind-routed dispatcher (`Conversation`
   with its per-dialogue `continuedBy(Command)` predicate + `AbstractSelectionConversation` Template-Method base +
-  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`Talk`/`BlackjackConversation`); `presenter/` the driven
+  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`Talk`/`Buy`/`BlackjackConversation`); `presenter/` the driven
   `Terminal*Presenter`s; `render/`
-  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`NpcRenderer`/`BlackjackRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
+  `Console` (now with `printAbove` for async writes)/`CurrentSceneRenderer`/`OrientRenderer`/`ItemRenderer`/`NpcRenderer`/`OfferRenderer`/`BlackjackRenderer`/`CalendarRenderer`/`English`). No `infrastructure/id/` any more — id generation is a domain capability (`core/model/id/Ids` + `Dice`), the NanoID adapter and JNanoID dependency deleted (#53).
 - Enforced by four ArchUnit guards: `core ↛ infrastructure`, `core.model ↛ core.port`,
   `@SpringBootApplication` resides in `infrastructure`, and `core` carries no Spring stereotypes.
+  Three further rules in their own classes (production classes only): the blackjack subdomain boundary;
+  `SubcaseMarkerGuardArchitectureTest` — every call to a `*SubcaseInputPort` method from a non-subcase sits
+  lexically inside a `try` catching exactly `SubcaseAlreadyPresented` (#110; bite-proof in
+  `SubcaseMarkerGuardRuleTest` over `SubcaseMarkerGuardFixtures`; design-notes §4); and
+  `PresentationOutsideTransactionArchitectureTest` — a class holding the transaction port never calls a
+  `*PresenterOutputPort` from a lambda nor references one as a method reference (#112; bite-proof in
+  `PresentationOutsideTransactionRuleTest` over `PresentationOutsideTransactionFixtures`; design-notes §5).
 
 ## Status
 
@@ -165,7 +173,7 @@ named exit into the target scene, then sees it):
   trimmed lookup) and `Player.moveTo(SceneId)` (immutable, returns a new `Player`).
 - **Use case** — `Move` (`core/usecase/explore/`): input port `playerMovesThrough(String exitName)`,
   `MoveUseCase`, co-located `MovePresenterOutputPort`. Reads + validity checks outside a tx; one
-  `doInTransaction` holds only the `savePlayer` write; the entered scene is presented in `doAfterCommit`.
+  `doInTransaction` holds only the `savePlayer` write; the entered scene is presented as the statement after it.
   Branch-and-present for missing player / dangling current scene / no such exit / dangling exit target.
 - **Shared presenter capability** — the two not-found outcomes (`presentPlayerNotFound` +
   `presentCurrentSceneNotFound`) live on `OrientPlayerPresenterOutputPort` (the `orient` subcase's port — see
@@ -319,9 +327,10 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   presenter port declares `presentDayPhaseBegan` + `presentNothingToAnnounce` + `presentGameNotInitialized`
   (per-port readiness declaration since the flat-port rule deleted `ClockReadinessPresenterOutputPort`, #81).
   Derives "now" like `AskForTime`; reads the log once (capturing its version) + random message pick **outside**
-  the tx; one `doInTransaction(action, onLockDetected)` holds the single **version-checked** save (no inside-tx
-  re-read), presents after commit. A concurrent loss surfaces as `OptimisticLockingError` → the tx-port
-  `onLockDetected` handler → `presentNothingToAnnounce`; a quiet observation also presents
+  the tx; one lock-aware `doInTransactionWithResult(action, onLockDetected)` holds the single **version-checked**
+  save (no inside-tx re-read) and returns a private `AnnounceAttempt`; the presentation follows the block. A
+  concurrent loss surfaces as `OptimisticLockingError` → the adapter returns `LOST` →
+  `presentNothingToAnnounce`; a quiet observation also presents
   `presentNothingToAnnounce` (no tx); missing clock → `presentGameNotInitialized`
   (design-notes §5/§8 thread #3). `InitializeGame` gained a **5th create-if-absent guard** (seed
   `DayPhaseLog.initial()` beside the clock).
@@ -330,7 +339,8 @@ time-driven interaction and first parallel actor (Package B: "dumb metronome, sm
   `DayPhaseLogRepositoryOperationsOutputPort` (`core/port/persistence/`, find/save); `OptimisticLockingError`
   (`core/port/concurrency/`, its **own neutral package** — raised by persistence, reacted to by the transaction
   port / use case, owned conceptually by the aggregate; not a subtype of either port error — a concurrent loss
-  is an outcome, not a fault. Also reacted to via the new `doInTransaction(action, onLockDetected)` overload).
+  is an outcome, not a fault. Turned into a loss value by the lock-aware `doInTransactionWithResult(action,
+  onLockDetected)`).
 - **Adapters / infra** — `YamlCalendarSource` now implements **both** source ports (reads a `dayPhases:` block in
   `calendar.yaml` via `CalendarYamlReader.readDayPhases`, reconciles each phase hour against `hoursPerDay`
   fail-fast at boot); Flyway `V5__create_day_phase_log.sql` (singleton row, with a `version` column) +
@@ -378,11 +388,12 @@ project's first contested-resource write and first multi-conversation terminal d
   two interactions converging on `presentItemTaken` — `playerTakesTarget(String)` and
   `playerTakesChosenCandidate(int, List<String>)`. Pure orchestration: `orient` → `select` (the scene-ground
   `SelectSceneItemSubcase`, reused) → `item.takenBy(player)` → one
-  `doInTransaction(action, onLockDetected)` holding only `saveItem`, present after commit. No
+  `doInTransactionWithResult(action, onLockDetected)` holding only `saveItem` and returning a private
+  `TakeAttempt { TAKEN, GOT_AWAY }`; both presentations follow the block. No
   value-object-construction checkpoint (orient/select hand it valid objects). `TakePresenterOutputPort` extends
   `ErrorHandlingPresenterOutputPort` + `presentItemTaken(Item)` + `presentItemGotAway(ItemId)` (the distinct
   write-side lock-loss outcome; concrete presenter also implements the orient + select ports). (design-notes §4/§5.)
-- **Concurrency** — `@Version` on `Item` (first contested-resource write): the lock-loss in `onLockDetected` is the
+- **Concurrency** — `@Version` on `Item` (first contested-resource write): the lock-loss (`GOT_AWAY`) is the
   write-side twin of `select`'s read-side `presentItemNoLongerAvailable`. Mirrors `DayPhaseLog`: version on model +
   `@Version` on `ItemDbEntity`, version-driven `saveItem` (null/0 → insert so spawn still inserts; >0 →
   update-with-check), wrapping `OptimisticLockingFailureException → OptimisticLockingError`. (design-notes §5.)
@@ -423,7 +434,7 @@ second inventory goal, and the second `select` provisioner that extracted the Te
 - **Use case** — `Drop` (`core/usecase/inventory/`): `playerDropsTarget(String)` +
   `playerDropsChosenCandidate(int, List<String>)` converging on `presentItemDropped(Item)`. The criss-cross
   mirror of take — selects by player, mutates by scene — over the same `orient`+`select` opening; no
-  construction checkpoint. **Plain** `doInTransaction` (no `onLockDetected`): a held item is single-writer, so
+  construction checkpoint. **Plain** `doInTransaction` (not the lock-aware overload): a held item is single-writer, so
   a lock loss is unreachable and propagates to the catch-all — the contested→handler (`take`) vs
   single-writer→propagate (`drop`) contrast, pinned by a unit test (design-notes §5).
 - **Ports / persistence** — `findItemsHeldBy(PlayerId)` on the item port; the adapter reuses the existing
@@ -650,7 +661,7 @@ containment fill, death drop):
   reference it via an optional `corpse: <ref>` (absent = leaves no corpse). `scenes.yaml`: the wanderer's
   corpse may hold the silver ring (1/2); `scenes2.yaml`: fishwife → corpse certainly holding a gutting-knife,
   lamplighter → empty corpse, watchman → no corpse.
-- **Gate** — new `InitializeGame` checkpoint 12: every `corpse:` ref must resolve to an authored container
+- **Gate** — new `InitializeGame` checkpoint 12 (13 since #115 inserted the lock checkpoint): every `corpse:` ref must resolve to an authored container
   without a ground-spawn rule → `presentNpcCorpseRefInvalid(Map<npcRef, corpseRef>)`. Runs every boot, which
   is what makes the runtime port valid-by-provenance. (The pre-decided assembly extraction stayed deferred —
   a new authored *rule* is not a new authored *kind*, design-notes §2.)
@@ -681,8 +692,8 @@ sayings; the first non-violent NPC interaction, and the project's first vertical
 - **Use case** — `TalkToNpc` (`core/usecase/parley/` — a new summary goal: talking with the inhabitants, distinct
   from `combat` and the system-actor `npc/`): `playerTalksToTarget(String)` + `playerTalksToChosenCandidate(int,
   List<String>)` over the shared `orient` + `select`-NPC opening (the third `SelectSceneNpcSubcase` consumer after
-  `hit`). **Read-only, no tx, no persistence port of its own**; holds a `Dice`. Three stripes decided in the use
-  case on domain facts, in fixed order: `presentNpcRefusesToTalk` (hostile — the combat stance outranks the
+  `hit`). **Read-only, no tx, no persistence port of its own**; holds a `Dice`. Three stripes (four since #121,
+  which inserts the wares stripe after the refusal) decided in the use case on domain facts, in fixed order: `presentNpcRefusesToTalk` (hostile — the combat stance outranks the
   lines), `presentNpcHasNothingToSay` (peaceful, nothing authored), `presentNpcSays(npc, saying)`.
 - **Persistence** — Flyway `V16__create_npc_saying.sql`: child table `npc_saying(npc_id, idx, text)` owned by
   the npc aggregate (the `exit`/`scene_mini_game` pattern); `@MappedCollection(idColumn, keyColumn = "idx")
@@ -710,8 +721,9 @@ command naming **two** targets:
   matching container is searched and only the *item* is ever disambiguated — one menu, no scope token. The
   menu pick re-validates against **every** ground container here (reachability, not the original fragment).
   Write tail as `Take`'s: anchored gate on the **item taken, never the container** (a corpse is anchored and
-  is what one takes from), `takenBy`, one `doInTransaction(action, onLockDetected)` → `presentItemGotAway`
-  (contested, like a ground take), `presentItemTakenFrom(item, container)` after commit. Only the contained
+  is what one takes from), `takenBy`, one lock-aware `doInTransactionWithResult` → `presentItemGotAway` on a
+  lost race (contested, like a ground take), else `presentItemTakenFrom(item, container)`, both after the block.
+  Only the contained
   item's row is written. (design-notes §4/§5.)
 - **Select** — `SelectContainedItemSubcase<List<ItemId>, Item>`: the fourth concrete; coordinate = the set of
   containers to look in, candidates = the union of their contents (`findItemsInside` per container).
@@ -723,10 +735,167 @@ command naming **two** targets:
   gains `renderItemTakenFrom` (short descriptions recast mid-sentence), `renderNoSuchContainer`,
   `renderNoSuchContainedTarget`, `renderItemNoLongerContained`; guidance list entry.
 - **Deferred** — taking from a **held** container (the carried sea chest), `drop` into a container, a
-  container-annotated menu ("ring (in the corpse)"), and the unguarded container side of the race (see
+  container-annotated menu ("ring (in the corpse)"). The container side of the race needs no guard (see
   design-notes §5).
 
-Tests: 564 unit (Surefire, DB-free) + 31 integration (`*IT`, Failsafe, **ephemeral Testcontainers
+`Locked exits` vertical **complete** (issue #115, inn scenario phase 1 of 4) — an exit may carry a lock,
+passed only by a player carrying an item that opens it; NPCs carry nothing and never pass one:
+
+- **Domain** — `Lock` VO (`core/model/scene/`: non-blank opaque `ref` + optional non-blank `description`,
+  equality by value); `Exit` gains a nullable `lock` (+ `hasLock()`; a 2-arg ctor for ordinary exits, `@Builder`
+  on the 3-arg one so MapStruct builds through it); `Scene.exitsWithoutLock()` (declaration order). `Item` /
+  `ItemTemplate` gain a nullable opaque `opens` handle (the `corpseRef` precedent, copied template → instance) and
+  `Item.opens(Lock)` SEFF (null lock = plain NPE). **The lock is derived, never stored state** — no
+  locked/unlocked field, no verb; `Scene` is still write-once. `item` imports `scene`, never the reverse.
+- **`Move`** — after `presentNoSuchExit`, a locked exit reads `findItemsHeldBy(player)` (only then; directly held
+  items only) and refuses with `presentExitLocked(Exit)` (no tx, no write) when nothing opens it — decided before
+  the dangling-target check. A pass presents `presentSceneEntered(scene, items, npcs, Optional<Item> openedWith)`
+  (first matching key; empty through an open exit). Plain tx overload unchanged.
+- **NPCs** — `AnimateNpcs` picks the wander exit among `exitsWithoutLock()` (none = no wander); `Wander`
+  re-validates and treats a locked named exit as the quiet stripe, no write.
+- **Seed / gate** — `ExitEntry.lock`/`lockedDescription`, `ItemEntry.opens` (reader keys `lock:`,
+  `lockedDescription:`, `opens:`). The scene gate builds the `Lock`; a `lockedDescription` without a `lock` is
+  invalid parameters. New inter-template checkpoint 9 (after containment targets, before spawn rolls): every
+  `opens` must name a lock declared on some authored exit → `presentItemOpensUnknownLock(Map<itemRef, lockRef>)`.
+  A lock no item opens is valid (a sealed door).
+- **Persistence** — Flyway `V17__exit_lock.sql` (`exit.lock_ref`, `exit.locked_description`, nullable) + `V18__item_opens.sql`
+  (`item.opens`, nullable), no backfill. `ExitDbEntity` embeds `@Embedded.Nullable LockDbEntity`
+  (`persistence/common/`); `CompositeDbConverter` gains the `Lock` pair, which `SceneDbEntityMapper` now extends —
+  no `expression`. A corrupt stored lock (blank ref) fails reconstitution → wrapped integrity fault.
+- **Terminal** — `TerminalMovePresenter.presentExitLocked` prints the authored description or "The way <exit> is
+  locked."; a pass with a key prints `ItemRenderer.renderWayOpenedWith` ("You open the way with …") before the
+  scene. No new command, affordance or parser change.
+- **Content** — `scenes.yaml`: courtyard `west` → `scn5` The Crooked Lantern (inn common room) → `up` (lock
+  `guest-room`, with refusal line) → `scn6` Guest Room → `down` (open). `itm6` brass key (`opens: guest-room`) —
+  **temporary** certain ground spawn on the inn floor, later superseded by the keeper's sale (#119 removed the
+  spawn). `npc2` stout
+  innkeeper, certain spawn in `scn5`, `moveChance: 0/1`, room sayings. A play DB seeded before this change needs
+  its volume reset to gain the new scenes. `scenes2.yaml` untouched.
+
+`Wares authoring` vertical **complete** (issue #117, inn scenario phase 2 of 4) — coins are currency and
+NPCs carry offers. Its consumers arrived with #119 (the `buy` verb counts and spends coins, selects wares and
+mints them) and #121 (`talk` shows a peaceful vendor's wares). Decided in the issue; the only open choice taken
+here was leaving `scenes2.yaml` (the harbour world, referenced by no test) unauthored (it gained a market with
+#121 — see that block):
+
+- **Domain** — `Offer` VO (`core/model/npc/`: non-blank `ref`/`name`/`itemRef`, `price ≥ 1`; equality by
+  value). The per-NPC uniqueness rule lives on the VO as a package-private static
+  `Offer.requireUniqueRefs(List<Offer>)`, run by **both** owners (`Npc`, `NpcTemplate`); `itemRef` stays an
+  **opaque authored handle** (the `corpseRef` precedent — no row behind it, the delivered item does not exist
+  until a purchase mints it, #119). `Npc`/`NpcTemplate` gain `List<Offer> offers` (empty on authored absence, copied
+  template → instance, ride the copy-on-write like the sayings) and no behaviour method — deliberately no
+  `hasOffers()`, since no use case read wares at the time (its consumers, #119 and #121, read them through
+  `standingOffers()`, so there is still none). `Item`/`ItemTemplate` gain `boolean currency`: **one
+  currency, no denominations**, so every currency item is one coin whatever its template. Invariant, gated in
+  **both** types: a currency item is neither a `container` (a purse's contents would ride along uncounted) nor
+  `anchored` (bolted-down money cannot be paid).
+- **`ItemTemplate` ctor collapse** — one `@Builder` ctor validating all seven params
+  (`shortDescription`, `fullDescription`, `container`, `anchored`, `currency`, `opens`, `spawnRule`); both
+  positional overloads **deleted** (a 5th same-typed boolean was the trigger — positional booleans are
+  silently swappable). All call sites migrated to the builder. `NpcTemplate` keeps its positional ctor with
+  `offers` appended as the 9th param. Carriers append new fields last (`ItemEntry.currency` after `opens`,
+  `NpcEntry.offers` after `sayings`) for the same no-adjacent-same-typed-params reason.
+- **Seed / gate** — reader keys `currency:` (`asBoolean`, absence → `false`: unlike `portable` there is no
+  kind-sensitive default to preserve) and `offers:` → new `OfferEntry(id, name, price, item)`; `price` via
+  `asInt(…, "npc offer price")`, so a **missing/non-numeric price is a malformed file** (the `hitPoints`
+  precedent, fail fast) while `price < 1` is the `Offer` gate's **invalid parameters**. New inter-template
+  **checkpoint 14** (after corpse refs, **before** the NPC spawn roll): an offered item must resolve and be
+  neither a container nor anchored → `presentNpcOfferItemInvalid(Map<npcRef, List<itemRef>>)` (the
+  containment-target shape: every offence of an NPC in one presentation). The NPC spawn roll is now 15 and the
+  transaction 16. Entry-shape violations (duplicate handle, price < 1, missing `item:`) surface at checkpoint
+  11 as invalid parameters. An offered item **may** carry its own ground spawn — the routes are independent.
+- **Persistence** — `V19__item_currency.sql` (`item.currency boolean not null default false`) +
+  `V20__create_npc_offer.sql` (`npc_offer(npc_id, idx, ref, name, price, item_ref)`, PK `(npc_id, idx)`,
+  `unique (npc_id, ref)`, no backfill — no offers is a valid NPC). No CHECK on `price` (the
+  `npc.max_hit_points` precedent: the lower bound is the domain gate's). `NpcOfferDbEntity` +
+  `@MappedCollection(idColumn = "npc_id", keyColumn = "idx")` on `NpcDbEntity.offers` — the `npc_saying`
+  pattern, so a catalogue reads in authored order; the mapper converts elements with two `default` methods (no
+  `expression`), which re-runs the `Offer` gate on the way back → a corrupt stored row is an integrity fault of
+  the read, never a presented outcome.
+- **Corpse-loot gap closed** — `YamlGameSeedSource.toTemplate` is now a builder carrying `opens` **and**
+  `currency`: the blueprint drops the ground-spawn rule but never an instance-copied fact (a key minted as
+  loot that opened nothing was the phase-1 bug).
+- **Content** — `scenes.yaml`: `itm3` is now **one** copper coin (`currency: true`, was "a handful of coins" —
+  a handful would be one coin); `npc2` (the innkeeper) offers `room` — "A room for the night." — for **2**
+  coins, delivering `itm6` (the guest-room key, which at the time also lay on the inn floor — #119 removed
+  that spawn). Header comments document both new keys.
+- **Deferred** — an authored pitch line (offer rendering itself landed in #121), `buy <ware> from <vendor>`, a bare `buy`
+  listing wares, stock/sold-out, coins travelling to the vendor, coins inside held containers, denominations,
+  a `Price` VO, offer kinds. A play DB seeded before this change needs its volume reset to gain the coin and offer.
+
+`Buy ware` vertical **complete** (issue #119, inn scenario phase 3 of 4) — `buy <ware>` / `rent <ware>` pays
+coins from the buyer's keeping and mints the ware into their hands. All decided in the issue:
+
+- **Domain** — `StandingOffer` VO (`core/model/npc/`: vendor `Npc` + `Offer`, both required; `@Value`,
+  equality by value; the composite `idToken()` = `vendorId:offerRef`). Designation speaks of the
+  **ware** alone — `matches` is case-insensitive substring on the offer's `name` (never the vendor's
+  description, never the item ref); `hasIdToken` re-confirms the remembered token against live state; the
+  static `requireWellFormedToken` is the shape gate the select concrete fires **before any read** (split at
+  the FIRST `:`; missing separator, blank half, malformed `NpcId` → `InvalidDomainObjectError`).
+  `Npc.standingOffers()` — one pair per offer, authored order, ignoring `hostile` (refusing a hostile vendor
+  is the consumer's reading, the way `pickSaying` knows nothing of the talk refusal).
+  `ItemTemplate.instanceHeldBy(ItemId, PlayerId)` — the hands counterpart of `spawnInto` (the use case mints
+  the id through `Dice`).
+- **Ports** — `deleteItem(Item)` joins the item repository port (**version-checked**, the `deleteNpc` twin:
+  the adapter deletes the mapped entity, `OptimisticLockingError` caught first). New `core/port/ware/`:
+  `loadWareTemplate(itemRef)` + its own error (the corpse-port shape); `YamlGameSeedSource` serves it as its
+  **third port** off the shared memoized seed, rejecting unknown / container / anchored refs (anchored
+  resolved exactly as `toTemplate` resolves it) and never double-wrapping its own error.
+- **Select** — `SelectSceneOfferSubcase extends AbstractSelectTargetSubcase<SceneId, StandingOffer>`:
+  provisions `findNpcsInScene` filtered `!isHostile()` flat-mapped through `Npc::standingOffers` (the port
+  already returns living NPCs only); its token gate delegates to `StandingOffer.requireWellFormedToken`. A
+  menu pick whose vendor turned hostile or left the scene resolves to nothing → `presentTargetNoLongerAvailable`.
+- **Use case** (`core/usecase/trade/`) — `BuyFromNpc`: orient prologue + ware select, then the tail:
+  `findItemsHeldBy` → currency filter → sort ascending by flattened id → the **first `price` coins** pay.
+  Shortfall presents `presentNotEnoughCoins(ware, coinsHeld)` with no template pull, no mint, no transaction.
+  Otherwise the ware template loads, the ware mints via `instanceHeldBy`, and **one plain**
+  `doInTransaction(false, …)` deletes the coins then saves the ware; `presentWareBought` is the statement
+  after the block. No lock-aware overload and **no lock-loss outcome**: a held coin is single-writer, so an
+  `OptimisticLockingError` is a wiring surprise riding to `presentError`. **No repeat-sale guard** — an offer
+  is a standing authored fact: pay again, buy again.
+- **Terminal** — `buy`/`rent` synonyms → `BuyCommand`; `joinRemainder` generalized to drop a leading
+  `the`/`a`/`an` for **every** described target when something follows (take/drop/examine/hit/talk gained
+  `a`/`an` too; a lone article stays the target). `AffordanceKind.BUY` + `BuyConversation`; `OfferRenderer`
+  (the ware twin of `NpcRenderer`) owns the bought / shortfall / menu / no-such-ware lines (the last one
+  "Nobody here offers '<target>'."); `TerminalBuyFromNpcPresenter` composes `OrientRenderer` + `OfferRenderer`
+  and implements the three flat presenter ports, ordering the ambiguity menu by offer name then `idToken()`
+  once so the displayed order cannot drift from the remembered one. Guidance gains `'buy <ware>'`.
+- **World** — `itm6` (the key) loses its ground spawn: the keeper's offer is its only route. `itm3` spawns
+  `chance: 1/1`, `max: 3` in `scn1` (deterministic coins for the scripted run). **No migration, no DDL**; a
+  play DB seeded before the change needs its volume reset. `InitializeGameIT` now pins: no key exists, three
+  coins on the `scn1` ground.
+
+`Talk shows wares` vertical **complete** (issue #121, inn scenario phase 4 of 4) — `talk <npc>` to a peaceful
+NPC with offers shows its line (if any) and then its wares as a numbered list; a bare number buys through the
+existing purchase. Talk reveals standing facts: no state, no write, no read of the player's coins. All decided in
+the issue:
+
+- **Use case** — `TalkToNpcPresenterOutputPort.presentNpcShowsWares(Npc, Optional<String> saying,
+  List<StandingOffer> wares)`. `TalkToNpcUseCase.talkToResolvedNpc` now has **four** stripes, in order: hostile →
+  `presentNpcRefusesToTalk` (a hostile vendor shows nothing); `standingOffers()` non-empty →
+  `presentNpcShowsWares` (saying picked with the dice only when `hasSayings()`, else empty with no roll; wares in
+  authored order); no sayings → `presentNpcHasNothingToSay`; else `presentNpcSays`. Fields, interactions and
+  catches unchanged; no new port, no model member; `parley` imports nothing from `trade`.
+- **Terminal** — `OfferRenderer.renderWares(vendor, wares)` ("<vendor> offers:", numbered "<name> — N coins",
+  "Type the number to buy."); `TerminalTalkToNpcPresenter` gains `OfferRenderer` (after `NpcRenderer`) and, in
+  `presentNpcShowsWares`, renders the saying if present, the wares, then arms `AffordanceKind.BUY` with each
+  ware's `idToken()` in the order shown (no sorting). The existing dispatcher routes the number to
+  `BuyConversation` → `playerBuysChosenCandidate`, which re-validates against the live scene. The first menu armed
+  by one summary goal (parley) and resumed by another (trade). A `TALK` menu resumed onto a vendor re-arms as
+  `BUY` (the resume does not clear; `offer` replaces).
+- **No migration, no DDL, no seed-carrier change**; `scenes.yaml` header comments only. Every ArchUnit rule
+  unchanged.
+- **`scenes2.yaml` market** (the disambiguation surface) — `scn11` Lantern Alley, east of the Fish Market (from
+  the start: `go north`, `go east`). Five certain coins (`itm15`, `currency: true`) on its ground; two peaceful,
+  never-wandering vendors: `npc4` widowed bread-vendor (no sayings — rye loaf 2, herring 1) and `npc5` one-eyed
+  candle-vendor (sayings — ship's bread 1, tallow candle 1, beeswax candle 3); wares `itm16`–`itm20`, no spawn.
+  Surfaces: `talk vendor` (NPC menu → pick → that vendor's ware menu), `talk widow` (wares, no line),
+  `buy bread` (cross-vendor menu), `buy candle` (same-vendor menu), `buy herring` (single match).
+
+The **inn scenario is complete** end to end (#115 locked exits, #117 wares authoring, #119 buy, #121 talk shows
+wares): talk to the innkeeper, fetch the coins, pay two, receive the key, pass the locked stair.
+
+Tests: 695 unit (Surefire, DB-free) + 36 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB
 and from prior runs; issue #17). Not yet: `look <exit>` (awaits an `Exit` description), `examine`
 over carried items (needs a composite ground∪keeping provisioner), **container capacity** (the first

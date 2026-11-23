@@ -8,10 +8,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.TransactionException;
-import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -30,34 +30,23 @@ import java.util.function.Supplier;
  * action's already-translated {@code PersistenceOperationsError} (double-wrapping) and blur the two
  * failure modes into one.
  *
- * <p>The {@code (action, onLockDetected)} overload adds a third, opt-in reaction, distinct from those two
+ * <p>The lock-aware {@code (action, onLockDetected)} overload adds a third reaction, distinct from those two
  * demarcation faults. An {@link OptimisticLockingError} — raised by the <em>persistence</em> adapter when a
  * versioned write loses a concurrent race, and propagated through the template as a rollback-triggering
- * runtime exception — is caught here and routed to the supplied handler instead of to the use case's
- * outermost checkpoint, because a lost race is an expected concurrency outcome, not a machinery failure. Note
- * the cross-boundary direction: the conflict is <em>detected</em> by persistence but <em>reacted to</em> here,
- * which is exactly why its type sits in the neutral {@code core.port.concurrency} package both adapters depend
- * on rather than in either port's own (design-notes §5). With a {@code null} handler the overload is a plain
- * read-write transaction and the error propagates as usual.
+ * runtime exception — is caught here and turned into the caller's loss value instead of reaching the use
+ * case's outermost checkpoint, because a lost race is an expected concurrency outcome, not a machinery
+ * failure. Note the cross-boundary direction: the conflict is <em>detected</em> by persistence but
+ * <em>reacted to</em> here, which is exactly why its type sits in the neutral {@code core.port.concurrency}
+ * package both adapters depend on rather than in either port's own (design-notes §5). The catch sits around
+ * the template, which has already rolled back and rethrown, so returning the loss value happens outside the
+ * transaction — the very state the statement after the call runs in. Catching around the template is enough
+ * because Spring Data JDBC issues the versioned {@code UPDATE} at {@code save}: the loss is thrown from inside
+ * the action, never from the commit. The overload refuses to run inside an active transaction — a joined
+ * block would swallow the loss while the enclosing transaction is already rollback-only.
  *
- * <p>The after-commit hook registers a {@link TransactionSynchronization} overriding {@code afterCommit()}
- * — <em>never</em> {@code afterCompletion(STATUS_COMMITTED)}. The two look interchangeable and are not:
- * Spring runs {@code afterCompletion(int)} callbacks inside a {@code catch (Throwable)} that logs at ERROR
- * and carries on, so a failing presenter would be a log line and nothing more while the caller saw a normal
- * return. {@code afterCommit()} has no such catch — the exception propagates to the caller of
- * {@code commit()} (the transaction staying committed) and the callbacks queued behind the throwing one are
- * skipped. Since {@link TransactionTemplate} commits <em>outside</em> its own try block, that exception
- * leaves {@code execute()} raw, misses the narrow {@code TransactionException} catch above (a port error is
- * not a {@code TransactionException}) and reaches the use case's outermost checkpoint; in a joined
- * transaction it surfaces from the <em>outermost</em> {@code doInTransaction}, not from the inner one that
- * registered the callback. With no transaction active the action simply runs immediately, so both branches
- * share one contract — whatever the action throws, the caller sees. This is what makes the deferred
- * presentation guarantee two-sided (design-notes §5).
- *
- * <p>There is deliberately no after-rollback hook: Spring offers no {@code afterRollback()} at all, only
- * {@code afterCompletion(STATUS_ROLLED_BACK)} — the swallowing form just ruled out. Rollback-side
- * presentation is done instead from an ordinary {@code catch} <em>outside</em> {@code doInTransaction},
- * where the thrown error carries the context the presentation needs.
+ * <p>There is deliberately no after-commit or after-rollback hook. Every interaction presents as a plain
+ * statement after its block, so statement order is the after-commit order and a rollback skips what follows
+ * by throwing; no synchronization callback is needed, and none can swallow a failure (design-notes §5).
  *
  * <p>No cache concern is wired here: the project has no caching layer, so there is nothing to
  * invalidate on rollback. Should one appear, the methodology's {@code CacheInvalidationOnRollback}
@@ -82,25 +71,6 @@ public class SpringTransactionAdapter implements TransactionOperationsOutputPort
     }
 
     @Override
-    public void doInTransaction(Runnable action, Runnable onLockDetected) {
-        if (onLockDetected == null) {
-            // No handler supplied: behave exactly like a plain read-write transaction — a lost race
-            // propagates as OptimisticLockingError to the use case's outermost checkpoint.
-            doInTransaction(action);
-            return;
-        }
-        try {
-            doInTransaction(action);
-        } catch (OptimisticLockingError e) {
-            // The action's versioned write lost a concurrent race: the detector fired and the transaction
-            // already rolled back. That is an expected outcome under concurrency, not a fault, so the
-            // caller's handler reacts to it (e.g. present "nothing to do") instead of it reaching presentError.
-            log.debug("[Transaction] Optimistic-lock conflict detected; running the onLockDetected handler", e);
-            onLockDetected.run();
-        }
-    }
-
-    @Override
     public <T> T doInTransactionWithResult(boolean readOnly, Supplier<T> action) {
         log.debug("[Transaction] Running action (with result) in a transaction, readOnly={}", readOnly);
         try {
@@ -111,19 +81,23 @@ public class SpringTransactionAdapter implements TransactionOperationsOutputPort
     }
 
     @Override
-    public void doAfterCommit(Runnable action) {
-        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-            log.debug("[Transaction] No active transaction; running doAfterCommit action immediately");
-            action.run();
-            return;
+    public <T> T doInTransactionWithResult(Supplier<T> action, T onLockDetected) {
+        Objects.requireNonNull(onLockDetected, "onLockDetected");
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            // Joined to an enclosing transaction, a swallowed loss would return onLockDetected while that
+            // transaction is already rollback-only. Refuse on every run, not only when the race is lost.
+            throw new TransactionOperationsError(
+                    "A lock-detecting transaction block must be the outermost transaction");
         }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                log.debug("[Transaction] Running action after commit");
-                action.run();
-            }
-        });
+        try {
+            // Delegating keeps the narrow TransactionException wrapping in one place.
+            return doInTransactionWithResult(false, action);
+        } catch (OptimisticLockingError e) {
+            // The action's versioned write lost a concurrent race. The template has rolled back and rethrown,
+            // so the transaction is over here: the loss comes back as the caller's own outcome value.
+            log.debug("[Transaction] Optimistic-lock conflict detected; returning the onLockDetected result", e);
+            return onLockDetected;
+        }
     }
 
     private TransactionTemplate template(boolean readOnly) {

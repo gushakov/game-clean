@@ -19,17 +19,18 @@ import com.github.gameclean.core.usecase.select.SelectTargetSubcaseInputPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionAndFireAfterCommit;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionDetectingLock;
+import static com.github.gameclean.core.usecase.TransactionPortStubs.runLockAwareTransactionWithResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -39,12 +40,13 @@ import static org.mockito.Mockito.when;
  * Interaction tests for {@link TakeUseCase} in isolation — every collaborator is mocked. The use case is pure
  * orchestration: the {@code orient} subcase resolves the player and scene, the {@code select} subcase resolves
  * the item (both mocked here; their own outcomes are covered by their tests), and the use case mutates and
- * persists. The transaction port is stubbed via the lock-aware helpers, so the success path's after-commit
- * presentation and the lock-loss path's handler are both observable synchronously.
+ * persists. The transaction port is stubbed via the result-returning lock-aware helper, which mirrors the
+ * adapter: the action's result on a commit, the supplied loss value on a lost race, any other error propagated.
  *
- * <p>The interaction presents <em>once</em> on every path: a subcase signals {@link SubcaseAlreadyPresented}
- * (then nothing more happens here); the happy path presents the taken item after commit; a lost optimistic-lock
- * race presents "got away"; anything unhandled routes to {@code presentError}. Note {@code Item} equality is by
+ * <p>The interaction presents <em>once</em> on every path, and always after the transaction block: a subcase
+ * signals {@link SubcaseAlreadyPresented} (then nothing more happens here); the happy path presents the taken
+ * item once the block has returned; a lost optimistic-lock race presents "got away"; anything unhandled —
+ * including a write that fails inside the block — routes to {@code presentError} with no success presented. Note {@code Item} equality is by
  * id, so the saved item is captured and its <em>location</em> asserted — the proof the take actually moved it.
  */
 @ExtendWith(MockitoExtension.class)
@@ -71,7 +73,7 @@ class TakeUseCaseTest {
         orientedAtScn1();
         Item dagger = groundItem("itm1", "A rusty dagger.");
         when(selectTargetSubcase.playerDesignatesTarget("dagger", HERE)).thenReturn(dagger);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesTarget("dagger");
 
@@ -79,8 +81,10 @@ class TakeUseCaseTest {
         Item saved = capturedSavedItem();
         assertThat(saved.getId()).isEqualTo(ItemId.of("itm1"));
         assertThat(saved.getLocation()).isEqualTo(new Location.HeldBy(PlayerId.of("plr1")));
-        // ...and the taken item is presented only after the write commits.
-        verify(presenter).presentItemTaken(saved);
+        // ...and the taken item is presented only once the write has been made, never ahead of it.
+        InOrder writeThenPresent = inOrder(itemOps, presenter);
+        writeThenPresent.verify(itemOps).saveItem(saved);
+        writeThenPresent.verify(presenter).presentItemTaken(saved);
         verify(presenter, never()).presentItemGotAway(any());
     }
 
@@ -90,7 +94,7 @@ class TakeUseCaseTest {
         Item dagger = groundItem("itm1", "A rusty dagger.");
         when(selectTargetSubcase.playerDesignatesChosenCandidate(2, List.of("itm0", "itm1"), HERE))
                 .thenReturn(dagger);
-        runLockAwareTransactionAndFireAfterCommit(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesChosenCandidate(2, List.of("itm0", "itm1"));
 
@@ -106,13 +110,31 @@ class TakeUseCaseTest {
         when(selectTargetSubcase.playerDesignatesTarget("dagger", HERE)).thenReturn(dagger);
         // The item was present when selected, but another actor's take committed first.
         doThrow(new OptimisticLockingError("stale version")).when(itemOps).saveItem(any());
-        runLockAwareTransactionDetectingLock(txOps);
+        runLockAwareTransactionWithResult(txOps);
 
         useCase.playerTakesTarget("dagger");
 
         verify(presenter).presentItemGotAway(ItemId.of("itm1"));
         verify(presenter, never()).presentItemTaken(any());
         verify(presenter, never()).presentError(any());
+    }
+
+    @Test
+    void presentsOnlyTheErrorWhenTheWriteFailsInsideTheTransaction() {
+        orientedAtScn1();
+        Item dagger = groundItem("itm1", "A rusty dagger.");
+        when(selectTargetSubcase.playerDesignatesTarget("dagger", HERE)).thenReturn(dagger);
+        PersistenceOperationsError boom = new PersistenceOperationsError("database unavailable");
+        doThrow(boom).when(itemOps).saveItem(any());
+        runLockAwareTransactionWithResult(txOps);
+
+        useCase.playerTakesTarget("dagger");
+
+        // A fault is not a lost race: it unwinds past the statements after the block, so nothing that
+        // follows the transaction runs on a rollback — neither the success nor the "got away" stripe.
+        verify(presenter).presentError(boom);
+        verify(presenter, never()).presentItemTaken(any());
+        verify(presenter, never()).presentItemGotAway(any());
     }
 
     @Test

@@ -3,8 +3,11 @@ package com.github.gameclean.infrastructure.world;
 import com.github.gameclean.core.usecase.initialize.InitializeGameInputPort;
 import com.github.gameclean.infrastructure.AbstractPostgresIT;
 import com.github.gameclean.infrastructure.persistence.clock.GameClockSpringDataRepository;
+import com.github.gameclean.infrastructure.persistence.common.ItemLocationKind;
 import com.github.gameclean.infrastructure.persistence.daytime.DayPhaseLogSpringDataRepository;
+import com.github.gameclean.infrastructure.persistence.item.ItemDbEntity;
 import com.github.gameclean.infrastructure.persistence.item.ItemSpringDataRepository;
+import com.github.gameclean.infrastructure.persistence.npc.NpcDbEntity;
 import com.github.gameclean.infrastructure.persistence.npc.NpcSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.player.PlayerSpringDataRepository;
 import com.github.gameclean.infrastructure.persistence.scene.SceneSpringDataRepository;
@@ -35,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class InitializeGameIT extends AbstractPostgresIT {
 
-    private static final List<String> SEED_IDS = List.of("scn1", "scn2", "scn3", "scn4");
+    private static final List<String> SEED_IDS = List.of("scn1", "scn2", "scn3", "scn4", "scn5", "scn6");
     private static final String SEEDED_PLAYER_ID = "plr1";
 
     @Autowired
@@ -71,11 +74,11 @@ class InitializeGameIT extends AbstractPostgresIT {
 
     @Test
     void initializesTheWorldPlayerAndItemsThenStaysIdempotentOnASecondRun() {
-        // first run against an empty game: the use case pulls the authored seed, seeds the four scenes,
+        // first run against an empty game: the use case pulls the authored seed, seeds the six scenes,
         // places the player, and spawns the authored items (a random count, but deterministically idempotent) ...
         initializeGame.systemInitializesGame();
 
-        assertThat(sceneRepository.count()).isEqualTo(4);
+        assertThat(sceneRepository.count()).isEqualTo(6);
         assertThat(sceneRepository.findById("scn2")).isPresent();
         assertThat(playerRepository.findById(SEEDED_PLAYER_ID)).isPresent()
                 .get().satisfies(player -> assertThat(player.getCurrentSceneId()).isEqualTo("scn1"));
@@ -86,18 +89,54 @@ class InitializeGameIT extends AbstractPostgresIT {
         assertThat(dayPhaseLogRepository.count()).isEqualTo(1);
         assertThat(dayPhaseLogRepository.findAll().iterator().next().getAnnouncedThroughHour()).isEqualTo(-1);
         long itemsAfterFirstRun = itemRepository.count();
-        // the authored hooded wanderer (chance 1/1, max 1, scn1) is spawned exactly once, at scn1 ...
-        assertThat(npcRepository.count()).isEqualTo(1);
-        assertThat(npcRepository.findAll().iterator().next().getCurrentSceneId()).isEqualTo("scn1");
+        // the authored hooded wanderer (chance 1/1, max 1, scn1) and innkeeper (chance 1/1, max 1, scn5) are each
+        // spawned exactly once, where authored ...
+        assertThat(npcRepository.count()).isEqualTo(2);
+        assertThat(npcRepository.findAll()).extracting(NpcDbEntity::getCurrentSceneId)
+                .containsExactlyInAnyOrder("scn1", "scn5");
+        // ... the inn's stair up carries its lock, and no key lies anywhere: the brass key authors no
+        // ground-spawn rule — the innkeeper's offer is the only route to it ...
+        assertThat(sceneRepository.findById("scn5").orElseThrow().getExits())
+                .filteredOn(exit -> exit.getName().equals("up"))
+                .singleElement()
+                .satisfies(exit -> assertThat(exit.getLock().getRef()).isEqualTo("guest-room"));
+        assertThat(itemRepository.findAll()).noneMatch(item -> "guest-room".equals(item.getOpens()));
+        // ... the innkeeper stands behind her counter with the room on offer for two coins (the V20 child rows,
+        // in authored order) while the wanderer sells nothing, and the copper coin is the only money the
+        // world authors: three of them, placed with certainty in the starting scene (the boot gate accepted
+        // both the currency invariant and the offered ware).
+        assertThat(npcRepository.findAll()).filteredOn(npc -> "scn5".equals(npc.getCurrentSceneId()))
+                .singleElement()
+                .satisfies(keeper -> assertThat(keeper.getOffers()).singleElement().satisfies(offer -> {
+                    assertThat(offer.getRef()).isEqualTo("room");
+                    assertThat(offer.getName()).isEqualTo("A room for the night.");
+                    assertThat(offer.getPrice()).isEqualTo(2);
+                    assertThat(offer.getItemRef()).isEqualTo("itm6");
+                }));
+        assertThat(npcRepository.findAll()).filteredOn(npc -> "scn1".equals(npc.getCurrentSceneId()))
+                .singleElement()
+                .satisfies(wanderer -> assertThat(wanderer.getOffers()).isEmpty());
+        assertThat(itemRepository.findAll())
+                .filteredOn(item -> "A copper coin.".equals(item.getShortDescription()))
+                .hasSize(3)
+                .allSatisfy(coin -> {
+                    assertThat(coin.isCurrency()).isTrue();
+                    assertThat(coin.getLocation().getKind()).isEqualTo(ItemLocationKind.GROUND);
+                })
+                .extracting(item -> item.getLocation().getRef())
+                .containsExactly("scn1", "scn1", "scn1");
+        assertThat(itemRepository.findAll())
+                .filteredOn(item -> !"A copper coin.".equals(item.getShortDescription()))
+                .noneMatch(ItemDbEntity::isCurrency);
 
         // ... a second run finds world, player, items and NPCs already present and writes no duplicate rows —
         // notably the spawns are not re-rolled, so the item and NPC counts are unchanged.
         initializeGame.systemInitializesGame();
 
-        assertThat(sceneRepository.count()).isEqualTo(4);
+        assertThat(sceneRepository.count()).isEqualTo(6);
         assertThat(playerRepository.count()).isEqualTo(1);
         assertThat(itemRepository.count()).isEqualTo(itemsAfterFirstRun);
-        assertThat(npcRepository.count()).isEqualTo(1);
+        assertThat(npcRepository.count()).isEqualTo(2);
         // the clock and the day-phase log are not re-created and stay single rows
         assertThat(gameClockRepository.count()).isEqualTo(1);
         assertThat(dayPhaseLogRepository.count()).isEqualTo(1);

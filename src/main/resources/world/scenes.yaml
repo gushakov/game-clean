@@ -9,6 +9,17 @@
 # *forward* to scenes defined later in this file — resolution is order-independent
 # because exit.target_scene_id carries no foreign key, and whether every target
 # resolves is a use-case rule (two-pass validation), not a parse-time concern here.
+#
+# Locks. An exit may carry a `lock:` — a handle naming the lock that bars it — and
+# an optional `lockedDescription:`, the line shown when a move through it is
+# refused (a generic line is shown when none is authored; a `lockedDescription:`
+# without a `lock:` is rejected at init). A locked exit is passed only by a mover
+# carrying an item whose `opens:` (see items) names that same handle; NPCs carry
+# nothing and never pass one. There is no locked/unlocked state and no unlock verb:
+# a lock is a fact of the exit, the key a fact of the item, and whether a mover
+# passes is decided each time from what it carries. A lock no item opens is valid —
+# a sealed door. Locks are per exit: the way back down a locked stair is unlocked
+# unless it carries a lock of its own.
 
 scenes:
   - id: scn1
@@ -28,12 +39,15 @@ scenes:
     shortDescription: A grass-cracked courtyard.
     fullDescription: >
       Weeds push between the flagstones of what was once a drilling yard. Stone
-      stairs spiral up to a watchtower; the gate stands open to the south.
+      stairs spiral up to a watchtower; the gate stands open to the south. Lamplight
+      and the smell of woodsmoke spill from a low doorway in the west wall.
     exits:
       - name: south
         target: scn1      # back-edge, closing the loop with the gate
       - name: up
         target: scn4      # forward reference
+      - name: west
+        target: scn5      # forward reference — the inn
 
   - id: scn3
     name: Armoury
@@ -56,6 +70,31 @@ scenes:
     exits:
       - name: down
         target: scn2      # back-edge
+
+  - id: scn5
+    name: The Crooked Lantern
+    shortDescription: The common room of a cramped inn.
+    fullDescription: >
+      A fire crackles in a soot-black hearth, and a few rickety tables crowd the
+      floor between it and a long plank counter. Behind the counter a narrow stair
+      climbs to a door at the top. The courtyard lies back east.
+    exits:
+      - name: east
+        target: scn2      # back-edge to the courtyard
+      - name: up
+        target: scn6      # forward reference — the guest room
+        lock: guest-room  # the lock's handle; itm6 (below) opens it
+        lockedDescription: The door at the head of the stair is locked.
+
+  - id: scn6
+    name: Guest Room
+    shortDescription: A low-beamed guest room under the eaves.
+    fullDescription: >
+      A narrow bed with a straw mattress, a washstand and a shuttered window under
+      the slope of the roof. The stair leads back down to the common room.
+    exits:
+      - name: down
+        target: scn5      # back-edge — no lock: the door opens freely from inside
 
 # Authored items. Each is a *template*: its `spawn` rule places 0..max instances
 # into randomly chosen candidate scenes (one chance roll per try). Instances are
@@ -89,6 +128,20 @@ scenes:
 # CONTAINER is NOT portable unless authored `portable: true`. A transportable container
 # (its contents ride along, since they reference the container by id, not by scene) is
 # a deliberate authored fact, never an accident of the model.
+#
+# Keys (`opens`, optional): the handle of the lock the item opens — it must name a
+# `lock:` declared on some exit above, or init is refused. Carrying the item (held
+# directly, not inside a carried container) lets the player through every exit
+# barred by that lock. Unauthored = the item opens nothing.
+#
+# Currency (`currency`, optional): whether the item is money. There is ONE currency and no
+# denominations, so every currency item counts as exactly one coin toward a price, whatever
+# its template — the flag is all there is to being money. What a buyer carries flat in their
+# keeping is what a `buy` counts and pays; coins inside a carried container are not counted.
+# It is subject to an invariant: a currency item is neither a `container`
+# (money that holds other things is a purse, whose contents would ride along uncounted) nor
+# `portable: false` (money bolted to the ground cannot be paid), so `currency: true` together
+# with either is rejected at init.
 items:
   - id: itm1
     shortDescription: A rusty dagger.
@@ -111,13 +164,15 @@ items:
       max: 2
 
   - id: itm3
-    shortDescription: A handful of copper coins.
+    shortDescription: A copper coin.
+    currency: true               # counts as one coin toward a price (see npcs.offers below)
     fullDescription: >
-      A few dull copper coins, the kind that once bought bread at the gate market.
+      A single dull copper coin, the kind that once bought bread at the gate market. One face
+      is worn smooth, where a thumb has turned it over and over.
     spawn:
       scenes: scn1
-      chance: 40/50
-      max: 4
+      chance: 1/1
+      max: 3
 
   - id: itm4
     shortDescription: An oak chest.
@@ -147,6 +202,16 @@ items:
       - item: itm2         # the tarnished silver ring may be on the body
         chance: 1/2        # rolled once per slaying
 
+  # Delivered only by the innkeeper's offer (npc2 below, `buy room`): no ground spawn — the key
+  # changes hands for coins or not at all. The offer gate asks only that an offered ware be
+  # carryable and not a container, so a ware *may* also carry a spawn rule; this one does not.
+  - id: itm6
+    shortDescription: A small brass key.
+    fullDescription: >
+      A small brass key on a loop of frayed red cord. A wooden tag hangs from it,
+      burned with the outline of a lantern.
+    opens: guest-room      # the handle of the lock this item opens (see scn5's exit up)
+
 # Authored NPCs. Each is a *template*: its `spawn` rule places 0..max instances into
 # randomly chosen candidate scenes (one chance roll per try), exactly like items.
 # Spawned NPCs then wander on a background metronome that fires every second — each tick,
@@ -164,8 +229,22 @@ items:
 # `sayings:` (optional) lists the lines the NPC may answer with when the player talks to
 # it (`talk <npc>`); one is picked uniformly at random each time, so repeat a line to
 # weight it. Unauthored = the NPC has nothing to say (it acknowledges you and stays
-# silent). A hostile NPC — one the player has struck — refuses to talk regardless of its
-# lines: the combat stance outranks eloquence.
+# silent), unless it has `offers:` — then it shows them without a line. A hostile NPC — one
+# the player has struck — refuses to talk regardless of its lines or offers: the combat
+# stance outranks eloquence and commerce.
+#
+# `offers:` (optional) lists what the NPC is prepared to hand over for coins. Each entry is
+# `{id, name, price, item}`: the offer's `id` is its handle, unique within this NPC; `name` is
+# how it reads to the player, a sentence like an item's short description, and what a `buy <ware>`
+# target designates it by; `price` counts COINS (one each, from any item authored `currency: true`
+# above), paid from the buyer's keeping; and `item` is the authoring handle of the item minted into
+# the buyer's hands on purchase — which must resolve to an item that is neither a `container` nor
+# anchored (ware changes hands, so it must be a carryable single thing). It MAY have a `spawn` rule
+# of its own — ware can also lie where it spawns — but the key below has none: the keeper's offer
+# is the only route to it. An offer is a standing authored fact, with no stock and no sold-out
+# state: the same ware can be bought as often as a buyer pays. `talk <npc>` to a peaceful NPC
+# lists its offers, numbered in authored order after its line; a bare number then buys the
+# chosen one. Unauthored = the NPC sells nothing.
 npcs:
   - id: npc1
     shortDescription: A hooded wanderer.
@@ -184,3 +263,25 @@ npcs:
       scenes: scn1         # scenes where the NPC can spawn
       chance: 1/1          # chance of spawning on each try
       max: 1               # maximum number of spawn tries
+
+  - id: npc2
+    shortDescription: A stout innkeeper.
+    fullDescription: >
+      A broad-shouldered woman in a flour-dusted apron, sleeves rolled to the
+      elbow. She keeps one eye on the hearth and the other on whoever comes in.
+    moveChance: 0/1        # never wanders — she keeps her counter
+    attackChance: 1/4
+    hitPoints: 25
+    sayings:
+      - Rooms are upstairs. The door's locked — I keep it that way.
+      - A bed for the night? Coin first, then we talk about the room.
+      - Fire's warm and the stew is yesterday's. The room upstairs is the best in the keep, which says little.
+    offers:
+      - id: room               # the offer's handle, unique within this NPC
+        name: A room for the night.
+        price: 2               # in coins — itm3, one coin each
+        item: itm6             # delivered on purchase: the guest-room key
+    spawn:
+      scenes: scn5
+      chance: 1/1
+      max: 1

@@ -28,7 +28,7 @@ import java.util.Optional;
  * there is no security assertion — the peer of {@code AnnounceTimeOfDay}.
  *
  * <p><b>A read-only policy — decide, then dispatch, never execute.</b> This use case performs no writes, holds
- * no transaction, and registers no {@code doAfterCommit}. It is the Event-Storming <em>policy</em>: from a
+ * no transaction, and presents nothing that waits on a commit. It is the Event-Storming <em>policy</em>: from a
  * single snapshot read it <em>derives</em> each NPC's decision, then <em>dispatches</em> each decided action as
  * a command through {@link NpcCommandsOutputPort}. A driving adapter turns each command back into the
  * <em>executing</em> interaction ({@code FightNpc.npcStrikesPlayer} for a strike, {@code Wander.npcWandersThrough}
@@ -41,9 +41,10 @@ import java.util.Optional;
  *   <li><b>Hostile</b> NPCs never wander — the stance pins them in the fight. Co-located with the player and the
  *       authored {@code attackChance} rolls a hit → dispatch a <b>strike</b>; otherwise (roll fails, or not
  *       co-located, or no player) <em>stand ground</em> (no command).</li>
- *   <li><b>Non-hostile</b> NPCs roll their {@code moveChance}; on a hit the policy picks a random exit of the
- *       NPC's current scene and dispatches a <b>wander</b> carrying that exit (the executing interaction never
- *       re-rolls); a dead-end or unresolvable scene means no command.</li>
+ *   <li><b>Non-hostile</b> NPCs roll their {@code moveChance}; on a hit the policy picks a random exit among
+ *       the NPC's current scene's exits <em>without a lock</em> (an NPC carries nothing, so a locked exit never
+ *       opens to it) and dispatches a <b>wander</b> carrying that exit (the executing interaction never
+ *       re-rolls); a dead-end, an all-locked scene or an unresolvable scene means no command.</li>
  * </ul>
  * The policy owns <em>all</em> the dice — the attack gate and the exit pick — so the command carries only the
  * decided detail.
@@ -136,10 +137,15 @@ public class AnimateNpcsUseCase implements AnimateNpcsInputPort {
             return Optional.empty();   // stays put
         }
         Optional<Scene> from = sceneOps.findScene(npc.getCurrentScene());
-        if (from.isEmpty() || from.get().getExits().isEmpty()) {
-            return Optional.empty();   // unresolvable scene or a dead-end: no wander
+        if (from.isEmpty()) {
+            return Optional.empty();   // unresolvable scene: no wander
         }
-        Exit chosen = dice.pick(from.get().getExits());
+        // An NPC carries nothing, so a locked exit never opens to it: it chooses only among the exits without one.
+        List<Exit> passable = from.get().exitsWithoutLock();
+        if (passable.isEmpty()) {
+            return Optional.empty();   // a dead-end, or every way out is locked: no wander
+        }
+        Exit chosen = dice.pick(passable);
         return Optional.of(NpcCommandDecision.wander(npc, chosen.getName()));
     }
 

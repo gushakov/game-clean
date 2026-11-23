@@ -14,8 +14,7 @@ import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.*;
 
 /**
  * Persistence round-trip for the {@code Item} aggregate against the real, running Dockerized Postgres
@@ -23,12 +22,13 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
  * V6, which gives item its {@code (location_kind, location_ref)} pair — now backing the embedded
  * {@code LocationDbEntity} — and {@code @Version} column); the {@code @DataJdbcTest} slice rolls each test back.
  *
- * <p>It exercises what {@code take} and {@code drop} need end to end: a ground item inserts and is found by
- * its scene; taking it moves it off the ground (a {@code GROUND}→{@code HELD} location change) and updates in
- * place; a held item is found in its holder's keeping and dropping it returns it to the ground; and the
- * optimistic lock has <b>teeth</b> — a second write carrying a version the store has moved past is rejected
- * with {@link OptimisticLockingError} rather than silently overwriting, which is exactly what stops two actors
- * both taking the same item. The MapStruct mapper is pulled in via {@code @Import}.
+ * <p>It exercises what {@code take}, {@code drop} and the coin-payment of {@code buy} need end to end: a ground
+ * item inserts and is found by its scene; taking it moves it off the ground (a {@code GROUND}→{@code HELD}
+ * location change) and updates in place; a held item is found in its holder's keeping and dropping it returns
+ * it to the ground; {@code deleteItem} removes a paid coin's row outright; and the optimistic lock has
+ * <b>teeth</b> on both writes — a save <em>or a delete</em> carrying a version the store has moved past is
+ * rejected with {@link OptimisticLockingError} rather than silently overwriting, which is exactly what stops
+ * two actors both taking the same item. The MapStruct mapper is pulled in via {@code @Import}.
  */
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -196,6 +196,88 @@ class ItemRoundTripIT extends AbstractPostgresIT {
         // ... so a second write still carrying the original (now stale) version is rejected — the two-actor race.
         assertThatExceptionOfType(OptimisticLockingError.class)
                 .isThrownBy(() -> adapter.saveItem(loaded.takenBy(PlayerId.of("plr2"))));
+    }
+
+    @Test
+    void the_opens_handle_round_trips_and_its_absence_reads_back_as_none() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        Item key = Item.builder()
+                .id(ItemId.of("itm6"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("A small brass key.")
+                .fullDescription("A small brass key on a loop of frayed red cord.")
+                .opens("guest-room")
+                .build();
+
+        adapter.saveItem(key);
+        adapter.saveItem(groundItem("itm1", "A rusty dagger."));
+
+        assertThat(adapter.findItemsInScene(HERE))
+                .extracting(item -> item.getId().asString(), Item::getOpens)
+                .containsExactlyInAnyOrder(tuple("itm6", "guest-room"), tuple("itm1", null));
+    }
+
+    @Test
+    void the_currency_flag_round_trips_and_its_absence_reads_back_as_false() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        Item coin = Item.builder()
+                .id(ItemId.of("itm3"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("A copper coin.")
+                .fullDescription("A single dull copper coin, one face worn smooth.")
+                .currency(true)
+                .build();
+
+        adapter.saveItem(coin);
+        adapter.saveItem(groundItem("itm1", "A rusty dagger."));
+
+        // The V19 column carries the fact both ways: money reads back as money, an ordinary item as not money.
+        assertThat(adapter.findItemsInScene(HERE))
+                .extracting(item -> item.getId().asString(), Item::isCurrency)
+                .containsExactlyInAnyOrder(tuple("itm3", true), tuple("itm1", false));
+    }
+
+    @Test
+    void deleteItem_removes_the_row_a_paid_coin_leaves_no_trace() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        adapter.saveItem(groundItem("itm1", "A rusty dagger."));
+        adapter.saveItem(Item.builder()
+                .id(ItemId.of("itm3"))
+                .location(new Location.OnGround(HERE))
+                .shortDescription("A copper coin.")
+                .fullDescription("A single dull copper coin, one face worn smooth.")
+                .currency(true)
+                .build());
+        Item coin = adapter.findItemsInScene(HERE).stream()
+                .filter(Item::isCurrency).findFirst().orElseThrow();   // carries the post-insert version
+
+        // The purchase pays by deleting: the spent coin is gone outright, not relocated — no trace, while
+        // the ordinary item stays.
+        adapter.deleteItem(coin);
+
+        assertThat(repository.count()).isEqualTo(1);
+        assertThat(adapter.findItemsInScene(HERE))
+                .singleElement()
+                .satisfies(survivor -> assertThat(survivor.getId()).isEqualTo(ItemId.of("itm1")));
+    }
+
+    @Test
+    void deleteItem_rejects_a_stale_delete_with_an_optimistic_locking_error() {
+        SpringItemRepositoryAdapter adapter = new SpringItemRepositoryAdapter(repository, mapper);
+        adapter.saveItem(groundItem("itm1", "A rusty dagger."));
+        Item loaded = adapter.findItemsInScene(HERE).getFirst();   // captures the current version
+
+        // Another writer (a take) moves the stored version past `loaded` ...
+        adapter.saveItem(loaded.takenBy(PlayerId.of("plr1")));
+
+        // ... so a delete still carrying the original version must lose the race — the row survives, exactly
+        // as deleteNpc does: a payment never deletes an item some other actor has just moved.
+        assertThatExceptionOfType(OptimisticLockingError.class)
+                .isThrownBy(() -> adapter.deleteItem(loaded.droppedAt(SceneId.of("scn2"))));
+        assertThat(repository.count()).isEqualTo(1);
+        assertThat(adapter.findItemsHeldBy(PlayerId.of("plr1")))
+                .singleElement()
+                .satisfies(stillHeld -> assertThat(stillHeld.getId()).isEqualTo(ItemId.of("itm1")));
     }
 
     private static Item groundItem(String id, String shortDescription) {

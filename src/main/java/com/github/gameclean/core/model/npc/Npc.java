@@ -71,6 +71,16 @@ import java.util.Objects;
  * that a hostile NPC refuses is the use case's reading of the {@link #hostile} stance, an interaction-shape
  * decision, not a property of the saying list.
  *
+ * <p><b>Offers give the NPC wares (#117).</b> {@link #offers} are the things it stands ready to hand over for
+ * coins — {@link Offer} value objects in authored order, empty when it sells nothing (authored absence, like
+ * sayings). They are copied from the template onto every instance exactly like the sayings: each spawned NPC
+ * owns its own list. An offer is a standing fact, not a state — no stock, no quantity, no sold-out flag. The
+ * buyer side is {@link #standingOffers()}: each offer paired with this NPC, the unit a {@code talk} shows and a
+ * {@code buy} transaction designates and completes. The one rule the NPC enforces over its own list is that no two offers share a
+ * {@code ref}, so the handle a selection token carries can mean only one thing. Whether an offer's item handle
+ * <em>resolves</em> to a sellable item is an inter-template rule the initialization gate checks, exactly like a
+ * corpse ref.
+ *
  * <p>Equality is by identity (id) only — two NPCs are the same NPC when their ids match; the version and hit
  * points are naturally outside value equality.
  */
@@ -98,13 +108,16 @@ public class Npc implements Designatable {
     /** The authored lines this NPC may answer with when talked to, in authored order — empty when it has none. */
     List<String> sayings;
 
+    /** What this NPC offers for sale, in authored order — empty when it sells nothing. */
+    List<Offer> offers;
+
     /** Optimistic-locking token — opaque to the domain, managed by persistence, not part of value equality. */
     long version;
 
     @Builder
     public Npc(NpcId id, SceneId currentScene, String shortDescription, String fullDescription, Chance moveChance,
                Chance attackChance, HitPoints hitPoints, boolean hostile, String corpseRef, List<String> sayings,
-               long version) {
+               List<Offer> offers, long version) {
         this.id = DomainValidation.requireNonNull(id, "npc id must not be null");
         this.currentScene = DomainValidation.requireNonNull(currentScene, "npc current scene must not be null");
         this.shortDescription = requireNonBlank(shortDescription, "npc short description");
@@ -119,6 +132,7 @@ public class Npc implements Designatable {
         }
         this.corpseRef = corpseRef;
         this.sayings = requireNonBlankSayings(sayings);
+        this.offers = requireUniqueOffers(offers);
         if (version < 0) {
             throw new InvalidDomainObjectError("npc version must not be negative, got " + version);
         }
@@ -172,6 +186,35 @@ public class Npc implements Designatable {
             }
         }
         return List.copyOf(sayings);
+    }
+
+    /**
+     * The construction gate for the offers: authored absence ({@code null}) is the empty list, and the handles
+     * are unique within this NPC — the {@link Offer}'s own gate has already rejected a blank or priceless offer
+     * element by element, so what is left is the list-wide rule that no two of them share a handle. Copied
+     * defensively so the aggregate owns an immutable list.
+     */
+    private static List<Offer> requireUniqueOffers(List<Offer> offers) {
+        if (offers == null) {
+            return List.of();
+        }
+        offers.forEach(offer -> DomainValidation.requireNonNull(offer, "npc offer must not be null"));
+        List<Offer> owned = List.copyOf(offers);
+        Offer.requireUniqueRefs(owned);
+        return owned;
+    }
+
+    /**
+     * This NPC's wares as designation candidates: one {@link StandingOffer} per {@link #offer}, in authored
+     * order, each pairing the offer with this NPC as its vendor. Whether the NPC is hostile is <em>not</em>
+     * this list's fact — refusing a hostile vendor is the buying use case's reading of the {@link #hostile}
+     * stance, exactly as refusing to speak is {@code talk}'s — so the projection simply pairs what is offered
+     * with who stands behind it. An NPC that sells nothing yields the empty list.
+     *
+     * @return this NPC's offers paired with itself, in authored order
+     */
+    public List<StandingOffer> standingOffers() {
+        return offers.stream().map(offer -> new StandingOffer(this, offer)).toList();
     }
 
     /**

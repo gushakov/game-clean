@@ -1,12 +1,15 @@
 package com.github.gameclean.infrastructure.world;
 
 import com.github.gameclean.core.model.scene.Exit;
+import com.github.gameclean.core.model.scene.Lock;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.core.model.scene.SceneId;
 import com.github.gameclean.core.port.seed.ContainsEntry;
 import com.github.gameclean.core.port.seed.ExitEntry;
 import com.github.gameclean.core.port.seed.GameSeed;
 import com.github.gameclean.core.port.seed.ItemEntry;
+import com.github.gameclean.core.port.seed.NpcEntry;
+import com.github.gameclean.core.port.seed.OfferEntry;
 import com.github.gameclean.core.port.seed.SceneEntry;
 import com.github.gameclean.core.port.seed.SpawnEntry;
 import org.junit.jupiter.api.Test;
@@ -17,8 +20,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.*;
 
 /**
  * Spike test for the YAML → domain edge: it proves the authored seed parses into the {@code *Entry} DTOs
@@ -39,14 +41,14 @@ class GameSeedYamlReaderTest {
         List<SceneEntry> scenes = readSeed().getScenes();
 
         assertThat(scenes).extracting(SceneEntry::getId)
-                .containsExactly("scn1", "scn2", "scn3", "scn4");
+                .containsExactly("scn1", "scn2", "scn3", "scn4", "scn5", "scn6");
 
         SceneEntry gate = scenes.getFirst();
         assertThat(gate.getName()).isEqualTo("Old Gate");
         assertThat(gate.getShortDescription()).isEqualTo("A weathered stone archway.");
         assertThat(gate.getFullDescription()).isNotBlank();
         assertThat(gate.getExits())
-                .containsExactly(new ExitEntry("north", "scn2"), new ExitEntry("east", "scn3"));
+                .containsExactly(new ExitEntry("north", "scn2", null, null), new ExitEntry("east", "scn3", null, null));
     }
 
     @Test
@@ -62,7 +64,7 @@ class GameSeedYamlReaderTest {
     void readsAuthoredItemsWithTheirSpawnRulesSplittingTheAuthoringSyntax() {
         List<ItemEntry> items = readSeed().getItems();
 
-        assertThat(items).extracting(ItemEntry::getId).containsExactly("itm1", "itm2", "itm3", "itm4", "itm5");
+        assertThat(items).extracting(ItemEntry::getId).containsExactly("itm1", "itm2", "itm3", "itm4", "itm5", "itm6");
 
         ItemEntry dagger = items.getFirst();
         assertThat(dagger.getShortDescription()).isEqualTo("A rusty dagger.");
@@ -99,7 +101,7 @@ class GameSeedYamlReaderTest {
         GameSeed seed = readSeed();
 
         // npc1 (the hooded wanderer) authors three lines; they arrive raw, trimmed, in authored order (#104).
-        assertThat(seed.getNpcs()).singleElement()
+        assertThat(seed.getNpcs().getFirst())
                 .satisfies(npc -> assertThat(npc.getSayings()).containsExactly(
                         "You walk the same stones I walked. Mind where they lead.",
                         "The gate was shut long before the hinges rusted. Ask yourself by whom.",
@@ -110,9 +112,9 @@ class GameSeedYamlReaderTest {
     void readsTheAuthoredCorpseRefOnNpcsDefaultingToAbsence() {
         GameSeed seed = readSeed();
 
-        // npc1 (the hooded wanderer) authors `corpse: itm5` — carried through as the raw authoring handle.
-        assertThat(seed.getNpcs()).singleElement()
-                .satisfies(npc -> assertThat(npc.getCorpse()).isEqualTo("itm5"));
+        // npc1 (the hooded wanderer) authors `corpse: itm5` — carried through as the raw authoring handle; npc2 (the
+        // innkeeper) authors none.
+        assertThat(seed.getNpcs()).extracting(NpcEntry::getCorpse).containsExactly("itm5", null);
 
         // The corpse template itself is an ordinary items entry: a container with NO spawn rule (the death
         // drop is its only placement route) and no `portable` (a container defaults to anchored).
@@ -122,6 +124,55 @@ class GameSeedYamlReaderTest {
         assertThat(corpse.getSpawn()).isNull();
         assertThat(corpse.getPortable()).isNull();
         assertThat(corpse.getContains()).containsExactly(new ContainsEntry("itm2", 1, 2));
+    }
+
+    @Test
+    void readsTheAuthoredLockOnExitsAndTheOpensHandleOnItemsDefaultingToAbsence() {
+        GameSeed seed = readSeed();
+
+        // scn5 (the inn) authors a locked stair up with its refusal line, and an open way back east.
+        SceneEntry inn = seed.getScenes().get(4);
+        assertThat(inn.getExits()).containsExactly(
+                new ExitEntry("east", "scn2", null, null),
+                new ExitEntry("up", "scn6", "guest-room", "The door at the head of the stair is locked."));
+        // scn6 (the guest room) authors its way back down without a lock: locks are per exit.
+        assertThat(seed.getScenes().get(5).getExits())
+                .containsExactly(new ExitEntry("down", "scn5", null, null));
+
+        // itm6 (the brass key) authors `opens: guest-room`; every other item omits the key.
+        assertThat(seed.getItems()).extracting(ItemEntry::getId, ItemEntry::getOpens).containsExactly(
+                tuple("itm1", null), tuple("itm2", null), tuple("itm3", null), tuple("itm4", null),
+                tuple("itm5", null), tuple("itm6", "guest-room"));
+    }
+
+    @Test
+    void readsTheAuthoredCurrencyFlagDefaultingToFalse() {
+        GameSeed seed = readSeed();
+
+        // itm3 (the copper coin) authors `currency: true`; every other item omits the key, and absence is
+        // false rather than null — unlike `portable`, the gate has no kind-sensitive default to preserve.
+        assertThat(seed.getItems()).extracting(ItemEntry::getId, ItemEntry::isCurrency).containsExactly(
+                tuple("itm1", false), tuple("itm2", false), tuple("itm3", true), tuple("itm4", false),
+                tuple("itm5", false), tuple("itm6", false));
+
+        // The coin is money, so it must be carryable and hold nothing: neither a container nor anchored.
+        ItemEntry coin = seed.getItems().get(2);
+        assertThat(coin.isContainer()).isFalse();
+        assertThat(coin.getPortable()).isNull();
+    }
+
+    @Test
+    void readsTheAuthoredOffersOnNpcsInOrderDefaultingToEmpty() {
+        GameSeed seed = readSeed();
+
+        // npc2 (the innkeeper) sells the guest-room key for two coins; the four fields arrive raw, the item
+        // handle still an authoring handle the seed gate resolves later (#117).
+        assertThat(seed.getNpcs().get(1).getOffers()).containsExactly(
+                new OfferEntry("room", "A room for the night.", 2, "itm6"));
+
+        // npc1 (the hooded wanderer) authors no `offers:` — authored absence is the empty list: an NPC that
+        // sells nothing is an ordinary NPC, and the gate never sees a null element.
+        assertThat(seed.getNpcs().getFirst().getOffers()).isEmpty();
     }
 
     @Test
@@ -141,7 +192,7 @@ class GameSeedYamlReaderTest {
                 .map(GameSeedYamlReaderTest::toScene)
                 .collect(Collectors.toMap(Scene::getId, Function.identity()));
 
-        assertThat(world).hasSize(4);
+        assertThat(world).hasSize(6);
 
         Scene gate = world.get(SceneId.of("scn1"));
         assertThat(gate.getName()).isEqualTo("Old Gate");
@@ -172,7 +223,8 @@ class GameSeedYamlReaderTest {
                 .shortDescription(entry.getShortDescription())
                 .fullDescription(entry.getFullDescription())
                 .exits(entry.getExits().stream()
-                        .map(e -> new Exit(e.getName(), SceneId.of(e.getTarget())))
+                        .map(e -> new Exit(e.getName(), SceneId.of(e.getTarget()),
+                                e.getLock() == null ? null : new Lock(e.getLock(), e.getLockedDescription())))
                         .toList())
                 .build();
     }

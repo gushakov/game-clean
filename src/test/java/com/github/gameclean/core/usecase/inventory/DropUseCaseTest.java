@@ -26,7 +26,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransaction;
-import static com.github.gameclean.core.usecase.TransactionPortStubs.runTransactionAndFireAfterCommit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -72,7 +71,7 @@ class DropUseCaseTest {
         orientedAtScn1();
         Item dagger = heldItem("itm1", "A rusty dagger.");
         when(selectTargetSubcase.playerDesignatesTarget("dagger", SELF)).thenReturn(dagger);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransaction(txOps);
 
         useCase.playerDropsTarget("dagger");
 
@@ -90,7 +89,7 @@ class DropUseCaseTest {
         Item dagger = heldItem("itm1", "A rusty dagger.");
         when(selectTargetSubcase.playerDesignatesChosenCandidate(2, List.of("itm0", "itm1"), SELF))
                 .thenReturn(dagger);
-        runTransactionAndFireAfterCommit(txOps);
+        runTransaction(txOps);
 
         useCase.playerDropsChosenCandidate(2, List.of("itm0", "itm1"));
 

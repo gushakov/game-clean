@@ -4,6 +4,7 @@ import com.github.gameclean.core.model.scene.Exit;
 import com.github.gameclean.core.model.scene.MiniGame;
 import com.github.gameclean.core.model.scene.Scene;
 import com.github.gameclean.infrastructure.mapping.ScalarConverter;
+import com.github.gameclean.infrastructure.persistence.common.CompositeDbConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -15,10 +16,11 @@ import org.mapstruct.Mapping;
  *
  * <p>The scene-id value object is unwrapped to / re-wrapped from its raw string by the shared
  * {@link ScalarConverter} this mapper extends; re-wrapping runs the value object's own validation, so a
- * malformed id read from the database would surface as a domain error rather than slipping through.
+ * malformed id read from the database would surface as a domain error rather than slipping through. An exit's
+ * lock rides the shared {@link CompositeDbConverter} (an embedded composite), selected by type — no expression.
  */
 @Mapper(componentModel = "spring")
-public interface SceneDbEntityMapper extends ScalarConverter {
+public interface SceneDbEntityMapper extends ScalarConverter, CompositeDbConverter {
 
     SceneDbEntity toDbEntity(Scene scene);
 
