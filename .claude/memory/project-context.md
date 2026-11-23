@@ -775,7 +775,8 @@ passed only by a player carrying an item that opens it; NPCs carry nothing and n
 `Wares authoring` vertical **complete** (issue #117, inn scenario phase 2 of 4) — coins are currency and
 NPCs carry offers. Its consumers arrived with #119 (the `buy` verb counts and spends coins, selects wares and
 mints them) and #121 (`talk` shows a peaceful vendor's wares). Decided in the issue; the only open choice taken
-here was leaving `scenes2.yaml` (the harbour world, referenced by no test) unauthored:
+here was leaving `scenes2.yaml` (the harbour world, referenced by no test) unauthored (it gained a market with
+#121 — see that block):
 
 - **Domain** — `Offer` VO (`core/model/npc/`: non-blank `ref`/`name`/`itemRef`, `price ≥ 1`; equality by
   value). The per-NPC uniqueness rule lives on the VO as a package-private static
@@ -783,7 +784,8 @@ here was leaving `scenes2.yaml` (the harbour world, referenced by no test) unaut
   **opaque authored handle** (the `corpseRef` precedent — no row behind it, the delivered item does not exist
   until a purchase mints it, #119). `Npc`/`NpcTemplate` gain `List<Offer> offers` (empty on authored absence, copied
   template → instance, ride the copy-on-write like the sayings) and no behaviour method — deliberately no
-  `hasOffers()`, since no use case reads wares yet. `Item`/`ItemTemplate` gain `boolean currency`: **one
+  `hasOffers()`, since no use case read wares at the time (its consumers, #119 and #121, read them through
+  `standingOffers()`, so there is still none). `Item`/`ItemTemplate` gain `boolean currency`: **one
   currency, no denominations**, so every currency item is one coin whatever its template. Invariant, gated in
   **both** types: a currency item is neither a `container` (a purse's contents would ride along uncounted) nor
   `anchored` (bolted-down money cannot be paid).
@@ -881,7 +883,17 @@ the issue:
   `BuyConversation` → `playerBuysChosenCandidate`, which re-validates against the live scene. The first menu armed
   by one summary goal (parley) and resumed by another (trade). A `TALK` menu resumed onto a vendor re-arms as
   `BUY` (the resume does not clear; `offer` replaces).
-- **No migration, no DDL, no seed change**; `scenes.yaml` header comments only. Every ArchUnit rule unchanged.
+- **No migration, no DDL, no seed-carrier change**; `scenes.yaml` header comments only. Every ArchUnit rule
+  unchanged.
+- **`scenes2.yaml` market** (the disambiguation surface) — `scn11` Lantern Alley, east of the Fish Market (from
+  the start: `go north`, `go east`). Five certain coins (`itm15`, `currency: true`) on its ground; two peaceful,
+  never-wandering vendors: `npc4` widowed bread-vendor (no sayings — rye loaf 2, herring 1) and `npc5` one-eyed
+  candle-vendor (sayings — ship's bread 1, tallow candle 1, beeswax candle 3); wares `itm16`–`itm20`, no spawn.
+  Surfaces: `talk vendor` (NPC menu → pick → that vendor's ware menu), `talk widow` (wares, no line),
+  `buy bread` (cross-vendor menu), `buy candle` (same-vendor menu), `buy herring` (single match).
+
+The **inn scenario is complete** end to end (#115 locked exits, #117 wares authoring, #119 buy, #121 talk shows
+wares): talk to the innkeeper, fetch the coins, pay two, receive the key, pass the locked stair.
 
 Tests: 695 unit (Surefire, DB-free) + 36 integration (`*IT`, Failsafe, **ephemeral Testcontainers
 Postgres** via `AbstractPostgresIT` + `@ServiceConnection` — isolated from the `docker-compose` play DB

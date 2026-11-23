@@ -260,7 +260,7 @@ Established by the JLine entry-point work (issue #6).
   **first crack** at each parsed line through its `continuedBy` predicate (default: a bare-number
   `SelectCommand`, suiting the selection family on `AbstractSelectionConversation`); a refused line clears the
   affordance (abandonment — the forfeit for an ephemeral dialogue) and dispatches normally. Handlers:
-  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`TalkConversation` (Template-Method base; `TakeFrom` has its own
+  `Examine`/`Take`/`TakeFrom`/`Drop`/`Hit`/`Talk`/`BuyConversation` (Template-Method base; `TakeFrom` has its own
   `AffordanceKind.TAKE_FROM` because its resume re-validates against containers, not the ground) and `BlackjackConversation` (implements
   `Conversation` directly — the first *verb-continued* dialogue: `hit`/`hit me`, `stand`/`stay`,
   `game`/`table`, plus `play` folding to the anytime table view; it casts the payload back to
@@ -338,6 +338,11 @@ The app reads from a TTY; to drive it without one (Claude sessions, CI smoke che
   this verifies output **content and ordering**, not visual rendering. The redraw-preserves-your-input
   nicety stays a human-at-a-real-terminal check.
 - **Pace the input** (interleaved `sleep`) to let time-based / async `printAbove` events fire.
+- **Movement is `go <exit>` / `move <exit>`** — a bare direction (`north`) is an unrecognized command.
+- **Start from a fresh play DB** for a scripted scenario: seeding is idempotent and world-wide, so a DB seeded
+  earlier (or seeded from the other world) keeps its old spawns. `docker compose down -v && docker compose up -d`
+  (wipes all play state), then launch — add `--world scenes2.yaml` for the harbour world. Em dashes print as `�`
+  in the dumb terminal; that is the non-TTY encoding, not a renderer bug.
 - **Never via Maven** — `mvn spring-boot:run` / `exec:java` make Maven own stdin/stdout ⇒ forced dumb mode.
 - Use this for **adapter smoke checks** and the wall-clock / concurrency exploration of thread `#3`; test
   game *logic* via JUnit on the use-case layer. See the testability stance in `design-notes.md`.
